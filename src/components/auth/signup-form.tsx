@@ -60,7 +60,7 @@ export function SignupForm() {
     }
 
     setMessage("Account created. Check your email if confirmation is required.");
-    router.push("/dashboard");
+    router.push("/profile");
   }
 
   async function handleGoogleSignup() {
@@ -70,7 +70,7 @@ export function SignupForm() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}/profile`,
       },
     });
 
