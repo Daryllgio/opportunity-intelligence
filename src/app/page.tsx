@@ -54,7 +54,7 @@ export default function Home() {
         <div className="grid flex-1 items-center gap-12 py-20 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
             <Badge className="mb-6" variant="secondary">
-              Built for international students
+              Built for students
             </Badge>
 
             <h1 className="max-w-4xl text-5xl font-semibold tracking-tight md:text-7xl">
@@ -62,7 +62,7 @@ export default function Home() {
             </h1>
 
             <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-              OppScore helps international students discover eligible
+              OppScore helps students discover eligible
               scholarships, research opportunities, funded conferences,
               fellowships, grants, and competitions — ranked by how competitive
               they are for each one.
@@ -104,7 +104,7 @@ export default function Home() {
                     action: "Apply Now",
                   },
                   {
-                    name: "International Student Grant",
+                    name: "Student Innovation Grant",
                     type: "Grant",
                     score: "81/100",
                     action: "Save for Later",
@@ -174,7 +174,7 @@ export default function Home() {
           <Card className="max-w-xl">
             <CardContent className="p-8">
               <Badge variant="secondary">Premium</Badge>
-              <h2 className="mt-4 text-4xl font-semibold">$10.99/month</h2>
+              <h2 className="mt-4 text-4xl font-semibold">$12.99/month</h2>
               <p className="mt-4 text-muted-foreground">
                 Full access to competitiveness scores, ranked opportunities,
                 gap reports, saved opportunities, opportunity stacks, and
