@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppNav } from "@/components/layout/app-nav";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,7 @@ function statusVariant(status?: string | null) {
 }
 
 export default function AdminHarvesterPage() {
+  const searchParams = useSearchParams();
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState("");
   const [manualUrl, setManualUrl] = useState("");
@@ -86,6 +88,14 @@ export default function AdminHarvesterPage() {
     loadSources();
     loadScanLogs();
   }, []);
+
+  useEffect(() => {
+    const incomingSourceId = searchParams.get("source");
+    if (incomingSourceId) {
+      setSelectedSourceId(incomingSourceId);
+      setManualUrl("");
+    }
+  }, [searchParams]);
 
   async function loadSources() {
     const { data } = await supabase

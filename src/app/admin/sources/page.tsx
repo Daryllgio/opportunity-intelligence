@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { AppNav } from "@/components/layout/app-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,18 @@ type Source = {
   is_active: boolean;
   notes: string | null;
   last_checked_at: string | null;
+  created_at: string;
+};
+
+type ScanLog = {
+  id: string;
+  source_id: string | null;
+  source_url: string;
+  status: string;
+  total_candidates: number | null;
+  new_candidates: number | null;
+  ignored_candidates: number | null;
+  error_message: string | null;
   created_at: string;
 };
 
@@ -86,31 +99,93 @@ function formatFrequency(frequency: string | null) {
     .join(" ");
 }
 
+function getFrequencyDays(frequency: string | null) {
+  if (frequency === "daily") return 1;
+  if (frequency === "twice_weekly") return 3;
+  if (frequency === "weekly") return 7;
+  if (frequency === "biweekly") return 14;
+  if (frequency === "monthly") return 30;
+  return 7;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function getSourceHealth(source: Source) {
+  if (!source.is_active) {
+    return {
+      label: "Paused",
+      variant: "outline" as const,
+      nextScanText: "Paused",
+      overdue: false,
+    };
+  }
+
+  if (!source.last_checked_at) {
+    return {
+      label: "Needs first scan",
+      variant: "default" as const,
+      nextScanText: "Scan now",
+      overdue: true,
+    };
+  }
+
+  const lastChecked = new Date(source.last_checked_at);
+  const nextScan = addDays(lastChecked, getFrequencyDays(source.check_frequency));
+  const now = new Date();
+  const overdue = nextScan <= now;
+
+  return {
+    label: overdue ? "Due for scan" : "Healthy",
+    variant: overdue ? ("default" as const) : ("secondary" as const),
+    nextScanText: overdue ? "Scan now" : nextScan.toLocaleDateString(),
+    overdue,
+  };
+}
+
+function getLatestLogForSource(source: Source, logs: ScanLog[]) {
+  return logs.find(
+    (log) => log.source_id === source.id || log.source_url === source.url
+  );
+}
+
 export default function AdminSourcesPage() {
   const [form, setForm] = useState<FormState>(initialState);
   const [sources, setSources] = useState<Source[]>([]);
+  const [scanLogs, setScanLogs] = useState<ScanLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
-    loadSources();
+    loadPageData();
   }, []);
 
-  async function loadSources() {
+  async function loadPageData() {
     setLoading(true);
 
-    const { data, error } = await supabase
+    const { data: sourceData } = await supabase
       .from("opportunity_sources")
       .select(
         "id, name, url, source_type, country, categories, check_frequency, is_active, notes, last_checked_at, created_at"
       )
       .order("created_at", { ascending: false });
 
-    if (!error) {
-      setSources((data || []) as Source[]);
-    }
+    const { data: logData } = await supabase
+      .from("harvester_scan_logs")
+      .select(
+        "id, source_id, source_url, status, total_candidates, new_candidates, ignored_candidates, error_message, created_at"
+      )
+      .order("created_at", { ascending: false })
+      .limit(100);
 
+    setSources((sourceData || []) as Source[]);
+    setScanLogs((logData || []) as ScanLog[]);
     setLoading(false);
   }
 
@@ -159,7 +234,7 @@ export default function AdminSourcesPage() {
 
     setMessage("Source added successfully.");
     setForm(initialState);
-    await loadSources();
+    await loadPageData();
   }
 
   async function toggleSource(source: Source) {
@@ -172,7 +247,7 @@ export default function AdminSourcesPage() {
       .eq("id", source.id);
 
     if (!error) {
-      await loadSources();
+      await loadPageData();
     }
   }
 
@@ -189,9 +264,43 @@ export default function AdminSourcesPage() {
       .eq("id", sourceId);
 
     if (!error) {
-      await loadSources();
+      await loadPageData();
     }
   }
+
+  const sourceStats = useMemo(() => {
+    const active = sources.filter((source) => source.is_active).length;
+    const due = sources.filter((source) => getSourceHealth(source).overdue).length;
+    const paused = sources.filter((source) => !source.is_active).length;
+    const failedRecent = sources.filter((source) => {
+      const latestLog = getLatestLogForSource(source, scanLogs);
+      return latestLog?.status === "failed";
+    }).length;
+
+    return { active, due, paused, failedRecent };
+  }, [sources, scanLogs]);
+
+  const filteredSources = sources.filter((source) => {
+    const query = search.toLowerCase();
+    const health = getSourceHealth(source);
+    const latestLog = getLatestLogForSource(source, scanLogs);
+
+    const matchesSearch =
+      source.name.toLowerCase().includes(query) ||
+      source.url.toLowerCase().includes(query) ||
+      source.source_type.toLowerCase().includes(query) ||
+      source.country?.toLowerCase().includes(query) ||
+      source.categories?.join(" ").toLowerCase().includes(query);
+
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" && source.is_active) ||
+      (statusFilter === "paused" && !source.is_active) ||
+      (statusFilter === "due" && health.overdue) ||
+      (statusFilter === "failed" && latestLog?.status === "failed");
+
+    return matchesSearch && matchesStatus;
+  });
 
   return (
     <main className="min-h-screen bg-background">
@@ -206,18 +315,55 @@ export default function AdminSourcesPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-muted-foreground">
-            Add trusted websites once so the future harvester can monitor them
-            for new scholarships, fellowships, research programs, grants, funded
-            conferences, and competitions.
+            Manage trusted websites the harvester can monitor for scholarships,
+            fellowships, research programs, grants, funded conferences, and
+            competitions.
           </p>
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-[0.48fr_1fr]">
+          <div className="mt-8 grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-sm text-muted-foreground">Active sources</p>
+                <h2 className="mt-2 text-3xl font-semibold">
+                  {sourceStats.active}
+                </h2>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-sm text-muted-foreground">Due for scan</p>
+                <h2 className="mt-2 text-3xl font-semibold">
+                  {sourceStats.due}
+                </h2>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-sm text-muted-foreground">Paused</p>
+                <h2 className="mt-2 text-3xl font-semibold">
+                  {sourceStats.paused}
+                </h2>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-sm text-muted-foreground">Recent failures</p>
+                <h2 className="mt-2 text-3xl font-semibold">
+                  {sourceStats.failedRecent}
+                </h2>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-[0.45fr_1fr]">
             <Card>
               <CardContent className="p-6">
                 <h2 className="text-xl font-semibold">Add source</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  This is not manual opportunity entry. These are websites the
-                  system will eventually check automatically.
+                  Add specific opportunity listing pages, not general homepages.
                 </p>
 
                 <form onSubmit={handleSubmit} className="mt-6 space-y-5">
@@ -228,7 +374,7 @@ export default function AdminSourcesPage() {
                       onChange={(event) =>
                         updateField("name", event.target.value)
                       }
-                      placeholder="Example: Scholarships Canada"
+                      placeholder="Example: University awards page"
                     />
                   </div>
 
@@ -329,11 +475,31 @@ export default function AdminSourcesPage() {
                 <div>
                   <h2 className="text-2xl font-semibold">Tracked sources</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    These are the websites the future harvester will monitor.
+                    Monitor source health and scan readiness.
                   </p>
                 </div>
 
-                <Badge variant="outline">{sources.length} total</Badge>
+                <Badge variant="outline">{filteredSources.length} shown</Badge>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[1fr_220px]">
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search sources..."
+                />
+
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="due">Due for scan</option>
+                  <option value="paused">Paused</option>
+                  <option value="failed">Recent failures</option>
+                </select>
               </div>
 
               {loading ? (
@@ -342,106 +508,160 @@ export default function AdminSourcesPage() {
                     <p className="text-muted-foreground">Loading sources...</p>
                   </CardContent>
                 </Card>
-              ) : sources.length === 0 ? (
+              ) : filteredSources.length === 0 ? (
                 <Card className="border-dashed">
                   <CardContent className="p-8">
                     <h3 className="text-xl font-semibold">
-                      No sources added yet
+                      No sources match this view
                     </h3>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      Add trusted opportunity websites so we can prepare the
-                      automated discovery pipeline.
+                      Adjust your search or filters.
                     </p>
                   </CardContent>
                 </Card>
               ) : (
                 <div className="grid gap-3">
-                  {sources.map((source) => (
-                    <Card key={source.id}>
-                      <CardContent className="p-5">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="secondary">
-                                {formatSourceType(source.source_type)}
-                              </Badge>
+                  {filteredSources.map((source) => {
+                    const health = getSourceHealth(source);
+                    const latestLog = getLatestLogForSource(source, scanLogs);
 
-                              <Badge
-                                variant={source.is_active ? "outline" : "secondary"}
+                    return (
+                      <Card key={source.id}>
+                        <CardContent className="p-5">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="secondary">
+                                  {formatSourceType(source.source_type)}
+                                </Badge>
+
+                                <Badge variant={health.variant}>
+                                  {health.label}
+                                </Badge>
+
+                                {source.country && (
+                                  <Badge variant="outline">
+                                    {source.country}
+                                  </Badge>
+                                )}
+
+                                <Badge variant="outline">
+                                  {formatFrequency(source.check_frequency)}
+                                </Badge>
+
+                                {latestLog && (
+                                  <Badge
+                                    variant={
+                                      latestLog.status === "success"
+                                        ? "secondary"
+                                        : "outline"
+                                    }
+                                  >
+                                    Last scan: {latestLog.status}
+                                  </Badge>
+                                )}
+                              </div>
+
+                              <h3 className="mt-3 text-lg font-semibold">
+                                {source.name}
+                              </h3>
+
+                              <a
+                                href={source.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-1 block truncate text-sm text-muted-foreground underline"
                               >
-                                {source.is_active ? "Active" : "Inactive"}
-                              </Badge>
+                                {source.url}
+                              </a>
 
-                              {source.country && (
-                                <Badge variant="outline">{source.country}</Badge>
+                              {source.categories &&
+                                source.categories.length > 0 && (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {source.categories.map((category) => (
+                                      <Badge key={category} variant="outline">
+                                        {category}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+
+                              <div className="mt-4 grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
+                                <div>
+                                  <p className="font-medium text-foreground">
+                                    Last checked
+                                  </p>
+                                  <p>
+                                    {source.last_checked_at
+                                      ? new Date(
+                                          source.last_checked_at
+                                        ).toLocaleString()
+                                      : "Not checked yet"}
+                                  </p>
+                                </div>
+
+                                <div>
+                                  <p className="font-medium text-foreground">
+                                    Next suggested scan
+                                  </p>
+                                  <p>{health.nextScanText}</p>
+                                </div>
+
+                                <div>
+                                  <p className="font-medium text-foreground">
+                                    Latest scan result
+                                  </p>
+                                  <p>
+                                    {latestLog
+                                      ? `${latestLog.total_candidates || 0} candidates, ${
+                                          latestLog.new_candidates || 0
+                                        } new`
+                                      : "No scan log yet"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {latestLog?.error_message && (
+                                <p className="mt-3 text-sm text-destructive">
+                                  {latestLog.error_message}
+                                </p>
                               )}
 
-                              <Badge variant="outline">
-                                {formatFrequency(source.check_frequency)}
-                              </Badge>
+                              {source.notes && (
+                                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                                  {source.notes}
+                                </p>
+                              )}
                             </div>
 
-                            <h3 className="mt-3 text-lg font-semibold">
-                              {source.name}
-                            </h3>
+                            <div className="flex flex-wrap gap-2 lg:w-44 lg:flex-col">
+                              <Button asChild>
+                                <Link href={`/admin/harvester?source=${source.id}`}>
+                                  Scan now
+                                </Link>
+                              </Button>
 
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 block truncate text-sm text-muted-foreground underline"
-                            >
-                              {source.url}
-                            </a>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => toggleSource(source)}
+                              >
+                                {source.is_active ? "Pause" : "Activate"}
+                              </Button>
 
-                            {source.categories &&
-                              source.categories.length > 0 && (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  {source.categories.map((category) => (
-                                    <Badge key={category} variant="outline">
-                                      {category}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              )}
-
-                            {source.notes && (
-                              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                                {source.notes}
-                              </p>
-                            )}
-
-                            <p className="mt-3 text-xs text-muted-foreground">
-                              Last checked:{" "}
-                              {source.last_checked_at
-                                ? new Date(
-                                    source.last_checked_at
-                                  ).toLocaleString()
-                                : "Not checked yet"}
-                            </p>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => deleteSource(source.id)}
+                              >
+                                Delete
+                              </Button>
+                            </div>
                           </div>
-
-                          <div className="flex gap-2 lg:flex-col">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => toggleSource(source)}
-                            >
-                              {source.is_active ? "Pause" : "Activate"}
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => deleteSource(source.id)}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
             </div>
