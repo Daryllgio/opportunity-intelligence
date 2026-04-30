@@ -176,6 +176,8 @@ export default function AdminHarvesterPage() {
     ignoredCandidates: number;
     errorMessage?: string;
   }) {
+    const now = new Date().toISOString();
+
     await supabase.from("harvester_scan_logs").insert({
       source_id: selectedSourceId || null,
       source_url: scanUrl,
@@ -186,7 +188,18 @@ export default function AdminHarvesterPage() {
       error_message: errorMessage || null,
     });
 
+    if (selectedSourceId) {
+      await supabase
+        .from("opportunity_sources")
+        .update({
+          last_checked_at: now,
+          updated_at: now,
+        })
+        .eq("id", selectedSourceId);
+    }
+
     await loadScanLogs();
+    await loadSources();
   }
 
   async function upsertCandidate(candidate: CandidateLink, status = "new") {

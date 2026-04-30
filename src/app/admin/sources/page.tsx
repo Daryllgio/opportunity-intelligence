@@ -161,6 +161,7 @@ export default function AdminSourcesPage() {
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPageData();
@@ -196,6 +197,32 @@ export default function AdminSourcesPage() {
     }));
   }
 
+  function startEditingSource(source: Source) {
+    setEditingSourceId(source.id);
+    setForm({
+      name: source.name,
+      url: source.url,
+      source_type: source.source_type,
+      country: source.country || "Global",
+      categories: source.categories?.join(", ") || "",
+      check_frequency: source.check_frequency || "weekly",
+      notes: source.notes || "",
+    });
+    setMessage("Editing source. Update the fields and save changes.");
+    setTimeout(() => {
+      document.getElementById("source-form")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  }
+
+  function cancelEditingSource() {
+    setEditingSourceId(null);
+    setForm(initialState);
+    setMessage("");
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -213,17 +240,26 @@ export default function AdminSourcesPage() {
       return;
     }
 
-    const { error } = await supabase.from("opportunity_sources").insert({
+    const payload = {
       name: form.name.trim(),
       url: form.url.trim(),
       source_type: form.source_type,
       country: form.country || "Global",
       categories: splitList(form.categories),
       check_frequency: form.check_frequency,
-      is_active: true,
       notes: form.notes || null,
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    const { error } = editingSourceId
+      ? await supabase
+          .from("opportunity_sources")
+          .update(payload)
+          .eq("id", editingSourceId)
+      : await supabase.from("opportunity_sources").insert({
+          ...payload,
+          is_active: true,
+        });
 
     setSaving(false);
 
@@ -232,7 +268,8 @@ export default function AdminSourcesPage() {
       return;
     }
 
-    setMessage("Source added successfully.");
+    setMessage(editingSourceId ? "Source updated successfully." : "Source added successfully.");
+    setEditingSourceId(null);
     setForm(initialState);
     await loadPageData();
   }
@@ -359,12 +396,21 @@ export default function AdminSourcesPage() {
           </div>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[0.45fr_1fr]">
-            <Card>
+            <Card id="source-form">
               <CardContent className="p-6">
-                <h2 className="text-xl font-semibold">Add source</h2>
+                <h2 className="text-xl font-semibold">{editingSourceId ? "Edit source" : "Add source"}</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Add specific opportunity listing pages, not general homepages.
+                  {editingSourceId ? "Update the source details used by the harvester." : "Add specific opportunity listing pages, not general homepages."}
                 </p>
+
+                {editingSourceId && (
+                  <div className="mt-5 rounded-xl border bg-muted/40 p-4">
+                    <p className="text-sm font-medium">Currently editing:</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Update the fields below, then click Save changes. Click Cancel to return to add mode.
+                    </p>
+                  </div>
+                )}
 
                 <form onSubmit={handleSubmit} className="mt-6 space-y-5">
                   <div className="space-y-2">
@@ -463,9 +509,27 @@ export default function AdminSourcesPage() {
                     <p className="text-sm text-muted-foreground">{message}</p>
                   )}
 
-                  <Button type="submit" disabled={saving}>
-                    {saving ? "Adding source..." : "Add source"}
-                  </Button>
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="submit" disabled={saving}>
+                      {saving
+                        ? editingSourceId
+                          ? "Saving changes..."
+                          : "Adding source..."
+                        : editingSourceId
+                          ? "Save changes"
+                          : "Add source"}
+                    </Button>
+
+                    {editingSourceId && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={cancelEditingSource}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
                 </form>
               </CardContent>
             </Card>
@@ -639,6 +703,14 @@ export default function AdminSourcesPage() {
                                 <Link href={`/admin/harvester?source=${source.id}`}>
                                   Scan now
                                 </Link>
+                              </Button>
+
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => startEditingSource(source)}
+                              >
+                                Edit
                               </Button>
 
                               <Button
