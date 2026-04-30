@@ -11,13 +11,8 @@ const navItems = [
   { href: "/saved", label: "Saved" },
   { href: "/profile", label: "Profile" },
   { href: "/pricing", label: "Pricing" },
-  { href: "/admin/sources", label: "Sources" },
-  { href: "/admin/review", label: "Review" },
-  { href: "/admin/extract", label: "Extract" },
-  { href: "/admin/harvester", label: "Harvester" },
-  { href: "/admin/harvester/logs", label: "Logs" },
-  { href: "/admin/scheduled-scans", label: "Schedule" },
-];
+  { href: "/admin", label: "Admin" },
+            ];
 
 export function AppNav() {
   const pathname = usePathname();
