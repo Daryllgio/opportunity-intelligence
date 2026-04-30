@@ -8,11 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
+import { normalizeUrl } from "@/lib/utils/url-normalizer";
 
 type Source = {
   id: string;
   name: string;
   url: string;
+  normalized_url?: string | null;
   source_type: string;
   country: string | null;
   categories: string[] | null;
@@ -33,6 +35,7 @@ type StoredCandidate = {
   source_id: string | null;
   title: string;
   url: string;
+  normalized_url?: string | null;
   reason: string | null;
   score: number | null;
   status: string | null;
@@ -101,7 +104,7 @@ export default function AdminHarvesterPage() {
     const { data } = await supabase
       .from("opportunity_sources")
       .select(
-        "id, name, url, source_type, country, categories, check_frequency, is_active"
+        "id, name, url, normalized_url, source_type, country, categories, check_frequency, is_active"
       )
       .eq("is_active", true)
       .order("created_at", { ascending: false });
@@ -208,6 +211,7 @@ export default function AdminHarvesterPage() {
         source_id: selectedSourceId || null,
         title: candidate.title,
         url: candidate.url,
+        normalized_url: normalizeUrl(candidate.url),
         reason: candidate.reason,
         score: candidate.score,
         status,
@@ -231,13 +235,13 @@ export default function AdminHarvesterPage() {
 
     const { data } = await supabase
       .from("harvester_candidates")
-      .select("url, status")
+      .select("url, normalized_url, status")
       .in("url", urls);
 
     const statusMap = new Map<string, string>();
 
     ((data || []) as StoredCandidate[]).forEach((candidate) => {
-      statusMap.set(candidate.url, candidate.status || "new");
+      statusMap.set(candidate.normalized_url || normalizeUrl(candidate.url), candidate.status || "new");
     });
 
     return statusMap;
@@ -283,13 +287,13 @@ export default function AdminHarvesterPage() {
 
       const scannedCandidates = (result.candidates || []) as CandidateLink[];
       const statusMap = await loadStoredCandidateStatuses(
-        scannedCandidates.map((candidate) => candidate.url)
+        scannedCandidates.map((candidate) => normalizeUrl(candidate.url))
       );
 
       let newCandidateCount = 0;
 
       for (const candidate of scannedCandidates) {
-        if (!statusMap.has(candidate.url)) {
+        if (!statusMap.has(normalizeUrl(candidate.url))) {
           newCandidateCount += 1;
           await upsertCandidate(candidate, "new");
         }
@@ -297,7 +301,7 @@ export default function AdminHarvesterPage() {
 
       const withStatus = scannedCandidates.map((candidate) => ({
         ...candidate,
-        status: statusMap.get(candidate.url) || "new",
+        status: statusMap.get(normalizeUrl(candidate.url)) || "new",
       }));
 
       const ignoredCandidateCount = withStatus.filter(
@@ -355,7 +359,8 @@ export default function AdminHarvesterPage() {
   async function saveCandidateAsSource(candidate: CandidateLink) {
     setMessage("");
 
-    const alreadySaved = sources.some((source) => source.url === candidate.url);
+    const candidateNormalizedUrl = normalizeUrl(candidate.url);
+    const alreadySaved = sources.some((source) => (source.normalized_url || normalizeUrl(source.url)) === candidateNormalizedUrl);
 
     if (alreadySaved) {
       await updateCandidateStatus(candidate, "saved_as_source");
@@ -366,6 +371,7 @@ export default function AdminHarvesterPage() {
     const { error } = await supabase.from("opportunity_sources").insert({
       name: candidate.title,
       url: candidate.url,
+      normalized_url: normalizeUrl(candidate.url),
       source_type: inferSourceType(candidate),
       country: selectedSource?.country || "Global",
       categories: inferCategories(candidate),

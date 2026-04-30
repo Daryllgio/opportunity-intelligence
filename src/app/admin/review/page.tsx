@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
+import { normalizeUrl } from "@/lib/utils/url-normalizer";
 
 type DraftOpportunity = {
   id: string;
@@ -28,6 +29,7 @@ type DraftOpportunity = {
   reward_level: string | null;
   competitiveness_factors: string[] | null;
   source_url: string | null;
+  normalized_url?: string | null;
   extraction_status: string | null;
   extraction_confidence: string | null;
   review_notes: string | null;
@@ -97,6 +99,7 @@ export default function AdminReviewPage() {
         reward_level,
         competitiveness_factors,
         source_url,
+        normalized_url,
         extraction_status,
         extraction_confidence,
         review_notes,
@@ -151,7 +154,24 @@ export default function AdminReviewPage() {
   async function approveDraft(draft: DraftOpportunity) {
     setMessage("");
 
+    const draftUrl = draft.source_url || draft.application_url || "";
+    const normalizedUrl = draft.normalized_url || normalizeUrl(draftUrl);
+
+    if (normalizedUrl) {
+      const { data: existingOpportunity } = await supabase
+        .from("opportunities")
+        .select("id, title")
+        .eq("normalized_url", normalizedUrl)
+        .maybeSingle();
+
+      if (existingOpportunity) {
+        setMessage(`Duplicate detected. Already published: ${existingOpportunity.title}`);
+        return;
+      }
+    }
+
     const { error: insertError } = await supabase.from("opportunities").insert({
+      normalized_url: normalizedUrl || null,
       title: draft.title,
       provider: draft.provider,
       type: draft.type,

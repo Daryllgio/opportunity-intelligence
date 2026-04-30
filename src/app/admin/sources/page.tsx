@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
+import { normalizeUrl } from "@/lib/utils/url-normalizer";
 
 type Source = {
   id: string;
@@ -240,9 +241,12 @@ export default function AdminSourcesPage() {
       return;
     }
 
+    const normalizedUrl = normalizeUrl(form.url);
+
     const payload = {
       name: form.name.trim(),
       url: form.url.trim(),
+      normalized_url: normalizedUrl,
       source_type: form.source_type,
       country: form.country || "Global",
       categories: splitList(form.categories),

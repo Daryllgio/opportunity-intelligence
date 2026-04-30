@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { extractOpportunityDraft } from "@/lib/extraction/opportunity-extractor";
+import { normalizeUrl } from "@/lib/utils/url-normalizer";
 
 type Source = {
   id: string;
@@ -154,8 +155,33 @@ export default function AdminExtractPage() {
     setSaving(true);
     setMessage("");
 
+    const draftUrl = preview.application_url || sourceUrl || "";
+
+    const { data: existingDraft } = await supabase
+      .from("opportunity_drafts")
+      .select("id, title")
+      .eq("normalized_url", normalizeUrl(draftUrl))
+      .maybeSingle();
+
+    const { data: existingOpportunity } = await supabase
+      .from("opportunities")
+      .select("id, title")
+      .eq("normalized_url", normalizeUrl(draftUrl))
+      .maybeSingle();
+
+    if (draftUrl && (existingDraft || existingOpportunity)) {
+      setSaving(false);
+      setMessage(
+        existingOpportunity
+          ? `Duplicate detected. This opportunity already exists live: ${existingOpportunity.title}`
+          : `Duplicate detected. A draft already exists: ${existingDraft?.title}`
+      );
+      return;
+    }
+
     const { error } = await supabase.from("opportunity_drafts").insert({
       source_id: sourceId || null,
+      normalized_url: normalizeUrl(draftUrl),
       title: preview.title,
       provider: preview.provider || null,
       type: preview.type,
