@@ -11,6 +11,7 @@ const navItems = [
   { href: "/saved", label: "Saved" },
   { href: "/profile", label: "Profile" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/admin/sources", label: "Sources" },
 ];
 
 export function AppNav() {
