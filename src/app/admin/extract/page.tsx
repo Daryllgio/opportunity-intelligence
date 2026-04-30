@@ -207,7 +207,14 @@ export default function AdminExtractPage() {
     setSaving(false);
 
     if (error) {
-      setMessage(error.message);
+      if (
+        error.message.includes("opportunity_drafts_normalized_url_unique") ||
+        error.message.toLowerCase().includes("duplicate key")
+      ) {
+        setMessage("A draft for this opportunity already exists.");
+      } else {
+        setMessage(error.message);
+      }
       return;
     }
 

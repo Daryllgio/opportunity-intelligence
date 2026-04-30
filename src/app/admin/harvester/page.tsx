@@ -382,7 +382,14 @@ export default function AdminHarvesterPage() {
     });
 
     if (error) {
-      setMessage(error.message);
+      if (
+        error.message.includes("opportunity_sources_normalized_url_unique") ||
+        error.message.toLowerCase().includes("duplicate key")
+      ) {
+        setMessage("This candidate is already saved as a source.");
+      } else {
+        setMessage(error.message);
+      }
       return;
     }
 
