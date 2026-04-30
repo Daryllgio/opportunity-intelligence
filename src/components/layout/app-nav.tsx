@@ -13,6 +13,7 @@ const navItems = [
   { href: "/pricing", label: "Pricing" },
   { href: "/admin/sources", label: "Sources" },
   { href: "/admin/review", label: "Review" },
+  { href: "/admin/extract", label: "Extract" },
 ];
 
 export function AppNav() {
