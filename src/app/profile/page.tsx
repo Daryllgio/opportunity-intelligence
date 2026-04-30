@@ -44,9 +44,27 @@ type Profile = {
   awards: AwardEntry[] | null;
 };
 
-function getInitials(email: string | null) {
-  if (!email) return "OS";
-  return email.slice(0, 2).toUpperCase();
+function getInitials(name: string | null, email: string | null) {
+  const source = name || email || "OppScore Student";
+  const parts = source.trim().split(/\s+/);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return source.slice(0, 2).toUpperCase();
+}
+
+function getDisplayName({
+  metadataName,
+  email,
+}: {
+  metadataName: string | null;
+  email: string | null;
+}) {
+  if (metadataName && metadataName.trim()) return metadataName;
+  if (email) return email.split("@")[0];
+  return "Student";
 }
 
 function getSchool(profile: Profile | null) {
@@ -61,6 +79,17 @@ function getMajor(profile: Profile | null) {
   return profile.field_of_study === "Other"
     ? profile.field_of_study_other || "—"
     : profile.field_of_study || "—";
+}
+
+function getExperienceCount(profile: Profile | null) {
+  if (!profile) return 0;
+
+  return (
+    (profile.leadership_experiences?.length || 0) +
+    (profile.research_experiences?.length || 0) +
+    (profile.volunteer_experiences?.length || 0) +
+    (profile.work_project_experiences?.length || 0)
+  );
 }
 
 function getCompleteness(profile: Profile | null) {
@@ -78,14 +107,63 @@ function getCompleteness(profile: Profile | null) {
 
   const base = fields.filter((field) => field && field !== "—").length / fields.length;
 
-  const experienceCount =
-    (profile.leadership_experiences?.length || 0) +
-    (profile.research_experiences?.length || 0) +
-    (profile.volunteer_experiences?.length || 0) +
-    (profile.work_project_experiences?.length || 0) +
-    (profile.awards?.length || 0);
+  const evidenceCount =
+    getExperienceCount(profile) + (profile.awards?.length || 0);
 
-  return Math.min(100, Math.round((base * 0.75 + Math.min(0.25, experienceCount * 0.05)) * 100));
+  return Math.min(
+    100,
+    Math.round((base * 0.75 + Math.min(0.25, evidenceCount * 0.05)) * 100)
+  );
+}
+
+function getReadinessItems(profile: Profile | null) {
+  if (!profile) return [];
+
+  const hasAcademic =
+    Boolean(profile.nationality) &&
+    Boolean(profile.country_of_study) &&
+    Boolean(profile.student_status) &&
+    Boolean(getSchool(profile) !== "—") &&
+    Boolean(profile.education_level) &&
+    Boolean(getMajor(profile) !== "—");
+
+  const hasPreferences =
+    Boolean(profile.languages?.length) &&
+    Boolean(profile.target_opportunity_types?.length);
+
+  const hasExperienceEvidence = getExperienceCount(profile) > 0;
+  const hasAwards = Boolean(profile.awards?.length);
+
+  return [
+    {
+      label: "Academic information",
+      complete: hasAcademic,
+      help: hasAcademic
+        ? "Your academic profile has the basics needed for matching."
+        : "Add nationality, country of study, school, education level, and major.",
+    },
+    {
+      label: "Preferences",
+      complete: hasPreferences,
+      help: hasPreferences
+        ? "Your opportunity preferences and languages are set."
+        : "Add languages and opportunity preferences to improve default recommendations.",
+    },
+    {
+      label: "Experience evidence",
+      complete: hasExperienceEvidence,
+      help: hasExperienceEvidence
+        ? "Your profile includes experience evidence for scoring."
+        : "Add leadership, research, volunteer, or work/project experience.",
+    },
+    {
+      label: "Awards & honors",
+      complete: hasAwards,
+      help: hasAwards
+        ? "Awards and honors are included in your scoring profile."
+        : "Add awards if you have them. This is optional but can strengthen some matches.",
+    },
+  ];
 }
 
 function ExperienceSection({
@@ -112,7 +190,9 @@ function ExperienceSection({
                 <p className="text-sm text-muted-foreground">
                   {entry.organization || "Organization not specified"}
                   {(entry.startDate || entry.endDate) &&
-                    ` · ${entry.startDate || "Start"} - ${entry.endDate || "Present"}`}
+                    ` · ${entry.startDate || "Start"} - ${
+                      entry.endDate || "Present"
+                    }`}
                 </p>
 
                 {entry.description && (
@@ -185,6 +265,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [email, setEmail] = useState<string | null>(null);
+  const [metadataName, setMetadataName] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadProfile() {
@@ -198,6 +279,14 @@ export default function ProfilePage() {
       }
 
       setEmail(user.email || null);
+
+      const fullName =
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        user.user_metadata?.display_name ||
+        null;
+
+      setMetadataName(fullName);
 
       const { data } = await supabase
         .from("profiles")
@@ -217,6 +306,8 @@ export default function ProfilePage() {
   const completeness = getCompleteness(profile);
   const school = getSchool(profile);
   const major = getMajor(profile);
+  const displayName = getDisplayName({ metadataName, email });
+  const readinessItems = getReadinessItems(profile);
 
   return (
     <main className="min-h-screen bg-background">
@@ -256,13 +347,13 @@ export default function ProfilePage() {
                   <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
                     <div className="flex gap-5">
                       <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border bg-muted text-2xl font-semibold">
-                        {getInitials(email)}
+                        {getInitials(displayName, email)}
                       </div>
 
                       <div>
                         <Badge variant="secondary">Opportunity Profile</Badge>
                         <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-                          {email || "Student Profile"}
+                          {displayName}
                         </h1>
                         <p className="mt-2 text-lg text-muted-foreground">
                           {major} · {profile.education_level || "Student"}
@@ -281,7 +372,9 @@ export default function ProfilePage() {
                             </Badge>
                           )}
                           {profile.gpa && (
-                            <Badge variant="outline">GPA: {profile.gpa.toFixed(2)}</Badge>
+                            <Badge variant="outline">
+                              GPA: {profile.gpa.toFixed(2)}
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -326,10 +419,7 @@ export default function ProfilePage() {
                       Experience entries
                     </p>
                     <h2 className="mt-2 text-3xl font-semibold">
-                      {(profile.leadership_experiences?.length || 0) +
-                        (profile.research_experiences?.length || 0) +
-                        (profile.volunteer_experiences?.length || 0) +
-                        (profile.work_project_experiences?.length || 0)}
+                      {getExperienceCount(profile)}
                     </h2>
                   </CardContent>
                 </Card>
@@ -347,47 +437,26 @@ export default function ProfilePage() {
               <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
                 <Card>
                   <CardContent className="p-6">
-                    <h2 className="text-xl font-semibold">Academic profile</h2>
+                    <h2 className="text-xl font-semibold">Score readiness</h2>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      These sections affect how accurately OppScore can evaluate
+                      your competitiveness.
+                    </p>
 
                     <div className="mt-5 space-y-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">School</p>
-                        <p className="font-medium">{school}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Field of study
-                        </p>
-                        <p className="font-medium">{major}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Education level
-                        </p>
-                        <p className="font-medium">
-                          {profile.education_level || "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Country of study
-                        </p>
-                        <p className="font-medium">
-                          {profile.country_of_study || "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Nationality
-                        </p>
-                        <p className="font-medium">
-                          {profile.nationality || "—"}
-                        </p>
-                      </div>
+                      {readinessItems.map((item) => (
+                        <div key={item.label} className="rounded-xl border p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-medium">{item.label}</p>
+                            <Badge variant={item.complete ? "secondary" : "outline"}>
+                              {item.complete ? "Complete" : "Needs work"}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-muted-foreground">
+                            {item.help}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </CardContent>
                 </Card>
@@ -428,6 +497,13 @@ export default function ProfilePage() {
                             <p className="text-sm text-muted-foreground">—</p>
                           )}
                         </div>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-muted-foreground">
+                          Account email
+                        </p>
+                        <p className="mt-1 font-medium">{email || "—"}</p>
                       </div>
                     </div>
                   </CardContent>

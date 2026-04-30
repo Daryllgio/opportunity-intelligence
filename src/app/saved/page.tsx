@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppNav } from "@/components/layout/app-nav";
 import { SaveOpportunityButton } from "@/components/opportunities/save-opportunity-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import { calculateCompetitivenessScore } from "@/lib/scoring";
 
@@ -69,6 +70,8 @@ function getCardSummary(opportunity: Opportunity) {
 export default function SavedPage() {
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState<ScoredSavedOpportunity[]>([]);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
 
   useEffect(() => {
     async function loadSaved() {
@@ -145,6 +148,25 @@ export default function SavedPage() {
     loadSaved();
   }, []);
 
+  const opportunityTypes = useMemo(() => {
+    const types = new Set(saved.map((item) => item.opportunity.type));
+    return Array.from(types);
+  }, [saved]);
+
+  const filteredSaved = saved.filter(({ opportunity }) => {
+    const query = search.toLowerCase();
+
+    const matchesSearch =
+      opportunity.title.toLowerCase().includes(query) ||
+      opportunity.provider?.toLowerCase().includes(query) ||
+      opportunity.description?.toLowerCase().includes(query) ||
+      opportunity.ai_summary?.toLowerCase().includes(query);
+
+    const matchesType = typeFilter === "all" || opportunity.type === typeFilter;
+
+    return matchesSearch && matchesType;
+  });
+
   return (
     <main className="min-h-screen bg-background">
       <AppNav />
@@ -189,8 +211,39 @@ export default function SavedPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="mt-8 grid gap-3">
-              {saved.map(({ savedId, opportunity, score }) => (
+            <>
+              <div className="mt-8 grid gap-3 md:grid-cols-[1fr_260px]">
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search saved opportunities..."
+                />
+
+                <select
+                  value={typeFilter}
+                  onChange={(event) => setTypeFilter(event.target.value)}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="all">All opportunity types</option>
+                  {opportunityTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {formatOpportunityType(type)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-6 grid gap-3">
+                {filteredSaved.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-6">
+                      <p className="text-muted-foreground">
+                        No saved opportunities match your current search.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  filteredSaved.map(({ savedId, opportunity, score }) => (
                 <Card key={savedId}>
                   <CardContent className="p-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -261,8 +314,10 @@ export default function SavedPage() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
         </div>
       </section>

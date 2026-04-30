@@ -48,7 +48,14 @@ export default function Home() {
             </a>
           </div>
 
-          <Button>Join Waitlist</Button>
+          <div className="flex items-center gap-3">
+            <Button asChild variant="outline">
+              <a href="/login">Log in</a>
+            </Button>
+            <Button asChild>
+              <a href="/signup">Get started</a>
+            </Button>
+          </div>
         </nav>
 
         <div className="grid flex-1 items-center gap-12 py-20 lg:grid-cols-[1.05fr_0.95fr]">
@@ -69,7 +76,7 @@ export default function Home() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button size="lg">Get early access</Button>
+              <Button size="lg" asChild><a href="/signup">Get started</a></Button>
               <Button size="lg" variant="outline">
                 See how it works
               </Button>
@@ -180,8 +187,8 @@ export default function Home() {
                 gap reports, saved opportunities, opportunity stacks, and
                 deadline alerts.
               </p>
-              <Button className="mt-6 w-full" size="lg">
-                Start with free access
+              <Button className="mt-6 w-full" size="lg" asChild>
+                <a href="/signup">Start with free access</a>
               </Button>
             </CardContent>
           </Card>
