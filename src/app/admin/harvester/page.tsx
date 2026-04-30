@@ -24,6 +24,17 @@ type CandidateLink = {
   url: string;
   reason: string;
   score: number;
+  status?: string;
+};
+
+type StoredCandidate = {
+  id: string;
+  source_id: string | null;
+  title: string;
+  url: string;
+  reason: string | null;
+  score: number | null;
+  status: string | null;
 };
 
 function formatSourceType(type: string) {
@@ -33,6 +44,22 @@ function formatSourceType(type: string) {
     .join(" ");
 }
 
+function formatStatus(status?: string | null) {
+  if (!status) return "New";
+
+  return status
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function statusVariant(status?: string | null) {
+  if (status === "ignored") return "outline";
+  if (status === "saved_as_source") return "secondary";
+  if (status === "sent_to_extract") return "secondary";
+  return "default";
+}
+
 export default function AdminHarvesterPage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedSourceId, setSelectedSourceId] = useState("");
@@ -40,23 +67,23 @@ export default function AdminHarvesterPage() {
   const [candidates, setCandidates] = useState<CandidateLink[]>([]);
   const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState("");
-  const [savedSourceUrls, setSavedSourceUrls] = useState<string[]>([]);
+  const [showIgnored, setShowIgnored] = useState(false);
 
   useEffect(() => {
-    async function loadSources() {
-      const { data } = await supabase
-        .from("opportunity_sources")
-        .select(
-          "id, name, url, source_type, country, categories, check_frequency, is_active"
-        )
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
-
-      setSources((data || []) as Source[]);
-    }
-
     loadSources();
   }, []);
+
+  async function loadSources() {
+    const { data } = await supabase
+      .from("opportunity_sources")
+      .select(
+        "id, name, url, source_type, country, categories, check_frequency, is_active"
+      )
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
+
+    setSources((data || []) as Source[]);
+  }
 
   const selectedSource = sources.find((source) => source.id === selectedSourceId);
   const scanUrl = manualUrl || selectedSource?.url || "";
@@ -100,37 +127,45 @@ export default function AdminHarvesterPage() {
     return categories.length > 0 ? categories : ["Opportunities"];
   }
 
-  async function saveCandidateAsSource(candidate: CandidateLink) {
-    setMessage("");
-
-    const alreadySaved =
-      savedSourceUrls.includes(candidate.url) ||
-      sources.some((source) => source.url === candidate.url);
-
-    if (alreadySaved) {
-      setMessage("This candidate is already saved as a source.");
-      return;
-    }
-
-    const { error } = await supabase.from("opportunity_sources").insert({
-      name: candidate.title,
-      url: candidate.url,
-      source_type: inferSourceType(candidate),
-      country: selectedSource?.country || "Global",
-      categories: inferCategories(candidate),
-      check_frequency: selectedSource?.check_frequency || "weekly",
-      is_active: true,
-      notes: `Saved from harvester scan. Candidate score: ${candidate.score}. ${candidate.reason}`,
-      updated_at: new Date().toISOString(),
-    });
+  async function upsertCandidate(candidate: CandidateLink, status = "new") {
+    const { error } = await supabase.from("harvester_candidates").upsert(
+      {
+        source_id: selectedSourceId || null,
+        title: candidate.title,
+        url: candidate.url,
+        reason: candidate.reason,
+        score: candidate.score,
+        status,
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "url",
+      }
+    );
 
     if (error) {
       setMessage(error.message);
-      return;
+      return false;
     }
 
-    setSavedSourceUrls((current) => [...current, candidate.url]);
-    setMessage("Candidate saved as a new tracked source.");
+    return true;
+  }
+
+  async function loadStoredCandidateStatuses(urls: string[]) {
+    if (urls.length === 0) return new Map<string, string>();
+
+    const { data } = await supabase
+      .from("harvester_candidates")
+      .select("url, status")
+      .in("url", urls);
+
+    const statusMap = new Map<string, string>();
+
+    ((data || []) as StoredCandidate[]).forEach((candidate) => {
+      statusMap.set(candidate.url, candidate.status || "new");
+    });
+
+    return statusMap;
   }
 
   async function scanSource() {
@@ -161,7 +196,23 @@ export default function AdminHarvesterPage() {
         return;
       }
 
-      setCandidates(result.candidates || []);
+      const scannedCandidates = (result.candidates || []) as CandidateLink[];
+      const statusMap = await loadStoredCandidateStatuses(
+        scannedCandidates.map((candidate) => candidate.url)
+      );
+
+      for (const candidate of scannedCandidates) {
+        if (!statusMap.has(candidate.url)) {
+          await upsertCandidate(candidate, "new");
+        }
+      }
+
+      const withStatus = scannedCandidates.map((candidate) => ({
+        ...candidate,
+        status: statusMap.get(candidate.url) || "new",
+      }));
+
+      setCandidates(withStatus);
       setMessage(
         `Scan completed. Found ${result.totalCandidates || 0} candidate links.`
       );
@@ -174,6 +225,55 @@ export default function AdminHarvesterPage() {
     }
 
     setScanning(false);
+  }
+
+  async function updateCandidateStatus(candidate: CandidateLink, status: string) {
+    setMessage("");
+
+    const success = await upsertCandidate(candidate, status);
+
+    if (!success) return;
+
+    setCandidates((current) =>
+      current.map((item) =>
+        item.url === candidate.url ? { ...item, status } : item
+      )
+    );
+
+    setMessage(`Candidate marked as ${formatStatus(status)}.`);
+  }
+
+  async function saveCandidateAsSource(candidate: CandidateLink) {
+    setMessage("");
+
+    const alreadySaved = sources.some((source) => source.url === candidate.url);
+
+    if (alreadySaved) {
+      await updateCandidateStatus(candidate, "saved_as_source");
+      setMessage("This candidate is already saved as a source.");
+      return;
+    }
+
+    const { error } = await supabase.from("opportunity_sources").insert({
+      name: candidate.title,
+      url: candidate.url,
+      source_type: inferSourceType(candidate),
+      country: selectedSource?.country || "Global",
+      categories: inferCategories(candidate),
+      check_frequency: selectedSource?.check_frequency || "weekly",
+      is_active: true,
+      notes: `Saved from harvester scan. Candidate score: ${candidate.score}. ${candidate.reason}`,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    await updateCandidateStatus(candidate, "saved_as_source");
+    await loadSources();
+    setMessage("Candidate saved as a new tracked source.");
   }
 
   async function markSourceChecked() {
@@ -192,6 +292,18 @@ export default function AdminHarvesterPage() {
     }
   }
 
+  const visibleCandidates = showIgnored
+    ? candidates.filter((candidate) => candidate.status === "ignored")
+    : candidates.filter((candidate) => candidate.status !== "ignored");
+
+  const ignoredCount = candidates.filter(
+    (candidate) => candidate.status === "ignored"
+  ).length;
+
+  const newCount = candidates.filter(
+    (candidate) => !candidate.status || candidate.status === "new"
+  ).length;
+
   return (
     <main className="min-h-screen bg-background">
       <AppNav />
@@ -205,8 +317,9 @@ export default function AdminHarvesterPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-muted-foreground">
-            Scan a tracked source page for possible opportunity links. This is
-            the first step toward automated opportunity discovery.
+            Scan a tracked source page for possible opportunity links. Save
+            listing pages as sources, extract actual opportunities, and ignore
+            irrelevant links.
           </p>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[0.42fr_1fr]">
@@ -306,29 +419,44 @@ export default function AdminHarvesterPage() {
                 <div>
                   <h2 className="text-2xl font-semibold">Candidate links</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    These links may contain individual opportunities. Send the
-                    best ones to extraction.
+                    Review discovered links and choose the right action.
                   </p>
                 </div>
 
-                <Badge variant="outline">{candidates.length} found</Badge>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">{visibleCandidates.length} visible</Badge>
+                  <Badge variant="outline">{newCount} new</Badge>
+                  <Badge variant="outline">{ignoredCount} ignored</Badge>
+                </div>
               </div>
 
-              {candidates.length === 0 ? (
+              {candidates.length > 0 && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowIgnored((current) => !current)}
+                  >
+                    {showIgnored ? "Show active" : "Show ignored"}
+                  </Button>
+                </div>
+              )}
+
+              {visibleCandidates.length === 0 ? (
                 <Card className="border-dashed">
                   <CardContent className="p-8">
                     <h3 className="text-xl font-semibold">
-                      No candidates yet
+                      No visible candidates
                     </h3>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      Run a scan to find possible opportunity pages from a
-                      source.
+                      Run a scan, or show ignored candidates if all results were
+                      previously ignored.
                     </p>
                   </CardContent>
                 </Card>
               ) : (
                 <div className="grid gap-3">
-                  {candidates.map((candidate) => (
+                  {visibleCandidates.map((candidate) => (
                     <Card key={candidate.url}>
                       <CardContent className="p-5">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -339,6 +467,9 @@ export default function AdminHarvesterPage() {
                               </Badge>
                               <Badge variant="outline">
                                 {candidate.reason}
+                              </Badge>
+                              <Badge variant={statusVariant(candidate.status)}>
+                                {formatStatus(candidate.status)}
                               </Badge>
                             </div>
 
@@ -356,7 +487,7 @@ export default function AdminHarvesterPage() {
                             </a>
                           </div>
 
-                          <div className="flex gap-2 lg:flex-col">
+                          <div className="flex flex-wrap gap-2 lg:w-48 lg:flex-col">
                             <Button asChild variant="outline">
                               <a
                                 href={candidate.url}
@@ -371,13 +502,9 @@ export default function AdminHarvesterPage() {
                               type="button"
                               variant="outline"
                               onClick={() => saveCandidateAsSource(candidate)}
-                              disabled={
-                                savedSourceUrls.includes(candidate.url) ||
-                                sources.some((source) => source.url === candidate.url)
-                              }
+                              disabled={candidate.status === "saved_as_source"}
                             >
-                              {savedSourceUrls.includes(candidate.url) ||
-                              sources.some((source) => source.url === candidate.url)
+                              {candidate.status === "saved_as_source"
                                 ? "Saved source"
                                 : "Save as source"}
                             </Button>
@@ -387,10 +514,38 @@ export default function AdminHarvesterPage() {
                                 href={`/admin/extract?url=${encodeURIComponent(
                                   candidate.url
                                 )}`}
+                                onClick={() =>
+                                  updateCandidateStatus(
+                                    candidate,
+                                    "sent_to_extract"
+                                  )
+                                }
                               >
                                 Extract
                               </Link>
                             </Button>
+
+                            {candidate.status === "ignored" ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                  updateCandidateStatus(candidate, "new")
+                                }
+                              >
+                                Unignore
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                  updateCandidateStatus(candidate, "ignored")
+                                }
+                              >
+                                Ignore
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </CardContent>
