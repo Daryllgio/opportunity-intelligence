@@ -37,6 +37,18 @@ type StoredCandidate = {
   status: string | null;
 };
 
+type ScanLog = {
+  id: string;
+  source_id: string | null;
+  source_url: string;
+  status: string;
+  total_candidates: number | null;
+  new_candidates: number | null;
+  ignored_candidates: number | null;
+  error_message: string | null;
+  created_at: string;
+};
+
 function formatSourceType(type: string) {
   return type
     .split("_")
@@ -65,12 +77,14 @@ export default function AdminHarvesterPage() {
   const [selectedSourceId, setSelectedSourceId] = useState("");
   const [manualUrl, setManualUrl] = useState("");
   const [candidates, setCandidates] = useState<CandidateLink[]>([]);
+  const [scanLogs, setScanLogs] = useState<ScanLog[]>([]);
   const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState("");
   const [showIgnored, setShowIgnored] = useState(false);
 
   useEffect(() => {
     loadSources();
+    loadScanLogs();
   }, []);
 
   async function loadSources() {
@@ -83,6 +97,18 @@ export default function AdminHarvesterPage() {
       .order("created_at", { ascending: false });
 
     setSources((data || []) as Source[]);
+  }
+
+  async function loadScanLogs() {
+    const { data } = await supabase
+      .from("harvester_scan_logs")
+      .select(
+        "id, source_id, source_url, status, total_candidates, new_candidates, ignored_candidates, error_message, created_at"
+      )
+      .order("created_at", { ascending: false })
+      .limit(8);
+
+    setScanLogs((data || []) as ScanLog[]);
   }
 
   const selectedSource = sources.find((source) => source.id === selectedSourceId);
@@ -125,6 +151,32 @@ export default function AdminHarvesterPage() {
     if (combined.includes("competition")) categories.push("Competitions");
 
     return categories.length > 0 ? categories : ["Opportunities"];
+  }
+
+  async function createScanLog({
+    status,
+    totalCandidates,
+    newCandidates,
+    ignoredCandidates,
+    errorMessage,
+  }: {
+    status: "success" | "failed";
+    totalCandidates: number;
+    newCandidates: number;
+    ignoredCandidates: number;
+    errorMessage?: string;
+  }) {
+    await supabase.from("harvester_scan_logs").insert({
+      source_id: selectedSourceId || null,
+      source_url: scanUrl,
+      status,
+      total_candidates: totalCandidates,
+      new_candidates: newCandidates,
+      ignored_candidates: ignoredCandidates,
+      error_message: errorMessage || null,
+    });
+
+    await loadScanLogs();
   }
 
   async function upsertCandidate(candidate: CandidateLink, status = "new") {
@@ -191,7 +243,17 @@ export default function AdminHarvesterPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        setMessage(result.error || "Could not scan source.");
+        const errorMessage = result.error || "Could not scan source.";
+
+        await createScanLog({
+          status: "failed",
+          totalCandidates: 0,
+          newCandidates: 0,
+          ignoredCandidates: 0,
+          errorMessage,
+        });
+
+        setMessage(errorMessage);
         setScanning(false);
         return;
       }
@@ -201,8 +263,11 @@ export default function AdminHarvesterPage() {
         scannedCandidates.map((candidate) => candidate.url)
       );
 
+      let newCandidateCount = 0;
+
       for (const candidate of scannedCandidates) {
         if (!statusMap.has(candidate.url)) {
+          newCandidateCount += 1;
           await upsertCandidate(candidate, "new");
         }
       }
@@ -212,16 +277,37 @@ export default function AdminHarvesterPage() {
         status: statusMap.get(candidate.url) || "new",
       }));
 
+      const ignoredCandidateCount = withStatus.filter(
+        (candidate) => candidate.status === "ignored"
+      ).length;
+
       setCandidates(withStatus);
+
+      await createScanLog({
+        status: "success",
+        totalCandidates: scannedCandidates.length,
+        newCandidates: newCandidateCount,
+        ignoredCandidates: ignoredCandidateCount,
+      });
+
       setMessage(
-        `Scan completed. Found ${result.totalCandidates || 0} candidate links.`
+        `Scan completed. Found ${scannedCandidates.length} candidate links, including ${newCandidateCount} new.`
       );
     } catch (error) {
-      setMessage(
+      const errorMessage =
         error instanceof Error
           ? error.message
-          : "Something went wrong while scanning."
-      );
+          : "Something went wrong while scanning.";
+
+      await createScanLog({
+        status: "failed",
+        totalCandidates: 0,
+        newCandidates: 0,
+        ignoredCandidates: 0,
+        errorMessage,
+      });
+
+      setMessage(errorMessage);
     }
 
     setScanning(false);
@@ -414,145 +500,216 @@ export default function AdminHarvesterPage() {
               </CardContent>
             </Card>
 
-            <div className="space-y-4">
-              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-                <div>
-                  <h2 className="text-2xl font-semibold">Candidate links</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Review discovered links and choose the right action.
-                  </p>
-                </div>
+            <div className="space-y-6">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                    <div>
+                      <h2 className="text-xl font-semibold">Recent scans</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        History of recent source scans.
+                      </p>
+                    </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{visibleCandidates.length} visible</Badge>
-                  <Badge variant="outline">{newCount} new</Badge>
-                  <Badge variant="outline">{ignoredCount} ignored</Badge>
-                </div>
-              </div>
+                    <Badge variant="outline">{scanLogs.length} recent</Badge>
+                  </div>
 
-              {candidates.length > 0 && (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowIgnored((current) => !current)}
-                  >
-                    {showIgnored ? "Show active" : "Show ignored"}
-                  </Button>
-                </div>
-              )}
-
-              {visibleCandidates.length === 0 ? (
-                <Card className="border-dashed">
-                  <CardContent className="p-8">
-                    <h3 className="text-xl font-semibold">
-                      No visible candidates
-                    </h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Run a scan, or show ignored candidates if all results were
-                      previously ignored.
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid gap-3">
-                  {visibleCandidates.map((candidate) => (
-                    <Card key={candidate.url}>
-                      <CardContent className="p-5">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap gap-2">
-                              <Badge variant="secondary">
-                                Score: {candidate.score}
-                              </Badge>
-                              <Badge variant="outline">
-                                {candidate.reason}
-                              </Badge>
-                              <Badge variant={statusVariant(candidate.status)}>
-                                {formatStatus(candidate.status)}
-                              </Badge>
-                            </div>
-
-                            <h3 className="mt-3 text-lg font-semibold">
-                              {candidate.title}
-                            </h3>
-
-                            <a
-                              href={candidate.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 block truncate text-sm text-muted-foreground underline"
+                  <div className="mt-5 space-y-3">
+                    {scanLogs.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No scans recorded yet.
+                      </p>
+                    ) : (
+                      scanLogs.map((log) => (
+                        <div key={log.id} className="rounded-xl border p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant={
+                                log.status === "success"
+                                  ? "secondary"
+                                  : "outline"
+                              }
                             >
-                              {candidate.url}
-                            </a>
+                              {formatStatus(log.status)}
+                            </Badge>
+
+                            <Badge variant="outline">
+                              {log.total_candidates || 0} candidates
+                            </Badge>
+
+                            <Badge variant="outline">
+                              {log.new_candidates || 0} new
+                            </Badge>
+
+                            <Badge variant="outline">
+                              {log.ignored_candidates || 0} ignored
+                            </Badge>
                           </div>
 
-                          <div className="flex flex-wrap gap-2 lg:w-48 lg:flex-col">
-                            <Button asChild variant="outline">
+                          <p className="mt-2 truncate text-sm text-muted-foreground">
+                            {log.source_url}
+                          </p>
+
+                          {log.error_message && (
+                            <p className="mt-2 text-sm text-destructive">
+                              {log.error_message}
+                            </p>
+                          )}
+
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {new Date(log.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                  <div>
+                    <h2 className="text-2xl font-semibold">Candidate links</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Review discovered links and choose the right action.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">
+                      {visibleCandidates.length} visible
+                    </Badge>
+                    <Badge variant="outline">{newCount} new</Badge>
+                    <Badge variant="outline">{ignoredCount} ignored</Badge>
+                  </div>
+                </div>
+
+                {candidates.length > 0 && (
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowIgnored((current) => !current)}
+                    >
+                      {showIgnored ? "Show active" : "Show ignored"}
+                    </Button>
+                  </div>
+                )}
+
+                {visibleCandidates.length === 0 ? (
+                  <Card className="border-dashed">
+                    <CardContent className="p-8">
+                      <h3 className="text-xl font-semibold">
+                        No visible candidates
+                      </h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Run a scan, or show ignored candidates if all results
+                        were previously ignored.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid gap-3">
+                    {visibleCandidates.map((candidate) => (
+                      <Card key={candidate.url}>
+                        <CardContent className="p-5">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap gap-2">
+                                <Badge variant="secondary">
+                                  Score: {candidate.score}
+                                </Badge>
+                                <Badge variant="outline">
+                                  {candidate.reason}
+                                </Badge>
+                                <Badge variant={statusVariant(candidate.status)}>
+                                  {formatStatus(candidate.status)}
+                                </Badge>
+                              </div>
+
+                              <h3 className="mt-3 text-lg font-semibold">
+                                {candidate.title}
+                              </h3>
+
                               <a
                                 href={candidate.url}
                                 target="_blank"
                                 rel="noreferrer"
+                                className="mt-1 block truncate text-sm text-muted-foreground underline"
                               >
-                                Open
+                                {candidate.url}
                               </a>
-                            </Button>
+                            </div>
 
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => saveCandidateAsSource(candidate)}
-                              disabled={candidate.status === "saved_as_source"}
-                            >
-                              {candidate.status === "saved_as_source"
-                                ? "Saved source"
-                                : "Save as source"}
-                            </Button>
+                            <div className="flex flex-wrap gap-2 lg:w-48 lg:flex-col">
+                              <Button asChild variant="outline">
+                                <a
+                                  href={candidate.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Open
+                                </a>
+                              </Button>
 
-                            <Button asChild>
-                              <Link
-                                href={`/admin/extract?url=${encodeURIComponent(
-                                  candidate.url
-                                )}`}
-                                onClick={() =>
-                                  updateCandidateStatus(
-                                    candidate,
-                                    "sent_to_extract"
-                                  )
-                                }
-                              >
-                                Extract
-                              </Link>
-                            </Button>
-
-                            {candidate.status === "ignored" ? (
                               <Button
                                 type="button"
                                 variant="outline"
-                                onClick={() =>
-                                  updateCandidateStatus(candidate, "new")
+                                onClick={() => saveCandidateAsSource(candidate)}
+                                disabled={
+                                  candidate.status === "saved_as_source"
                                 }
                               >
-                                Unignore
+                                {candidate.status === "saved_as_source"
+                                  ? "Saved source"
+                                  : "Save as source"}
                               </Button>
-                            ) : (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() =>
-                                  updateCandidateStatus(candidate, "ignored")
-                                }
-                              >
-                                Ignore
+
+                              <Button asChild>
+                                <Link
+                                  href={`/admin/extract?url=${encodeURIComponent(
+                                    candidate.url
+                                  )}`}
+                                  onClick={() =>
+                                    updateCandidateStatus(
+                                      candidate,
+                                      "sent_to_extract"
+                                    )
+                                  }
+                                >
+                                  Extract
+                                </Link>
                               </Button>
-                            )}
+
+                              {candidate.status === "ignored" ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() =>
+                                    updateCandidateStatus(candidate, "new")
+                                  }
+                                >
+                                  Unignore
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() =>
+                                    updateCandidateStatus(candidate, "ignored")
+                                  }
+                                >
+                                  Ignore
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
