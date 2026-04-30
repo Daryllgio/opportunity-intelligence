@@ -16,6 +16,7 @@ const navItems = [
   { href: "/admin/extract", label: "Extract" },
   { href: "/admin/harvester", label: "Harvester" },
   { href: "/admin/harvester/logs", label: "Logs" },
+  { href: "/admin/scheduled-scans", label: "Schedule" },
 ];
 
 export function AppNav() {
