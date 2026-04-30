@@ -3,6 +3,7 @@
 import countriesData from "world-countries";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -473,6 +474,7 @@ function SectionTitle({
 }
 
 export function ProfileForm() {
+  const router = useRouter();
   const [form, setForm] = useState<ProfileFormState>(initialState);
   const [loading, setLoading] = useState(false);
   const [fetchingProfile, setFetchingProfile] = useState(true);
@@ -649,7 +651,9 @@ export function ProfileForm() {
       return;
     }
 
-    setMessage("Profile saved successfully.");
+    setMessage("Profile saved successfully. Redirecting to profile...");
+    router.push("/profile");
+    router.refresh();
   }
 
   if (fetchingProfile) {
