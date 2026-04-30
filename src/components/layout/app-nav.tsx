@@ -15,6 +15,7 @@ const navItems = [
   { href: "/admin/review", label: "Review" },
   { href: "/admin/extract", label: "Extract" },
   { href: "/admin/harvester", label: "Harvester" },
+  { href: "/admin/harvester/logs", label: "Logs" },
 ];
 
 export function AppNav() {

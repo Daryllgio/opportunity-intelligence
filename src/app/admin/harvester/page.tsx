@@ -425,11 +425,17 @@ export default function AdminHarvesterPage() {
             Source harvester
           </h1>
 
-          <p className="mt-3 max-w-3xl text-muted-foreground">
-            Scan a tracked source page for possible opportunity links. Save
-            listing pages as sources, extract actual opportunities, and ignore
-            irrelevant links.
-          </p>
+          <div className="mt-3 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+            <p className="max-w-3xl text-muted-foreground">
+              Scan a tracked source page for possible opportunity links. Save
+              listing pages as sources, extract actual opportunities, and ignore
+              irrelevant links.
+            </p>
+
+            <Button asChild variant="outline">
+              <Link href="/admin/harvester/logs">View scan history</Link>
+            </Button>
+          </div>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[0.42fr_1fr]">
             <Card>
@@ -524,71 +530,6 @@ export default function AdminHarvesterPage() {
             </Card>
 
             <div className="space-y-6">
-              <Card>
-                <CardContent className="p-6">
-                  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-                    <div>
-                      <h2 className="text-xl font-semibold">Recent scans</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        History of recent source scans.
-                      </p>
-                    </div>
-
-                    <Badge variant="outline">{scanLogs.length} recent</Badge>
-                  </div>
-
-                  <div className="mt-5 space-y-3">
-                    {scanLogs.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No scans recorded yet.
-                      </p>
-                    ) : (
-                      scanLogs.map((log) => (
-                        <div key={log.id} className="rounded-xl border p-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant={
-                                log.status === "success"
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                            >
-                              {formatStatus(log.status)}
-                            </Badge>
-
-                            <Badge variant="outline">
-                              {log.total_candidates || 0} candidates
-                            </Badge>
-
-                            <Badge variant="outline">
-                              {log.new_candidates || 0} new
-                            </Badge>
-
-                            <Badge variant="outline">
-                              {log.ignored_candidates || 0} ignored
-                            </Badge>
-                          </div>
-
-                          <p className="mt-2 truncate text-sm text-muted-foreground">
-                            {log.source_url}
-                          </p>
-
-                          {log.error_message && (
-                            <p className="mt-2 text-sm text-destructive">
-                              {log.error_message}
-                            </p>
-                          )}
-
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {new Date(log.created_at).toLocaleString()}
-                          </p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
               <div className="space-y-4">
                 <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
                   <div>
