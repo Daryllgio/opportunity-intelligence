@@ -17,6 +17,7 @@ type Opportunity = {
   provider: string | null;
   type: string;
   description: string | null;
+  ai_summary: string | null;
   country: string | null;
   eligible_countries: string[] | null;
   eligible_education_levels: string[] | null;
@@ -28,25 +29,6 @@ type Opportunity = {
   reward_level: string | null;
   application_url: string | null;
   competitiveness_factors: string[] | null;
-};
-
-type Profile = {
-  nationality: string | null;
-  country_of_study: string | null;
-  student_status: string | null;
-  school: string | null;
-  school_other: string | null;
-  education_level: string | null;
-  field_of_study: string | null;
-  field_of_study_other: string | null;
-  gpa: number | null;
-  languages: string[] | null;
-  target_opportunity_types: string[] | null;
-  leadership_experiences: unknown[] | null;
-  research_experiences: unknown[] | null;
-  volunteer_experiences: unknown[] | null;
-  work_project_experiences: unknown[] | null;
-  awards: unknown[] | null;
 };
 
 type Score = ReturnType<typeof calculateCompetitivenessScore>;
@@ -75,8 +57,6 @@ export default function OpportunityDetailPage() {
 
   useEffect(() => {
     async function loadDetail() {
-      setLoading(true);
-
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -97,7 +77,7 @@ export default function OpportunityDetailPage() {
       const { data: opportunityData, error } = await supabase
         .from("opportunities")
         .select(
-          "id, title, provider, type, description, country, eligible_countries, eligible_education_levels, eligible_fields, funding_amount, funding_type, deadline, effort_level, reward_level, application_url, competitiveness_factors"
+          "id, title, provider, type, description, ai_summary, country, eligible_countries, eligible_education_levels, eligible_fields, funding_amount, funding_type, deadline, effort_level, reward_level, application_url, competitiveness_factors"
         )
         .eq("id", opportunityId)
         .eq("is_active", true)
@@ -156,7 +136,7 @@ export default function OpportunityDetailPage() {
               </CardContent>
             </Card>
           ) : opportunity ? (
-            <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_0.38fr]">
+            <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
               <div className="space-y-6">
                 <Card>
                   <CardContent className="p-8">
@@ -187,12 +167,26 @@ export default function OpportunityDetailPage() {
                         Provider: {opportunity.provider}
                       </p>
                     )}
+                  </CardContent>
+                </Card>
 
-                    {opportunity.description && (
-                      <p className="mt-6 max-w-3xl leading-7 text-muted-foreground">
-                        {opportunity.description}
+                {opportunity.ai_summary && (
+                  <Card>
+                    <CardContent className="p-6">
+                      <h2 className="text-xl font-semibold">AI summary</h2>
+                      <p className="mt-3 leading-7 text-muted-foreground">
+                        {opportunity.ai_summary}
                       </p>
-                    )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card>
+                  <CardContent className="p-6">
+                    <h2 className="text-xl font-semibold">Full description</h2>
+                    <p className="mt-3 whitespace-pre-line leading-7 text-muted-foreground">
+                      {opportunity.description || "No description provided."}
+                    </p>
                   </CardContent>
                 </Card>
 
@@ -214,20 +208,25 @@ export default function OpportunityDetailPage() {
                       </div>
 
                       <div>
-                        <p className="text-sm text-muted-foreground">
-                          Funding type
-                        </p>
+                        <p className="text-sm text-muted-foreground">Funding type</p>
                         <p className="font-medium">
                           {opportunity.funding_type || "Not specified"}
                         </p>
                       </div>
 
                       <div>
-                        <p className="text-sm text-muted-foreground">
-                          Reward level
-                        </p>
+                        <p className="text-sm text-muted-foreground">Reward level</p>
                         <p className="font-medium">
                           {opportunity.reward_level || "Not specified"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-muted-foreground">
+                          Eligible countries
+                        </p>
+                        <p className="font-medium">
+                          {opportunity.eligible_countries?.join(", ") || "Not specified"}
                         </p>
                       </div>
 
@@ -246,8 +245,7 @@ export default function OpportunityDetailPage() {
                           Eligible fields
                         </p>
                         <p className="font-medium">
-                          {opportunity.eligible_fields?.join(", ") ||
-                            "Not specified"}
+                          {opportunity.eligible_fields?.join(", ") || "Not specified"}
                         </p>
                       </div>
                     </div>
@@ -259,8 +257,7 @@ export default function OpportunityDetailPage() {
                     <CardContent className="p-6">
                       <h2 className="text-xl font-semibold">Gap report</h2>
                       <p className="mt-2 text-sm text-muted-foreground">
-                        These are the main factors affecting your competitiveness
-                        for this opportunity.
+                        These are the main factors affecting your competitiveness for this opportunity.
                       </p>
 
                       <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -287,7 +284,7 @@ export default function OpportunityDetailPage() {
                 )}
               </div>
 
-              <div className="space-y-4">
+              <aside className="space-y-4">
                 {score && (
                   <Card>
                     <CardContent className="p-6 text-center">
@@ -321,7 +318,7 @@ export default function OpportunityDetailPage() {
                     </a>
                   </Button>
                 )}
-              </div>
+              </aside>
             </div>
           ) : null}
         </div>
