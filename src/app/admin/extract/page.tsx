@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AppNav } from "@/components/layout/app-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,13 +22,22 @@ type Source = {
 type ExtractedDraft = ReturnType<typeof extractOpportunityDraft>;
 
 export default function AdminExtractPage() {
+  const searchParams = useSearchParams();
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceId, setSourceId] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [rawText, setRawText] = useState("");
   const [preview, setPreview] = useState<ExtractedDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [fetchingUrl, setFetchingUrl] = useState(false);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const incomingUrl = searchParams.get("url");
+    if (incomingUrl) {
+      setSourceUrl(incomingUrl);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     async function loadSources() {
@@ -43,7 +53,47 @@ export default function AdminExtractPage() {
     loadSources();
   }, []);
 
-  function handleExtract() {
+  async function fetchUrlText() {
+    setMessage("");
+
+    if (!sourceUrl.trim()) {
+      setMessage("Paste a source/application URL first.");
+      return;
+    }
+
+    setFetchingUrl(true);
+
+    try {
+      const response = await fetch("/api/extract-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: sourceUrl }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setMessage(result.error || "Could not fetch URL text.");
+        setFetchingUrl(false);
+        return;
+      }
+
+      setRawText(result.text || "");
+      setMessage("URL text fetched successfully. Review the text, then click Extract draft.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while fetching the URL."
+      );
+    }
+
+    setFetchingUrl(false);
+  }
+
+  async function handleExtract() {
     setMessage("");
 
     if (!rawText.trim()) {
@@ -52,13 +102,50 @@ export default function AdminExtractPage() {
     }
 
     const selectedSource = sources.find((source) => source.id === sourceId);
+    const finalSourceUrl = sourceUrl || selectedSource?.url || "";
 
-    const extracted = extractOpportunityDraft({
-      rawText,
-      sourceUrl: sourceUrl || selectedSource?.url || "",
-    });
+    try {
+      const response = await fetch("/api/ai-extract-opportunity", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          rawText,
+          sourceUrl: finalSourceUrl,
+        }),
+      });
 
-    setPreview(extracted);
+      const result = await response.json();
+
+      if (!response.ok) {
+        setMessage(result.error || "Claude extraction failed. Using fallback extractor.");
+
+        const fallback = extractOpportunityDraft({
+          rawText,
+          sourceUrl: finalSourceUrl,
+        });
+
+        setPreview(fallback);
+        return;
+      }
+
+      setPreview(result.extracted);
+      setMessage("Claude extraction completed. Review the preview before saving.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Claude extraction failed. Using fallback extractor."
+      );
+
+      const fallback = extractOpportunityDraft({
+        rawText,
+        sourceUrl: finalSourceUrl,
+      });
+
+      setPreview(fallback);
+    }
   }
 
   async function saveDraft() {
@@ -118,7 +205,7 @@ export default function AdminExtractPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-muted-foreground">
-            Paste opportunity text and create a structured draft for review.
+            Paste opportunity text or fetch page text from a URL. Claude will extract a structured draft for review.
             This is the controlled version of the future AI extraction pipeline.
           </p>
 
@@ -127,8 +214,7 @@ export default function AdminExtractPage() {
               <CardContent className="p-6">
                 <h2 className="text-xl font-semibold">Input</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Paste the opportunity page content. Later, this page will fetch
-                  and analyze URLs automatically.
+                  Paste the opportunity page content manually, or paste a URL and use Fetch URL text.
                 </p>
 
                 <div className="mt-6 space-y-5">
@@ -172,6 +258,15 @@ export default function AdminExtractPage() {
                   )}
 
                   <div className="flex flex-wrap gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={fetchUrlText}
+                      disabled={fetchingUrl}
+                    >
+                      {fetchingUrl ? "Fetching URL..." : "Fetch URL text"}
+                    </Button>
+
                     <Button type="button" onClick={handleExtract}>
                       Extract draft
                     </Button>
