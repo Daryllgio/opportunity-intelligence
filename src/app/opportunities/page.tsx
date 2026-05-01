@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
-import { calculateCompetitivenessScore } from "@/lib/scoring";
 
 type Opportunity = {
   id: string;
@@ -31,9 +30,17 @@ type Opportunity = {
   competitiveness_factors: string[] | null;
 };
 
-type ScoredOpportunity = {
+type CompetitivenessScore = {
+  opportunity_id: string;
+  score: number;
+  fit_label: string;
+  model_used: string | null;
+  updated_at: string | null;
+};
+
+type OpportunityWithScore = {
   opportunity: Opportunity;
-  score: ReturnType<typeof calculateCompetitivenessScore>;
+  score: CompetitivenessScore | null;
 };
 
 function formatOpportunityType(type: string) {
@@ -41,12 +48,6 @@ function formatOpportunityType(type: string) {
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
-}
-
-function formatRecommendation(recommendation: string) {
-  if (recommendation === "apply_now") return "Apply Now";
-  if (recommendation === "save_for_later") return "Save for Later";
-  return "Improve First";
 }
 
 function getCardSummary(opportunity: Opportunity) {
@@ -63,10 +64,13 @@ export default function OpportunitiesPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
+  const [subscriptionPlan, setSubscriptionPlan] = useState("free");
   const [errorMessage, setErrorMessage] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [scoredOpportunities, setScoredOpportunities] = useState<ScoredOpportunity[]>([]);
+  const [opportunitiesWithScores, setOpportunitiesWithScores] = useState<
+    OpportunityWithScore[]
+  >([]);
 
   useEffect(() => {
     async function loadOpportunities() {
@@ -87,9 +91,7 @@ export default function OpportunitiesPage() {
 
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select(
-          "nationality, country_of_study, student_status, school, school_other, education_level, field_of_study, field_of_study_other, gpa, languages, target_opportunity_types, leadership_experiences, research_experiences, volunteer_experiences, work_project_experiences, awards"
-        )
+        .select("id, subscription_plan")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -106,6 +108,7 @@ export default function OpportunitiesPage() {
       }
 
       setHasProfile(true);
+      setSubscriptionPlan(profileData.subscription_plan || "free");
 
       const { data: opportunities, error: opportunitiesError } = await supabase
         .from("opportunities")
@@ -122,17 +125,40 @@ export default function OpportunitiesPage() {
         return;
       }
 
-      const scored = ((opportunities || []) as Opportunity[])
+      const { data: scoreData, error: scoreError } = await supabase
+        .from("opportunity_competitiveness_scores")
+        .select("opportunity_id, score, fit_label, model_used, updated_at")
+        .eq("user_id", user.id);
+
+      if (scoreError) {
+        setErrorMessage(scoreError.message);
+        setLoading(false);
+        return;
+      }
+
+      const scoreMap = new Map<string, CompetitivenessScore>();
+
+      ((scoreData || []) as CompetitivenessScore[]).forEach((score) => {
+        scoreMap.set(score.opportunity_id, score);
+      });
+
+      const merged = ((opportunities || []) as Opportunity[])
         .map((opportunity) => ({
           opportunity,
-          score: calculateCompetitivenessScore({
-            profile: profileData as never,
-            opportunity,
-          }),
+          score: scoreMap.get(opportunity.id) || null,
         }))
-        .sort((a, b) => b.score.score - a.score.score);
+        .sort((a, b) => {
+          if (a.score && b.score) return b.score.score - a.score.score;
+          if (a.score && !b.score) return -1;
+          if (!a.score && b.score) return 1;
 
-      setScoredOpportunities(scored);
+          const aDeadline = a.opportunity.deadline || "9999-12-31";
+          const bDeadline = b.opportunity.deadline || "9999-12-31";
+
+          return aDeadline.localeCompare(bDeadline);
+        });
+
+      setOpportunitiesWithScores(merged);
       setLoading(false);
     }
 
@@ -140,23 +166,29 @@ export default function OpportunitiesPage() {
   }, []);
 
   const opportunityTypes = useMemo(() => {
-    const types = new Set(scoredOpportunities.map((item) => item.opportunity.type));
+    const types = new Set(
+      opportunitiesWithScores.map((item) => item.opportunity.type)
+    );
     return Array.from(types);
-  }, [scoredOpportunities]);
+  }, [opportunitiesWithScores]);
 
-  const filteredOpportunities = scoredOpportunities.filter(({ opportunity }) => {
-    const query = search.toLowerCase();
+  const filteredOpportunities = opportunitiesWithScores.filter(
+    ({ opportunity }) => {
+      const query = search.toLowerCase();
 
-    const matchesSearch =
-      opportunity.title.toLowerCase().includes(query) ||
-      opportunity.provider?.toLowerCase().includes(query) ||
-      opportunity.description?.toLowerCase().includes(query) ||
-      opportunity.ai_summary?.toLowerCase().includes(query);
+      const matchesSearch =
+        opportunity.title.toLowerCase().includes(query) ||
+        opportunity.provider?.toLowerCase().includes(query) ||
+        opportunity.description?.toLowerCase().includes(query) ||
+        opportunity.ai_summary?.toLowerCase().includes(query);
 
-    const matchesType = typeFilter === "all" || opportunity.type === typeFilter;
+      const matchesType = typeFilter === "all" || opportunity.type === typeFilter;
 
-    return matchesSearch && matchesType;
-  });
+      return matchesSearch && matchesType;
+    }
+  );
+
+  const paidPlan = subscriptionPlan === "pro" || subscriptionPlan === "premium";
 
   return (
     <main className="min-h-screen bg-background">
@@ -167,11 +199,11 @@ export default function OpportunitiesPage() {
           <Badge variant="secondary">Opportunities</Badge>
 
           <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            Your ranked opportunities
+            Your opportunities
           </h1>
 
           <p className="mt-3 max-w-2xl text-muted-foreground">
-            Search, compare, save, and review opportunities ranked by your competitiveness.
+            Search, compare, save, and review opportunities matched to your profile.
           </p>
 
           {loading && (
@@ -186,9 +218,9 @@ export default function OpportunitiesPage() {
             <Card className="mt-8">
               <CardContent className="flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold">Log in to see scores</h2>
+                  <h2 className="text-lg font-semibold">Log in to view opportunities</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Create a profile to unlock personalized competitiveness scores.
+                    Create a profile to save opportunities and access personalized tools.
                   </p>
                 </div>
 
@@ -205,7 +237,7 @@ export default function OpportunitiesPage() {
                 <div>
                   <h2 className="text-lg font-semibold">Complete your profile first</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    OppScore needs your academic profile and experience details to calculate personalized scores.
+                    OppScore needs your academic profile and experience details to personalize your opportunity list.
                   </p>
                 </div>
 
@@ -247,6 +279,25 @@ export default function OpportunitiesPage() {
                 </select>
               </div>
 
+              {!paidPlan && (
+                <Card className="mt-6">
+                  <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h2 className="font-semibold">
+                        Competitiveness scores are available on paid plans.
+                      </h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Free users can browse the database, use filters, and save opportunities.
+                      </p>
+                    </div>
+
+                    <Button asChild variant="outline">
+                      <Link href="/pricing">View plans</Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
               <div className="mt-6 grid gap-3">
                 {filteredOpportunities.length === 0 ? (
                   <Card>
@@ -286,8 +337,10 @@ export default function OpportunitiesPage() {
 
                             <p className="mt-1 text-sm text-muted-foreground">
                               {opportunity.provider || "Provider not specified"}
-                              {opportunity.funding_amount && ` · ${opportunity.funding_amount}`}
-                              {opportunity.reward_level && ` · ${opportunity.reward_level} reward`}
+                              {opportunity.funding_amount &&
+                                ` · ${opportunity.funding_amount}`}
+                              {opportunity.reward_level &&
+                                ` · ${opportunity.reward_level} reward`}
                             </p>
 
                             <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
@@ -296,15 +349,21 @@ export default function OpportunitiesPage() {
                           </div>
 
                           <div className="flex flex-col gap-3 lg:w-[240px]">
-                            <div className="rounded-xl border px-4 py-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm text-muted-foreground">Score</p>
-                                <p className="text-lg font-semibold">{score.score}/100</p>
+                            {paidPlan && score && (
+                              <div className="rounded-xl border px-4 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-sm text-muted-foreground">
+                                    Competitiveness
+                                  </p>
+                                  <p className="text-lg font-semibold">
+                                    {score.score}/100
+                                  </p>
+                                </div>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {score.fit_label}
+                                </p>
                               </div>
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                {formatRecommendation(score.recommendation)}
-                              </p>
-                            </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-2">
                               <SaveOpportunityButton opportunityId={opportunity.id} />

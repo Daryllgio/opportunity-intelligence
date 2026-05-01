@@ -17,8 +17,9 @@ type Profile = {
   country_of_study: string | null;
   nationality: string | null;
   languages: string[] | null;
-  opportunity_preferences: string[] | null;
+  target_opportunity_types: string[] | null;
   profile_completion: number | null;
+  subscription_plan: string | null;
 };
 
 type Opportunity = {
@@ -41,6 +42,12 @@ type SavedOpportunity = {
   id: string;
   opportunity_id: string;
   opportunities: Opportunity | null;
+};
+
+type AiUsage = {
+  usage_month: string;
+  competitiveness_scores_used: number;
+  gap_reports_used: number;
 };
 
 function formatType(type: string | null) {
@@ -115,10 +122,46 @@ function getMatchLabel(score: number) {
   return "Improve first";
 }
 
+function getCurrentUsageMonth() {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+
+  return `${year}-${month}`;
+}
+
+function getPlanLabel(plan: string | null | undefined) {
+  if (plan === "pro") return "Pro";
+  if (plan === "premium") return "Premium";
+  return "Free";
+}
+
+function getPlanLimits(plan: string | null | undefined) {
+  if (plan === "pro") {
+    return {
+      competitivenessScores: 250,
+      gapReports: 40,
+    };
+  }
+
+  if (plan === "premium") {
+    return {
+      competitivenessScores: 400,
+      gapReports: 90,
+    };
+  }
+
+  return {
+    competitivenessScores: 0,
+    gapReports: 0,
+  };
+}
+
 export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [saved, setSaved] = useState<SavedOpportunity[]>([]);
+  const [usage, setUsage] = useState<AiUsage | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -136,9 +179,7 @@ export default function DashboardPage() {
 
       const { data: profileData } = await supabase
         .from("profiles")
-        .select(
-          "id, full_name, field_of_study, education_level, school, country_of_study, nationality, languages, opportunity_preferences, profile_completion"
-        )
+        .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -178,9 +219,17 @@ export default function DashboardPage() {
         .eq("user_id", user.id)
         .limit(6);
 
+      const { data: usageData } = await supabase
+        .from("user_ai_usage")
+        .select("usage_month, competitiveness_scores_used, gap_reports_used")
+        .eq("user_id", user.id)
+        .eq("usage_month", getCurrentUsageMonth())
+        .maybeSingle();
+
       setProfile(profileData as Profile | null);
       setOpportunities((opportunityData || []) as Opportunity[]);
       setSaved((savedData || []) as SavedOpportunity[]);
+      setUsage(usageData as AiUsage | null);
       setLoading(false);
     }
 
@@ -214,6 +263,17 @@ export default function DashboardPage() {
     .filter(Boolean) as Opportunity[];
 
   const profileCompletion = profile?.profile_completion || 0;
+  const subscriptionPlan = profile?.subscription_plan || "free";
+  const planLabel = getPlanLabel(subscriptionPlan);
+  const planLimits = getPlanLimits(subscriptionPlan);
+  const scoresUsed = usage?.competitiveness_scores_used || 0;
+  const gapReportsUsed = usage?.gap_reports_used || 0;
+  const scoresRemaining = Math.max(
+    0,
+    planLimits.competitivenessScores - scoresUsed
+  );
+  const gapReportsRemaining = Math.max(0, planLimits.gapReports - gapReportsUsed);
+  const paidPlan = subscriptionPlan === "pro" || subscriptionPlan === "premium";
 
   const nextActions = [
     profileCompletion < 80
@@ -345,6 +405,50 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="mt-6">
+            <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Current plan</p>
+                <h2 className="mt-1 text-2xl font-semibold">{planLabel}</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  {paidPlan
+                    ? "Your monthly scoring and report limits reset each billing cycle."
+                    : "Free users can browse the database and save opportunities. Upgrade to unlock competitiveness scores and gap reports."}
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
+                <div className="rounded-xl border p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Competitiveness scores
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold">
+                    {scoresUsed}/{planLimits.competitivenessScores}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {scoresRemaining} remaining
+                  </p>
+                </div>
+
+                <div className="rounded-xl border p-4">
+                  <p className="text-sm text-muted-foreground">Gap reports</p>
+                  <p className="mt-2 text-2xl font-semibold">
+                    {gapReportsUsed}/{planLimits.gapReports}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {gapReportsRemaining} remaining
+                  </p>
+                </div>
+              </div>
+
+              {!paidPlan && (
+                <Button asChild variant="outline">
+                  <Link href="/pricing">View plans</Link>
+                </Button>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_0.75fr]">
             <div className="space-y-6">

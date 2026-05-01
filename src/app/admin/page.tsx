@@ -98,6 +98,8 @@ export default function AdminPage() {
   const [scanLogs, setScanLogs] = useState<ScanLog[]>([]);
   const [liveOpportunityCount, setLiveOpportunityCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [scoring, setScoring] = useState(false);
+  const [scoringMessage, setScoringMessage] = useState("");
 
   useEffect(() => {
     async function loadAdminData() {
@@ -149,6 +151,58 @@ export default function AdminPage() {
       recentFailures,
     };
   }, [sources, drafts, scanLogs]);
+
+  async function scoreNextOpportunities() {
+    setScoring(true);
+    setScoringMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setScoringMessage("Please log in again before scoring opportunities.");
+      setScoring(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/score-opportunities-batch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          limit: 3,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setScoringMessage(result.error || "Batch scoring failed.");
+        setScoring(false);
+        return;
+      }
+
+      const scoredCount = result.scores?.length || 0;
+      const used = result.usage?.competitivenessScoresUsed;
+      const limit = result.usage?.competitivenessScoresLimit;
+
+      setScoringMessage(
+        scoredCount > 0
+          ? `Scored ${scoredCount} opportunities. Usage: ${used}/${limit} competitiveness scores.`
+          : result.message || "No unscored opportunities found."
+      );
+    } catch (error) {
+      setScoringMessage(
+        error instanceof Error ? error.message : "Batch scoring failed."
+      );
+    }
+
+    setScoring(false);
+  }
 
   return (
     <main className="min-h-screen bg-background">
@@ -303,12 +357,29 @@ export default function AdminPage() {
 
                   <Card>
                     <CardContent className="p-6">
-                      <h2 className="text-xl font-semibold">Claude status</h2>
+                      <h2 className="text-xl font-semibold">
+                        Competitiveness scoring test
+                      </h2>
                       <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                        Claude extraction route is coded, but live testing is
-                        paused until Anthropic API credits work correctly. The
-                        fallback extractor remains available for workflow tests.
+                        Score the next 3 unscored live opportunities for the
+                        current user. This uses Gemini Pro and counts against
+                        the user’s monthly competitiveness score limit.
                       </p>
+
+                      <Button
+                        type="button"
+                        className="mt-5"
+                        onClick={scoreNextOpportunities}
+                        disabled={scoring}
+                      >
+                        {scoring ? "Scoring..." : "Score next 3 opportunities"}
+                      </Button>
+
+                      {scoringMessage && (
+                        <p className="mt-4 text-sm text-muted-foreground">
+                          {scoringMessage}
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
