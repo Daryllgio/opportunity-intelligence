@@ -68,6 +68,9 @@ export default function AdminReviewPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [duplicateMatches, setDuplicateMatches] = useState<
+    Record<string, { id: string; title: string }>
+  >({});
 
   useEffect(() => {
     loadDrafts();
@@ -110,7 +113,8 @@ export default function AdminReviewPage() {
         )
       `
       )
-      .order("created_at", { ascending: false });
+      .or("extraction_status.is.null,extraction_status.in.(pending_review,needs_review)")
+        .order("created_at", { ascending: false });
 
     if (!error) {
       const loadedDrafts = (data || []) as DraftOpportunity[];
@@ -165,7 +169,17 @@ export default function AdminReviewPage() {
         .maybeSingle();
 
       if (existingOpportunity) {
-        setMessage(`Duplicate detected. Already published: ${existingOpportunity.title}`);
+        setDuplicateMatches((current) => ({
+          ...current,
+          [draft.id]: {
+            id: existingOpportunity.id,
+            title: existingOpportunity.title,
+          },
+        }));
+
+        setMessage(
+          `Duplicate detected. Already published: ${existingOpportunity.title}. You can update the existing opportunity from this draft.`
+        );
         return;
       }
     }
@@ -214,6 +228,77 @@ export default function AdminReviewPage() {
     }
 
     setMessage("Draft approved and published to opportunities.");
+    await loadDrafts();
+  }
+
+  async function updateExistingOpportunityFromDraft(draft: DraftOpportunity) {
+    const duplicate = duplicateMatches[draft.id];
+
+    if (!duplicate) {
+      setMessage("No duplicate opportunity selected for this draft.");
+      return;
+    }
+
+    setMessage("");
+
+    const draftUrl = draft.source_url || draft.application_url || "";
+    const normalizedUrl = draft.normalized_url || normalizeUrl(draftUrl);
+
+    const { error: updateError } = await supabase
+      .from("opportunities")
+      .update({
+        normalized_url: normalizedUrl || null,
+        title: draft.title,
+        provider: draft.provider,
+        type: draft.type,
+        description: draft.description,
+        ai_summary: draft.ai_summary,
+        country: draft.country || "Global",
+        eligible_countries: draft.eligible_countries || [],
+        eligible_education_levels: draft.eligible_education_levels || [],
+        eligible_fields: draft.eligible_fields || [],
+        funding_amount: draft.funding_amount,
+        funding_type: draft.funding_type,
+        deadline: draft.deadline,
+        application_url: draft.application_url,
+        effort_level: draft.effort_level,
+        reward_level: draft.reward_level,
+        competitiveness_factors: draft.competitiveness_factors || [],
+        source_url: draft.source_url || draft.application_url,
+        is_active: true,
+        is_approved: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", duplicate.id);
+
+    if (updateError) {
+      setMessage(updateError.message);
+      return;
+    }
+
+    const { error: draftUpdateError } = await supabase
+      .from("opportunity_drafts")
+      .update({
+        extraction_status: "merged",
+        review_notes:
+          notes[draft.id] ||
+          `Merged into existing opportunity: ${duplicate.title}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", draft.id);
+
+    if (draftUpdateError) {
+      setMessage(draftUpdateError.message);
+      return;
+    }
+
+    setDuplicateMatches((current) => {
+      const next = { ...current };
+      delete next[draft.id];
+      return next;
+    });
+
+    setMessage(`Existing opportunity updated from draft: ${draft.title}`);
     await loadDrafts();
   }
 
@@ -411,6 +496,26 @@ export default function AdminReviewPage() {
                       </div>
 
                       <div className="flex gap-2 lg:w-44 lg:flex-col">
+                        {duplicateMatches[draft.id] && (
+                          <div className="rounded-xl border bg-muted/40 p-3">
+                            <p className="text-xs font-medium">
+                              Duplicate found
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {duplicateMatches[draft.id].title}
+                            </p>
+                            <Button
+                              type="button"
+                              className="mt-3 w-full"
+                              onClick={() =>
+                                updateExistingOpportunityFromDraft(draft)
+                              }
+                            >
+                              Update existing
+                            </Button>
+                          </div>
+                        )}
+
                         <Button onClick={() => approveDraft(draft)}>
                           Approve
                         </Button>

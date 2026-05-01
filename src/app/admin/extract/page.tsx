@@ -32,6 +32,10 @@ export default function AdminExtractPage() {
   const [saving, setSaving] = useState(false);
   const [fetchingUrl, setFetchingUrl] = useState(false);
   const [message, setMessage] = useState("");
+  const [duplicateOpportunity, setDuplicateOpportunity] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
 
   useEffect(() => {
     const incomingUrl = searchParams.get("url");
@@ -56,6 +60,7 @@ export default function AdminExtractPage() {
 
   async function fetchUrlText() {
     setMessage("");
+    setDuplicateOpportunity(null);
 
     if (!sourceUrl.trim()) {
       setMessage("Paste a source/application URL first.");
@@ -96,6 +101,7 @@ export default function AdminExtractPage() {
 
   async function handleExtract() {
     setMessage("");
+    setDuplicateOpportunity(null);
 
     if (!rawText.trim()) {
       setMessage("Paste opportunity text before extracting.");
@@ -106,7 +112,7 @@ export default function AdminExtractPage() {
     const finalSourceUrl = sourceUrl || selectedSource?.url || "";
 
     try {
-      const response = await fetch("/api/ai-extract-opportunity", {
+      const response = await fetch("/api/gemini-extract-opportunity", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -120,7 +126,7 @@ export default function AdminExtractPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        setMessage(result.error || "Claude extraction failed. Using fallback extractor.");
+        setMessage(result.error || "Gemini extraction failed. Using fallback extractor.");
 
         const fallback = extractOpportunityDraft({
           rawText,
@@ -132,12 +138,12 @@ export default function AdminExtractPage() {
       }
 
       setPreview(result.extracted);
-      setMessage("Claude extraction completed. Review the preview before saving.");
+      setMessage("Gemini extraction completed. Review the preview before saving.");
     } catch (error) {
       setMessage(
         error instanceof Error
           ? error.message
-          : "Claude extraction failed. Using fallback extractor."
+          : "Gemini extraction failed. Using fallback extractor."
       );
 
       const fallback = extractOpportunityDraft({
@@ -169,13 +175,21 @@ export default function AdminExtractPage() {
       .eq("normalized_url", normalizeUrl(draftUrl))
       .maybeSingle();
 
-    if (draftUrl && (existingDraft || existingOpportunity)) {
+    if (draftUrl && existingOpportunity) {
       setSaving(false);
+      setDuplicateOpportunity({
+        id: existingOpportunity.id,
+        title: existingOpportunity.title,
+      });
       setMessage(
-        existingOpportunity
-          ? `Duplicate detected. This opportunity already exists live: ${existingOpportunity.title}`
-          : `Duplicate detected. A draft already exists: ${existingDraft?.title}`
+        `Duplicate detected. This opportunity already exists live: ${existingOpportunity.title}`
       );
+      return;
+    }
+
+    if (draftUrl && existingDraft) {
+      setSaving(false);
+      setMessage(`Duplicate detected. A draft already exists: ${existingDraft.title}`);
       return;
     }
 
@@ -225,6 +239,52 @@ export default function AdminExtractPage() {
     setSourceId("");
   }
 
+  async function updateExistingOpportunity() {
+    if (!preview || !duplicateOpportunity) return;
+
+    setSaving(true);
+    setMessage("");
+
+    const opportunityUrl = preview.application_url || sourceUrl || "";
+
+    const { error } = await supabase
+      .from("opportunities")
+      .update({
+        title: preview.title,
+        provider: preview.provider || null,
+        type: preview.type,
+        description: preview.description,
+        ai_summary: preview.ai_summary,
+        country: preview.country || "Global",
+        eligible_countries: preview.eligible_countries || [],
+        eligible_education_levels: preview.eligible_education_levels || [],
+        eligible_fields: preview.eligible_fields || [],
+        funding_amount: preview.funding_amount || null,
+        funding_type: preview.funding_type || null,
+        deadline: preview.deadline || null,
+        application_url: preview.application_url || sourceUrl || null,
+        effort_level: preview.effort_level,
+        reward_level: preview.reward_level,
+        competitiveness_factors: preview.competitiveness_factors || [],
+        source_url: opportunityUrl || null,
+        normalized_url: normalizeUrl(opportunityUrl),
+        is_active: true,
+        is_approved: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", duplicateOpportunity.id);
+
+    setSaving(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(`Existing opportunity updated: ${preview.title}`);
+    setDuplicateOpportunity(null);
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <AppNav />
@@ -238,7 +298,7 @@ export default function AdminExtractPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-muted-foreground">
-            Paste opportunity text or fetch page text from a URL. Claude will extract a structured draft for review.
+            Paste opportunity text or fetch page text from a URL. Gemini will extract a structured draft for review.
             This is the controlled version of the future AI extraction pipeline.
           </p>
 
@@ -288,6 +348,29 @@ export default function AdminExtractPage() {
 
                   {message && (
                     <p className="text-sm text-muted-foreground">{message}</p>
+                  )}
+
+                  {duplicateOpportunity && preview && (
+                    <div className="rounded-xl border bg-muted/40 p-4">
+                      <p className="text-sm font-medium">
+                        Existing opportunity found
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        The URL already exists as: {duplicateOpportunity.title}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        You can update the existing live opportunity with the new extracted fields instead of creating a duplicate.
+                      </p>
+
+                      <Button
+                        type="button"
+                        className="mt-4"
+                        onClick={updateExistingOpportunity}
+                        disabled={saving}
+                      >
+                        {saving ? "Updating..." : "Update existing opportunity"}
+                      </Button>
+                    </div>
                   )}
 
                   <div className="flex flex-wrap gap-3">
