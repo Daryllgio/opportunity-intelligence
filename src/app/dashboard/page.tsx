@@ -50,6 +50,19 @@ type AiUsage = {
   gap_reports_used: number;
 };
 
+type CompetitivenessScore = {
+  opportunity_id: string;
+  score: number;
+  fit_label: string;
+  model_used: string | null;
+  updated_at: string | null;
+};
+
+type OpportunityWithScore = {
+  opportunity: Opportunity;
+  score: CompetitivenessScore | null;
+};
+
 function formatType(type: string | null) {
   if (!type) return "Opportunity";
 
@@ -77,49 +90,6 @@ function getDeadlineLabel(deadline: string | null) {
   if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   return `${days} days left`;
-}
-
-function computeMatchScore(profile: Profile | null, opportunity: Opportunity) {
-  let score = 10;
-
-  const field = profile?.field_of_study?.toLowerCase() || "";
-  const level = profile?.education_level?.toLowerCase() || "";
-
-  const eligibleFields = opportunity.eligible_fields || [];
-  const eligibleLevels = opportunity.eligible_education_levels || [];
-
-  const fieldMatch =
-    eligibleFields.length === 0 ||
-    eligibleFields.some((item) => {
-      const lowered = item.toLowerCase();
-      return lowered === "any" || field.includes(lowered) || lowered.includes(field);
-    });
-
-  const levelMatch =
-    eligibleLevels.length === 0 ||
-    eligibleLevels.some((item) => {
-      const lowered = item.toLowerCase();
-      return lowered === "any" || level.includes(lowered) || lowered.includes(level);
-    });
-
-  if (fieldMatch) score += 25;
-  if (levelMatch) score += 25;
-
-  if (opportunity.reward_level === "High") score += 10;
-  if (opportunity.effort_level === "Low") score += 10;
-  if (opportunity.deadline && (daysUntil(opportunity.deadline) || 999) >= 14) {
-    score += 10;
-  }
-
-  if ((profile?.profile_completion || 0) >= 70) score += 10;
-
-  return Math.max(0, Math.min(100, score));
-}
-
-function getMatchLabel(score: number) {
-  if (score >= 70) return "Strong match";
-  if (score >= 45) return "Developing match";
-  return "Improve first";
 }
 
 function getCurrentUsageMonth() {
@@ -160,6 +130,9 @@ function getPlanLimits(plan: string | null | undefined) {
 export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [competitivenessScores, setCompetitivenessScores] = useState<
+    CompetitivenessScore[]
+  >([]);
   const [saved, setSaved] = useState<SavedOpportunity[]>([]);
   const [usage, setUsage] = useState<AiUsage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -226,8 +199,14 @@ export default function DashboardPage() {
         .eq("usage_month", getCurrentUsageMonth())
         .maybeSingle();
 
+      const { data: scoreData } = await supabase
+        .from("opportunity_competitiveness_scores")
+        .select("opportunity_id, score, fit_label, model_used, updated_at")
+        .eq("user_id", user.id);
+
       setProfile(profileData as Profile | null);
       setOpportunities((opportunityData || []) as Opportunity[]);
+      setCompetitivenessScores((scoreData || []) as CompetitivenessScore[]);
       setSaved((savedData || []) as SavedOpportunity[]);
       setUsage(usageData as AiUsage | null);
       setLoading(false);
@@ -236,26 +215,38 @@ export default function DashboardPage() {
     loadDashboard();
   }, []);
 
-  const rankedOpportunities = useMemo(() => {
-    return opportunities
-      .map((opportunity) => ({
-        opportunity,
-        score: computeMatchScore(profile, opportunity),
-      }))
-      .sort((a, b) => b.score - a.score);
-  }, [opportunities, profile]);
+  const opportunitiesWithScores = useMemo(() => {
+    const scoreMap = new Map<string, CompetitivenessScore>();
 
-  const topMatches = rankedOpportunities.slice(0, 3);
+    competitivenessScores.forEach((score) => {
+      scoreMap.set(score.opportunity_id, score);
+    });
 
-  const urgentOpportunities = rankedOpportunities
+    return opportunities.map((opportunity) => ({
+      opportunity,
+      score: scoreMap.get(opportunity.id) || null,
+    }));
+  }, [opportunities, competitivenessScores]);
+
+  const scoredOpportunities = useMemo(() => {
+    return opportunitiesWithScores
+      .filter((item): item is { opportunity: Opportunity; score: CompetitivenessScore } =>
+        Boolean(item.score)
+      )
+      .sort((a, b) => b.score.score - a.score.score);
+  }, [opportunitiesWithScores]);
+
+  const topMatches = scoredOpportunities.slice(0, 3);
+
+  const urgentOpportunities = scoredOpportunities
     .filter(({ opportunity }) => {
       const days = daysUntil(opportunity.deadline);
       return days !== null && days >= 0 && days <= 30;
     })
     .slice(0, 3);
 
-  const improveFirst = rankedOpportunities
-    .filter(({ score }) => score < 45)
+  const improveFirst = scoredOpportunities
+    .filter(({ score }) => score.score < 45)
     .slice(0, 3);
 
   const savedOpportunities = saved
@@ -418,31 +409,31 @@ export default function DashboardPage() {
                 </p>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
-                <div className="rounded-xl border p-4">
-                  <p className="text-sm text-muted-foreground">
-                    Competitiveness scores
-                  </p>
-                  <p className="mt-2 text-2xl font-semibold">
-                    {scoresUsed}/{planLimits.competitivenessScores}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {scoresRemaining} remaining
-                  </p>
-                </div>
+              {paidPlan ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
+                  <div className="rounded-xl border p-4">
+                    <p className="text-sm text-muted-foreground">
+                      Competitiveness scores
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold">
+                      {scoresUsed}/{planLimits.competitivenessScores}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {scoresRemaining} remaining
+                    </p>
+                  </div>
 
-                <div className="rounded-xl border p-4">
-                  <p className="text-sm text-muted-foreground">Gap reports</p>
-                  <p className="mt-2 text-2xl font-semibold">
-                    {gapReportsUsed}/{planLimits.gapReports}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {gapReportsRemaining} remaining
-                  </p>
+                  <div className="rounded-xl border p-4">
+                    <p className="text-sm text-muted-foreground">Gap reports</p>
+                    <p className="mt-2 text-2xl font-semibold">
+                      {gapReportsUsed}/{planLimits.gapReports}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {gapReportsRemaining} remaining
+                    </p>
+                  </div>
                 </div>
-              </div>
-
-              {!paidPlan && (
+              ) : (
                 <Button asChild variant="outline">
                   <Link href="/pricing">View plans</Link>
                 </Button>
@@ -470,8 +461,8 @@ export default function DashboardPage() {
                   <div className="mt-5 space-y-3">
                     {topMatches.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        No matches yet. Complete your profile or add more
-                        opportunities.
+                        No scored matches yet. Generate competitiveness scores
+                        from the admin scoring tool or browse opportunities.
                       </p>
                     ) : (
                       topMatches.map(({ opportunity, score }) => (
@@ -486,7 +477,7 @@ export default function DashboardPage() {
                                   {formatType(opportunity.type)}
                                 </Badge>
                                 <Badge variant="outline">
-                                  {getMatchLabel(score)}
+                                  {score.fit_label}
                                 </Badge>
                                 {opportunity.deadline && (
                                   <Badge variant="outline">
@@ -518,7 +509,7 @@ export default function DashboardPage() {
                                 Score
                               </p>
                               <p className="text-2xl font-semibold">
-                                {score}/100
+                                {score.score}/100
                               </p>
                             </div>
                           </div>
@@ -557,7 +548,7 @@ export default function DashboardPage() {
                             <h3 className="font-medium">{opportunity.title}</h3>
                             <p className="mt-1 text-sm text-muted-foreground">
                               {getDeadlineLabel(opportunity.deadline)} · Score{" "}
-                              {score}/100
+                              {score.score}/100
                             </p>
                           </div>
 
@@ -656,7 +647,7 @@ export default function DashboardPage() {
                         <div key={opportunity.id} className="rounded-xl border p-4">
                           <h3 className="font-medium">{opportunity.title}</h3>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            Score {score}/100 · Improve profile before applying.
+                            Score {score.score}/100 · Improve profile before applying.
                           </p>
                         </div>
                       ))
