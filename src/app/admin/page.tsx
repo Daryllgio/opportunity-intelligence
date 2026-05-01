@@ -85,6 +85,11 @@ const adminTools = [
     description: "Approve, reject, or mark extracted drafts.",
     href: "/admin/review",
   },
+  {
+    title: "Live opportunities",
+    description: "Edit, pause, and manage approved opportunities.",
+    href: "/admin/opportunities",
+  },
 ];
 
 export default function AdminPage() {
