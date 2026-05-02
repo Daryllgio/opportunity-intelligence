@@ -49,6 +49,348 @@ function validateFitLabel(value: unknown) {
   return "Developing fit";
 }
 
+type ExperienceSummaryRow = {
+  section_key: string;
+  experience_key: string;
+  experience_title: string | null;
+  organization: string | null;
+  summary: string;
+  evidence_tags: string[] | null;
+  notable_metrics: string[] | null;
+};
+
+function groupExperienceSummaries(rows: ExperienceSummaryRow[]) {
+  const grouped: Record<string, unknown[]> = {
+    leadership: [],
+    research: [],
+    volunteering: [],
+    work_projects: [],
+    awards: [],
+  };
+
+  for (const row of rows) {
+    if (!grouped[row.section_key]) {
+      grouped[row.section_key] = [];
+    }
+
+    grouped[row.section_key].push({
+      title: row.experience_title,
+      organization: row.organization,
+      summary: row.summary,
+      evidence_tags: row.evidence_tags || [],
+      notable_metrics: row.notable_metrics || [],
+    });
+  }
+
+  return grouped;
+}
+
+function compactProfileForScoring(profile: Record<string, unknown>) {
+  return {
+    education_level: profile.education_level,
+    student_status: profile.student_status,
+    opportunity_level: profile.opportunity_level,
+    field_of_study: profile.field_of_study,
+    field_of_study_other: profile.field_of_study_other,
+    country_of_study: profile.country_of_study,
+    nationality: profile.nationality,
+    gpa: profile.gpa,
+    target_opportunity_types: profile.target_opportunity_types,
+    preferred_regions: profile.preferred_regions,
+    financial_need: profile.financial_need,
+  };
+}
+
+function compactOpportunityForScoring(opportunity: Record<string, unknown>) {
+  return {
+    id: opportunity.id,
+    title: opportunity.title,
+    provider: opportunity.provider,
+    type: opportunity.type,
+    country: opportunity.country,
+    eligible_countries: opportunity.eligible_countries,
+    eligible_education_levels: opportunity.eligible_education_levels,
+    eligible_fields: opportunity.eligible_fields,
+    funding_amount: opportunity.funding_amount,
+    funding_type: opportunity.funding_type,
+    deadline: opportunity.deadline,
+    effort_level: opportunity.effort_level,
+    reward_level: opportunity.reward_level,
+    competitiveness_factors: opportunity.competitiveness_factors,
+    summary: opportunity.ai_summary,
+    description: String(opportunity.description || "").slice(0, 700),
+  };
+}
+
+
+function normalizeText(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeList(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value.map((item) => normalizeText(item)).filter(Boolean);
+}
+
+function hasOpenEligibility(items: unknown) {
+  const values = normalizeList(items);
+
+  if (values.length === 0) return true;
+
+  return values.some((item) =>
+    ["any", "all", "global", "open", "not specified", "all fields"].includes(item)
+  );
+}
+
+function textMatchesList(text: unknown, list: unknown) {
+  const target = normalizeText(text);
+  const values = normalizeList(list);
+
+  if (!target || values.length === 0) return true;
+  if (hasOpenEligibility(list)) return true;
+
+  return values.some((value) => target.includes(value) || value.includes(target));
+}
+
+function opportunityTypeMatches(
+  profile: Record<string, unknown>,
+  opportunity: Record<string, unknown>
+) {
+  const allowedMvpTypes = [
+    "scholarship",
+    "research",
+    "fellowship",
+    "competition",
+    "leadership_program",
+  ];
+
+  const selectedTypes = normalizeList(profile.target_opportunity_types);
+  const opportunityType = normalizeText(opportunity.type);
+
+  if (!opportunityType) return false;
+
+  if (!allowedMvpTypes.includes(opportunityType)) {
+    return false;
+  }
+
+  if (selectedTypes.length === 0) return true;
+
+  return selectedTypes.some(
+    (type) =>
+      type === opportunityType ||
+      type.includes(opportunityType) ||
+      opportunityType.includes(type)
+  );
+}
+
+function regionMatches(
+  profile: Record<string, unknown>,
+  opportunity: Record<string, unknown>
+) {
+  const preferredRegions = normalizeList(profile.preferred_regions);
+  const countryOfStudy = normalizeText(profile.country_of_study || profile.country);
+  const nationality = normalizeText(profile.nationality);
+
+  const opportunityCountry = normalizeText(opportunity.country);
+  const eligibleCountries = normalizeList(opportunity.eligible_countries);
+
+  if (preferredRegions.length === 0) return true;
+  if (!opportunityCountry && eligibleCountries.length === 0) return true;
+
+  const opportunityRegions = [opportunityCountry, ...eligibleCountries].filter(Boolean);
+
+  if (
+    opportunityRegions.some((region) =>
+      ["any", "all", "global", "open", "not specified"].includes(region)
+    )
+  ) {
+    return true;
+  }
+
+  return preferredRegions.some((preferred) =>
+    opportunityRegions.some(
+      (region) =>
+        preferred.includes(region) ||
+        region.includes(preferred) ||
+        (countryOfStudy && region.includes(countryOfStudy)) ||
+        (nationality && region.includes(nationality))
+    )
+  );
+}
+
+function educationMatches(
+  profile: Record<string, unknown>,
+  opportunity: Record<string, unknown>
+) {
+  return textMatchesList(
+    profile.education_level || profile.student_status || profile.opportunity_level,
+    opportunity.eligible_education_levels
+  );
+}
+
+function fieldMatches(
+  profile: Record<string, unknown>,
+  opportunity: Record<string, unknown>
+) {
+  if (hasOpenEligibility(opportunity.eligible_fields)) return true;
+
+  return textMatchesList(
+    profile.field_of_study || profile.field_of_study_other,
+    opportunity.eligible_fields
+  );
+}
+
+function deadlineIsActive(opportunity: Record<string, unknown>) {
+  const deadline = normalizeText(opportunity.deadline);
+
+  if (!deadline) return true;
+
+  const parsed = new Date(deadline);
+
+  if (Number.isNaN(parsed.getTime())) return true;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return parsed >= today;
+}
+
+function getOpportunityCriteriaText(opportunity: Record<string, unknown>) {
+  const factors = Array.isArray(opportunity.competitiveness_factors)
+    ? opportunity.competitiveness_factors.join(" ")
+    : "";
+
+  return normalizeText(
+    [
+      factors,
+      opportunity.title,
+      opportunity.ai_summary,
+      opportunity.description,
+    ].join(" ")
+  );
+}
+
+function profileHasEvidence(profile: Record<string, unknown>, evidenceType: string) {
+  if (evidenceType === "leadership") {
+    return Boolean(profile.has_leadership) || normalizeList(profile.leadership_experiences).length > 0;
+  }
+
+  if (evidenceType === "research") {
+    return Boolean(profile.has_research) || normalizeList(profile.research_experiences).length > 0;
+  }
+
+  if (evidenceType === "volunteering") {
+    return Boolean(profile.has_volunteering) || normalizeList(profile.volunteer_experiences).length > 0;
+  }
+
+  if (evidenceType === "awards") {
+    return Boolean(profile.has_awards) || normalizeList(profile.awards).length > 0;
+  }
+
+  if (evidenceType === "financial_need") {
+    return Boolean(profile.financial_need);
+  }
+
+  if (evidenceType === "projects") {
+    return normalizeList(profile.work_project_experiences).length > 0;
+  }
+
+  return false;
+}
+
+function criteriaPriorityScore(
+  profile: Record<string, unknown>,
+  opportunity: Record<string, unknown>
+) {
+  const criteriaText = getOpportunityCriteriaText(opportunity);
+
+  let priority = 0;
+
+  // Strong base boosts for core preference/fit matches.
+  if (opportunityTypeMatches(profile, opportunity)) priority += 25;
+  if (regionMatches(profile, opportunity)) priority += 15;
+  if (educationMatches(profile, opportunity)) priority += 15;
+  if (fieldMatches(profile, opportunity)) priority += 15;
+
+  const criteria = [
+    {
+      type: "leadership",
+      keywords: ["leadership", "leader", "initiative", "student leader", "community leader"],
+      weight: 15,
+    },
+    {
+      type: "research",
+      keywords: ["research", "lab", "publication", "poster", "faculty mentor"],
+      weight: 15,
+    },
+    {
+      type: "volunteering",
+      keywords: ["volunteer", "service", "community service", "community impact"],
+      weight: 12,
+    },
+    {
+      type: "awards",
+      keywords: ["award", "honor", "honour", "scholarship", "recognition", "achievement"],
+      weight: 10,
+    },
+    {
+      type: "financial_need",
+      keywords: ["financial need", "need-based", "low income", "demonstrated need"],
+      weight: 10,
+    },
+    {
+      type: "projects",
+      keywords: ["project", "portfolio", "startup", "prototype", "software", "technical"],
+      weight: 10,
+    },
+  ];
+
+  for (const criterion of criteria) {
+    const opportunityMentionsCriterion = criterion.keywords.some((keyword) =>
+      criteriaText.includes(keyword)
+    );
+
+    if (!opportunityMentionsCriterion) continue;
+
+    if (profileHasEvidence(profile, criterion.type)) {
+      priority += criterion.weight;
+    } else {
+      priority -= Math.round(criterion.weight / 2);
+    }
+  }
+
+  const gpa = Number(profile.gpa);
+  const mentionsAcademicExcellence =
+    criteriaText.includes("gpa") ||
+    criteriaText.includes("academic excellence") ||
+    criteriaText.includes("academic merit") ||
+    criteriaText.includes("high academic");
+
+  if (mentionsAcademicExcellence && !Number.isNaN(gpa)) {
+    if (gpa >= 3.7) priority += 12;
+    else if (gpa >= 3.3) priority += 6;
+    else priority -= 8;
+  }
+
+  return priority;
+}
+
+function shouldScoreOpportunity(
+  profile: Record<string, unknown>,
+  opportunity: Record<string, unknown>
+) {
+  return (
+    deadlineIsActive(opportunity) &&
+    opportunityTypeMatches(profile, opportunity) &&
+    regionMatches(profile, opportunity) &&
+    educationMatches(profile, opportunity) &&
+    fieldMatches(profile, opportunity)
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -152,6 +494,21 @@ export async function POST(request: NextRequest) {
 
     const unscored = (opportunities || [])
       .filter((opportunity) => !alreadyScoredIds.has(opportunity.id))
+      .filter((opportunity) =>
+        shouldScoreOpportunity(
+          profile as Record<string, unknown>,
+          opportunity as Record<string, unknown>
+        )
+      )
+      .map((opportunity) => ({
+        opportunity,
+        priority: criteriaPriorityScore(
+          profile as Record<string, unknown>,
+          opportunity as Record<string, unknown>
+        ),
+      }))
+      .sort((a, b) => b.priority - a.priority)
+      .map((item) => item.opportunity)
       .slice(0, batchLimit);
 
     if (unscored.length === 0) {
@@ -164,27 +521,27 @@ export async function POST(request: NextRequest) {
           gapReportsUsed: existingUsage?.gap_reports_used || 0,
           gapReportsLimit: planLimits.gapReports,
         },
-        message: "No unscored opportunities found.",
+        message: "No unscored opportunities matched this profile and preference filter.",
       });
     }
 
-    const scoringOpportunities = unscored.map((opportunity) => ({
-      id: opportunity.id,
-      title: opportunity.title,
-      provider: opportunity.provider,
-      type: opportunity.type,
-      summary: opportunity.ai_summary,
-      description: opportunity.description?.slice(0, 1200),
-      country: opportunity.country,
-      eligible_countries: opportunity.eligible_countries,
-      eligible_education_levels: opportunity.eligible_education_levels,
-      eligible_fields: opportunity.eligible_fields,
-      funding_amount: opportunity.funding_amount,
-      deadline: opportunity.deadline,
-      effort_level: opportunity.effort_level,
-      reward_level: opportunity.reward_level,
-      competitiveness_factors: opportunity.competitiveness_factors,
-    }));
+    const { data: experienceSummaryData } = await supabase
+      .from("profile_experience_summaries")
+      .select(
+        "section_key, experience_key, experience_title, organization, summary, evidence_tags, notable_metrics"
+      )
+      .eq("user_id", user.id);
+
+    const compactProfile = {
+      basic_profile: compactProfileForScoring(profile as Record<string, unknown>),
+      experience_summaries: groupExperienceSummaries(
+        (experienceSummaryData || []) as ExperienceSummaryRow[]
+      ),
+    };
+
+    const scoringOpportunities = unscored.map((opportunity) =>
+      compactOpportunityForScoring(opportunity as Record<string, unknown>)
+    );
 
     const prompt = `
 You are OppScore's opportunity competitiveness scoring engine.
@@ -219,7 +576,10 @@ Return this exact JSON shape:
 }
 
 Student profile:
-${JSON.stringify(profile, null, 2)}
+This contains basic structured profile fields and saved summaries of individual experiences grouped by category.
+Use the experience summaries as the main evidence for leadership, research, volunteering, work/projects, and awards.
+
+${JSON.stringify(compactProfile, null, 2)}
 
 Opportunities:
 ${JSON.stringify(scoringOpportunities, null, 2)}
@@ -262,7 +622,7 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
           score: validateScore(item.overall_score),
           fit_label: validateFitLabel(item.fit_label),
           model_used: "gemini-2.5-pro",
-          profile_snapshot: profile,
+          profile_snapshot: compactProfile,
           opportunity_snapshot: opportunity,
           updated_at: new Date().toISOString(),
         };

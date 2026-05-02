@@ -100,6 +100,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [scoring, setScoring] = useState(false);
   const [scoringMessage, setScoringMessage] = useState("");
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryMessage, setSummaryMessage] = useState("");
 
   useEffect(() => {
     async function loadAdminData() {
@@ -181,7 +183,16 @@ export default function AdminPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        setScoringMessage(result.error || "Batch scoring failed.");
+        const rawError =
+          typeof result.error === "string"
+            ? result.error
+            : result.error?.message || "Batch scoring failed.";
+
+        const friendlyError = rawError.includes("high demand")
+          ? "Gemini Pro is temporarily busy. Please try again in a few minutes."
+          : rawError;
+
+        setScoringMessage(friendlyError);
         setScoring(false);
         return;
       }
@@ -202,6 +213,65 @@ export default function AdminPage() {
     }
 
     setScoring(false);
+  }
+
+  async function summarizeProfileExperiences() {
+    setSummarizing(true);
+    setSummaryMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setSummaryMessage("Please log in again before summarizing experiences.");
+      setSummarizing(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/profile-experience-summaries", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const rawError =
+          typeof result.error === "string"
+            ? result.error
+            : result.error?.message || "Experience summarization failed.";
+
+        const friendlyError = rawError.includes("high demand")
+          ? "Gemini Pro is temporarily busy. Please try again in a few minutes."
+          : rawError;
+
+        setSummaryMessage(friendlyError);
+        setSummarizing(false);
+        return;
+      }
+
+      const summarized = result.counts?.summarized || 0;
+      const skipped = result.counts?.skipped || 0;
+      const total = result.counts?.totalExperiences || 0;
+
+      setSummaryMessage(
+        result.message ||
+          `Summarized ${summarized} experiences. Skipped ${skipped}. Total detected: ${total}.`
+      );
+    } catch (error) {
+      setSummaryMessage(
+        error instanceof Error
+          ? error.message
+          : "Experience summarization failed."
+      );
+    }
+
+    setSummarizing(false);
   }
 
   return (
@@ -352,6 +422,36 @@ export default function AdminPage() {
                           </p>
                         </div>
                       </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="p-6">
+                      <h2 className="text-xl font-semibold">
+                        Experience summarization test
+                      </h2>
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                        Summarize new or meaningfully changed profile experience
+                        entries for the current user. This uses Gemini Pro and
+                        saves one summary per individual experience.
+                      </p>
+
+                      <Button
+                        type="button"
+                        className="mt-5"
+                        onClick={summarizeProfileExperiences}
+                        disabled={summarizing}
+                      >
+                        {summarizing
+                          ? "Summarizing..."
+                          : "Summarize profile experiences"}
+                      </Button>
+
+                      {summaryMessage && (
+                        <p className="mt-4 text-sm text-muted-foreground">
+                          {summaryMessage}
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
 

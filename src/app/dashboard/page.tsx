@@ -163,6 +163,13 @@ export default function DashboardPage() {
         )
         .eq("is_active", true)
         .eq("is_approved", true)
+        .in("type", [
+          "scholarship",
+          "research",
+          "fellowship",
+          "competition",
+          "leadership_program",
+        ])
         .order("deadline", { ascending: true, nullsFirst: false })
         .limit(20);
 
@@ -329,7 +336,7 @@ export default function DashboardPage() {
           <div className="mt-3 flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
               <h1 className="text-4xl font-semibold tracking-tight">
-                Your opportunity command center
+                Opportunity Dashboard
               </h1>
 
               <p className="mt-3 max-w-3xl text-muted-foreground">

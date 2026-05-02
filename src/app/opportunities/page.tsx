@@ -117,6 +117,13 @@ export default function OpportunitiesPage() {
         )
         .eq("is_active", true)
         .eq("is_approved", true)
+        .in("type", [
+          "scholarship",
+          "research",
+          "fellowship",
+          "competition",
+          "leadership_program",
+        ])
         .order("deadline", { ascending: true });
 
       if (opportunitiesError) {
