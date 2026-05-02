@@ -597,6 +597,28 @@ export function ProfileForm() {
     );
   }
 
+  async function summarizeExperiencesAfterSave() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      return;
+    }
+
+    try {
+      await fetch("/api/profile-experience-summaries", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+    } catch {
+      // Profile saving should never fail because summarization is unavailable.
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -651,9 +673,12 @@ export function ProfileForm() {
       return;
     }
 
-    setMessage("Profile saved successfully. Redirecting to profile...");
-    router.push("/profile");
-    router.refresh();
+    setMessage("Profile saved successfully. Updating experience summaries...");
+
+    summarizeExperiencesAfterSave().finally(() => {
+      router.push("/profile");
+      router.refresh();
+    });
   }
 
   if (fetchingProfile) {

@@ -428,12 +428,10 @@ export default function AdminPage() {
                   <Card>
                     <CardContent className="p-6">
                       <h2 className="text-xl font-semibold">
-                        Experience summarization test
+                        Profile intelligence
                       </h2>
                       <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                        Summarize new or meaningfully changed profile experience
-                        entries for the current user. This uses Gemini Pro and
-                        saves one summary per individual experience.
+                        Generate or update saved experience summaries for the current user. OppScore uses these summaries to improve competitiveness scoring without repeatedly sending full profile details.
                       </p>
 
                       <Button
@@ -444,7 +442,7 @@ export default function AdminPage() {
                       >
                         {summarizing
                           ? "Summarizing..."
-                          : "Summarize profile experiences"}
+                          : "Update experience summaries"}
                       </Button>
 
                       {summaryMessage && (
@@ -458,12 +456,10 @@ export default function AdminPage() {
                   <Card>
                     <CardContent className="p-6">
                       <h2 className="text-xl font-semibold">
-                        Competitiveness scoring test
+                        Competitiveness scoring
                       </h2>
                       <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                        Score the next 3 unscored live opportunities for the
-                        current user. This uses Gemini Pro and counts against
-                        the user’s monthly competitiveness score limit.
+                        Score the next eligible unscored opportunities for the current user. OppScore applies eligibility and profile-fit filters before sending opportunities to Gemini Pro.
                       </p>
 
                       <Button
@@ -472,7 +468,7 @@ export default function AdminPage() {
                         onClick={scoreNextOpportunities}
                         disabled={scoring}
                       >
-                        {scoring ? "Scoring..." : "Score next 3 opportunities"}
+                        {scoring ? "Scoring..." : "Score eligible opportunities"}
                       </Button>
 
                       {scoringMessage && (
