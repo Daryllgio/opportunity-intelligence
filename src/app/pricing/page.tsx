@@ -13,14 +13,11 @@ const plans = [
     cadence: "",
     badge: "Free",
     description:
-      "Explore the opportunity database and use basic tools before choosing a paid plan.",
+      "Explore the opportunity database before choosing a paid plan.",
     features: [
       "Opportunity database access",
-      "Filters by category, country, deadline, and funding type",
-      "Student profile creation",
+      "Basic opportunity browsing",
       "Save up to 10 opportunities",
-      "Competitiveness scores not included",
-      "Gap reports not included",
     ],
     cta: "Start free",
     href: "/signup",
@@ -34,11 +31,11 @@ const plans = [
     description:
       "For students actively comparing opportunities and deciding where to focus their applications.",
     features: [
-      "250 opportunity competitiveness scores",
-      "40 opportunity gap reports",
-      "Ranked opportunity list based on your profile",
-      "Deadline tracking for saved opportunities",
-      "Best for active scholarship and research searches",
+      "Profile-based matching for up to 2 opportunity categories",
+      "Standard competitiveness ranking",
+      "Deadline tracking",
+      "Effort-to-reward insight",
+      "40 gap reports per month",
     ],
     cta: "Upgrade to Pro",
     href: "/signup",
@@ -52,11 +49,12 @@ const plans = [
     description:
       "For students running a broader search across multiple opportunity types and application cycles.",
     features: [
-      "400 opportunity competitiveness scores",
-      "90 opportunity gap reports",
-      "Ranked opportunity list based on your profile",
-      "Deadline tracking for saved opportunities",
-      "Best for aggressive scholarship, fellowship, and program searches",
+      "Profile-based matching across all opportunity categories",
+      "Expanded competitiveness ranking",
+      "Faster updates for new and renewed opportunities",
+      "Deadline tracking",
+      "Effort-to-reward insight",
+      "90 gap reports per month",
     ],
     cta: "Upgrade to Premium",
     href: "/signup",
@@ -129,14 +127,10 @@ export default function PricingPage() {
           <Card className="mt-8">
             <CardContent className="p-6">
               <h2 className="text-xl font-semibold">
-                How scores and reports work
+                How ranking and reports work
               </h2>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                Competitiveness scores help rank opportunities by how well they
-                match your profile. Gap reports provide a closer look at the
-                strengths and risks in your profile for a specific opportunity.
-                Once generated, scores and reports are saved so you can return
-                to them later.
+                OppScore compares eligible opportunities against your profile and ranks the ones where you appear most competitive. Gap reports provide a deeper breakdown of your strengths, gaps, and positioning for a specific opportunity. Rankings and reports are saved so you can return to them later while the opportunity remains active.
               </p>
             </CardContent>
           </Card>

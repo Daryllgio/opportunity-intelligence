@@ -244,6 +244,7 @@ export default function DashboardPage() {
   }, [opportunitiesWithScores]);
 
   const topMatches = scoredOpportunities.slice(0, 3);
+  const opportunitiesWithCompetitivenessScores = scoredOpportunities.length;
 
   const urgentOpportunities = scoredOpportunities
     .filter(({ opportunity }) => {
@@ -405,45 +406,64 @@ export default function DashboardPage() {
           </div>
 
           <Card className="mt-6">
-            <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Current plan</p>
-                <h2 className="mt-1 text-2xl font-semibold">{planLabel}</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  {paidPlan
-                    ? "Your monthly scoring and report limits reset each billing cycle."
-                    : "Free users can browse the database and save opportunities. Upgrade to unlock competitiveness scores and gap reports."}
-                </p>
+            <CardContent className="p-6">
+              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Current plan</p>
+                  <h2 className="mt-1 text-2xl font-semibold">{planLabel}</h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                    {paidPlan
+                      ? "OppScore evaluates eligible opportunities against your profile so you can focus on applications worth prioritizing."
+                      : "Free users can browse the opportunity database and save opportunities. Upgrade to unlock competitiveness scores and gap reports."}
+                  </p>
+                </div>
+
+                {!paidPlan && (
+                  <Button asChild variant="outline">
+                    <Link href="/pricing">View plans</Link>
+                  </Button>
+                )}
               </div>
 
-              {paidPlan ? (
-                <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
+              {paidPlan && (
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
                   <div className="rounded-xl border p-4">
                     <p className="text-sm text-muted-foreground">
-                      Competitiveness scores
+                      Opportunities with competitiveness scores
                     </p>
-                    <p className="mt-2 text-2xl font-semibold">
-                      {scoresUsed}/{planLimits.competitivenessScores}
+                    <p className="mt-2 text-3xl font-semibold">
+                      {opportunitiesWithCompetitivenessScores}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {scoresRemaining} remaining
+                      Evaluated against your profile.
                     </p>
                   </div>
 
                   <div className="rounded-xl border p-4">
                     <p className="text-sm text-muted-foreground">Gap reports</p>
-                    <p className="mt-2 text-2xl font-semibold">
+                    <p className="mt-2 text-3xl font-semibold">
                       {gapReportsUsed}/{planLimits.gapReports}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {gapReportsRemaining} remaining
                     </p>
                   </div>
+
+                  <div className="rounded-xl border p-4">
+                    <p className="text-sm text-muted-foreground">
+                      Upcoming deadlines for saved opportunities
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold">
+                      {savedOpportunities.filter((opportunity) => {
+                        const days = daysUntil(opportunity.deadline);
+                        return days !== null && days >= 0 && days <= 30;
+                      }).length}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Due within 30 days.
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <Button asChild variant="outline">
-                  <Link href="/pricing">View plans</Link>
-                </Button>
               )}
             </CardContent>
           </Card>

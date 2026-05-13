@@ -1,10 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUsageMonth, getPlanLimits } from "@/lib/billing/plans";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
 });
 
 function createSupabaseForRequest(request: NextRequest) {
@@ -45,9 +45,9 @@ function arrayOrEmpty(value: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: "Missing ANTHROPIC_API_KEY." },
+        { error: "Missing GEMINI_API_KEY." },
         { status: 500 }
       );
     }
@@ -157,6 +157,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { data: experienceSummaryData } = await supabase
+      .from("profile_experience_summaries")
+      .select(
+        "section_key, experience_key, experience_title, organization, summary, evidence_tags, notable_metrics"
+      )
+      .eq("user_id", user.id);
+
+    const { data: competitivenessScore } = await supabase
+      .from("opportunity_competitiveness_scores")
+      .select("score, fit_label, profile_snapshot, opportunity_snapshot")
+      .eq("user_id", user.id)
+      .eq("opportunity_id", opportunityId)
+      .maybeSingle();
+
+    const profileContext = {
+      basic_profile: {
+        education_level: profile.education_level,
+        student_status: profile.student_status,
+        opportunity_level: profile.opportunity_level,
+        field_of_study: profile.field_of_study,
+        field_of_study_other: profile.field_of_study_other,
+        country_of_study: profile.country_of_study,
+        nationality: profile.nationality,
+        gpa: profile.gpa,
+        target_opportunity_types: profile.target_opportunity_types,
+        preferred_regions: profile.preferred_regions,
+        financial_need: profile.financial_need,
+      },
+      experience_summaries: experienceSummaryData || [],
+      full_experiences: {
+        leadership_experiences: profile.leadership_experiences,
+        research_experiences: profile.research_experiences,
+        volunteer_experiences: profile.volunteer_experiences,
+        work_project_experiences: profile.work_project_experiences,
+        awards: profile.awards,
+      },
+      existing_competitiveness_score: competitivenessScore || null,
+    };
+
     const prompt = `
 You are OppScore's admissions, scholarship, and fellowship competitiveness evaluator.
 
@@ -208,35 +247,36 @@ Good positioning guidance examples:
 - Avoid leading with unrelated achievements.
 - Use coursework, class projects, independent projects, or lived experience only when they genuinely support the opportunity fit.
 
-Student profile:
-${JSON.stringify(profile, null, 2)}
+Student profile context:
+This includes basic profile fields, saved individual experience summaries, fuller raw experience details, and the existing competitiveness score if available. Use the experience summaries and raw experiences to keep the gap report consistent with the competitiveness ranking.
+
+${JSON.stringify(profileContext, null, 2)}
 
 Opportunity:
 ${JSON.stringify(opportunity, null, 2)}
 `;
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1800,
-      temperature: 0,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-pro",
+      contents: prompt,
+      config: {
+        temperature: 0,
+        topP: 0.8,
+        topK: 20,
+        maxOutputTokens: 1800,
+      },
     });
 
-    const firstBlock = response.content[0];
+    const responseText = response.text;
 
-    if (!firstBlock || firstBlock.type !== "text") {
+    if (!responseText) {
       return NextResponse.json(
-        { error: "Claude did not return readable text." },
+        { error: "Gemini did not return readable text." },
         { status: 500 }
       );
     }
 
-    const parsed = JSON.parse(cleanJsonResponse(firstBlock.text));
+    const parsed = JSON.parse(cleanJsonResponse(responseText));
 
     const report = {
       user_id: user.id,
@@ -248,8 +288,8 @@ ${JSON.stringify(opportunity, null, 2)}
       gaps: arrayOrEmpty(parsed.gaps),
       recommended_actions: arrayOrEmpty(parsed.recommended_actions),
       ai_explanation: parsed.ai_explanation || "",
-      model_used: "claude-sonnet-4-6",
-      profile_snapshot: profile,
+      model_used: "gemini-2.5-pro",
+      profile_snapshot: profileContext,
       opportunity_snapshot: opportunity,
       updated_at: new Date().toISOString(),
     };
