@@ -54,6 +54,7 @@ type ProfileFormState = {
   gpa: string;
   languages: string[];
   target_opportunity_types: string[];
+  subscription_plan: "free" | "pro" | "premium";
   leadership_experiences: ExperienceEntry[];
   research_experiences: ExperienceEntry[];
   volunteer_experiences: ExperienceEntry[];
@@ -296,6 +297,7 @@ const initialState: ProfileFormState = {
   gpa: "",
   languages: [],
   target_opportunity_types: [],
+  subscription_plan: "free",
   leadership_experiences: [],
   research_experiences: [],
   volunteer_experiences: [],
@@ -520,6 +522,7 @@ export function ProfileForm() {
           gpa: data.gpa ? String(data.gpa) : "",
           languages: data.languages || [],
           target_opportunity_types: data.target_opportunity_types || [],
+          subscription_plan: data.subscription_plan || "free",
           leadership_experiences: data.leadership_experiences || [],
           research_experiences: data.research_experiences || [],
           volunteer_experiences: data.volunteer_experiences || [],
@@ -597,7 +600,7 @@ export function ProfileForm() {
     );
   }
 
-  async function summarizeExperiencesAfterSave() {
+  async function updateProfileIntelligenceAfterSave() {
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -616,6 +619,18 @@ export function ProfileForm() {
       });
     } catch {
       // Profile saving should never fail because summarization is unavailable.
+    }
+
+    try {
+      await fetch("/api/scoring-jobs/schedule", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+    } catch {
+      // Profile saving should never fail because scoring is unavailable.
     }
   }
 
@@ -673,9 +688,9 @@ export function ProfileForm() {
       return;
     }
 
-    setMessage("Profile saved successfully. Updating experience summaries...");
+    setMessage("Profile saved successfully. Scheduling opportunity evaluations...");
 
-    summarizeExperiencesAfterSave().finally(() => {
+    updateProfileIntelligenceAfterSave().finally(() => {
       router.push("/profile");
       router.refresh();
     });
@@ -689,6 +704,29 @@ export function ProfileForm() {
         </CardContent>
       </Card>
     );
+  }
+
+  const maxRankedCategories =
+    form.subscription_plan === "premium"
+      ? opportunityTypeOptions.length
+      : form.subscription_plan === "pro"
+        ? 2
+        : 0;
+
+  const opportunityPreferenceHelp =
+    form.subscription_plan === "premium"
+      ? "Premium includes profile-based matching across all opportunity categories."
+      : form.subscription_plan === "pro"
+        ? "Pro includes profile-based matching for up to 2 opportunity categories."
+        : "Free users can browse opportunities. Upgrade to unlock profile-based matching.";
+
+  function updateOpportunityPreferences(values: string[]) {
+    if (maxRankedCategories === 0) {
+      updateField("target_opportunity_types", []);
+      return;
+    }
+
+    updateField("target_opportunity_types", values.slice(0, maxRankedCategories));
   }
 
   function renderExperienceSection(
@@ -923,12 +961,14 @@ export function ProfileForm() {
               <SearchableMultiSelect
                 label="Opportunity preferences"
                 selected={form.target_opportunity_types}
-                onChange={(values) =>
-                  updateField("target_opportunity_types", values)
-                }
+                onChange={updateOpportunityPreferences}
                 options={opportunityTypeOptions}
                 placeholder="Search opportunity type..."
               />
+
+              <p className="text-sm text-muted-foreground">
+                {opportunityPreferenceHelp}
+              </p>
             </div>
           </section>
 

@@ -134,8 +134,9 @@ export default function OpportunitiesPage() {
 
       const { data: scoreData, error: scoreError } = await supabase
         .from("opportunity_competitiveness_scores")
-        .select("opportunity_id, score, fit_label, model_used, updated_at")
-        .eq("user_id", user.id);
+        .select("opportunity_id, score, fit_label, model_used, updated_at, score_status")
+        .eq("user_id", user.id)
+        .eq("score_status", "current");
 
       if (scoreError) {
         setErrorMessage(scoreError.message);

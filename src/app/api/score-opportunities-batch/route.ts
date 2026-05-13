@@ -1,7 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUsageMonth, getPlanLimits } from "@/lib/billing/plans";
+import {
+  getCurrentUsageMonth,
+  getPlanLimits,
+  type PlanLimits,
+} from "@/lib/billing/plans";
+import {
+  buildOpportunityContentHash,
+  buildProfileScoringHash,
+} from "@/lib/scoring/hashes";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -54,6 +62,7 @@ type ExperienceSummaryRow = {
   experience_key: string;
   experience_title: string | null;
   organization: string | null;
+  raw_content_hash: string | null;
   summary: string;
   evidence_tags: string[] | null;
   notable_metrics: string[] | null;
@@ -155,9 +164,50 @@ function textMatchesList(text: unknown, list: unknown) {
   return values.some((value) => target.includes(value) || value.includes(target));
 }
 
+function normalizeOpportunityTypeForScoring(value: string) {
+  const normalized = normalizeText(value);
+
+  const typeMap: Record<string, string> = {
+    scholarship: "scholarship",
+    scholarships: "scholarship",
+    research: "research",
+    "research opportunity": "research",
+    "research opportunities": "research",
+    fellowship: "fellowship",
+    fellowships: "fellowship",
+    competition: "competition",
+    competitions: "competition",
+    "leadership program": "leadership_program",
+    "leadership programs": "leadership_program",
+    leadership_program: "leadership_program",
+  };
+
+  return typeMap[normalized] || normalized;
+}
+
+function getRankedOpportunityTypes(
+  profile: Record<string, unknown>,
+  planLimits: PlanLimits
+) {
+  const selectedTypes = normalizeList(profile.target_opportunity_types).map(
+    normalizeOpportunityTypeForScoring
+  );
+
+  if (planLimits.rankedCategoryLimit === "all") {
+    return selectedTypes;
+  }
+
+  if (typeof planLimits.rankedCategoryLimit === "number") {
+    return selectedTypes.slice(0, planLimits.rankedCategoryLimit);
+  }
+
+  return [];
+}
+
 function opportunityTypeMatches(
   profile: Record<string, unknown>,
-  opportunity: Record<string, unknown>
+  opportunity: Record<string, unknown>,
+  planLimits: PlanLimits
 ) {
   const allowedMvpTypes = [
     "scholarship",
@@ -167,12 +217,16 @@ function opportunityTypeMatches(
     "leadership_program",
   ];
 
-  const selectedTypes = normalizeList(profile.target_opportunity_types);
+  const selectedTypes = getRankedOpportunityTypes(profile, planLimits);
   const opportunityType = normalizeText(opportunity.type);
 
   if (!opportunityType) return false;
 
   if (!allowedMvpTypes.includes(opportunityType)) {
+    return false;
+  }
+
+  if (!planLimits.hasCompetitivenessRanking) {
     return false;
   }
 
@@ -231,15 +285,103 @@ function educationMatches(
   );
 }
 
+function getFieldFamilies(field: unknown) {
+  const normalized = normalizeText(field);
+
+  const stemFields = [
+    "computer science",
+    "software engineering",
+    "computer engineering",
+    "data science",
+    "cybersecurity",
+    "information systems",
+    "engineering",
+    "electrical engineering",
+    "mechanical engineering",
+    "civil engineering",
+    "chemical engineering",
+    "biomedical engineering",
+    "mathematics",
+    "statistics",
+    "physics",
+    "chemistry",
+    "biology",
+    "biochemistry",
+    "biomedical sciences",
+    "neuroscience",
+    "health sciences",
+    "medicine",
+    "nursing",
+    "public health",
+    "kinesiology",
+    "environmental science",
+  ];
+
+  const socialScienceFields = [
+    "economics",
+    "political science",
+    "psychology",
+    "sociology",
+    "anthropology",
+    "international relations",
+    "international development",
+    "public policy",
+    "public administration",
+    "criminology",
+    "social work",
+  ];
+
+  const families = [normalized].filter(Boolean);
+
+  if (stemFields.includes(normalized)) {
+    families.push("stem");
+  }
+
+  if (socialScienceFields.includes(normalized)) {
+    families.push("social sciences", "social science");
+  }
+
+  if (
+    [
+      "biology",
+      "biochemistry",
+      "biomedical sciences",
+      "health sciences",
+      "medicine",
+      "nursing",
+      "public health",
+      "pharmacy",
+      "dentistry",
+      "neuroscience",
+      "kinesiology",
+    ].includes(normalized)
+  ) {
+    families.push("health sciences", "health science");
+  }
+
+  return families;
+}
+
 function fieldMatches(
   profile: Record<string, unknown>,
   opportunity: Record<string, unknown>
 ) {
   if (hasOpenEligibility(opportunity.eligible_fields)) return true;
 
-  return textMatchesList(
-    profile.field_of_study || profile.field_of_study_other,
-    opportunity.eligible_fields
+  const eligibleFields = normalizeList(opportunity.eligible_fields);
+  const profileFields = getFieldFamilies(
+    profile.field_of_study || profile.field_of_study_other
+  );
+
+  if (profileFields.length === 0 || eligibleFields.length === 0) return true;
+
+  return profileFields.some((profileField) =>
+    eligibleFields.some(
+      (eligibleField) =>
+        profileField === eligibleField ||
+        profileField.includes(eligibleField) ||
+        eligibleField.includes(profileField)
+    )
   );
 }
 
@@ -303,14 +445,15 @@ function profileHasEvidence(profile: Record<string, unknown>, evidenceType: stri
 
 function criteriaPriorityScore(
   profile: Record<string, unknown>,
-  opportunity: Record<string, unknown>
+  opportunity: Record<string, unknown>,
+  planLimits: PlanLimits
 ) {
   const criteriaText = getOpportunityCriteriaText(opportunity);
 
   let priority = 0;
 
   // Strong base boosts for core preference/fit matches.
-  if (opportunityTypeMatches(profile, opportunity)) priority += 25;
+  if (opportunityTypeMatches(profile, opportunity, planLimits)) priority += 25;
   if (regionMatches(profile, opportunity)) priority += 15;
   if (educationMatches(profile, opportunity)) priority += 15;
   if (fieldMatches(profile, opportunity)) priority += 15;
@@ -380,11 +523,12 @@ function criteriaPriorityScore(
 
 function shouldScoreOpportunity(
   profile: Record<string, unknown>,
-  opportunity: Record<string, unknown>
+  opportunity: Record<string, unknown>,
+  planLimits: PlanLimits
 ) {
   return (
     deadlineIsActive(opportunity) &&
-    opportunityTypeMatches(profile, opportunity) &&
+    opportunityTypeMatches(profile, opportunity, planLimits) &&
     regionMatches(profile, opportunity) &&
     educationMatches(profile, opportunity) &&
     fieldMatches(profile, opportunity)
@@ -415,8 +559,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const scoreAllEligible = Boolean(body.scoreAllEligible);
     const requestedLimit = Number(body.limit || 10);
-    const limit = Math.max(1, Math.min(10, requestedLimit));
+
+    // Limited mode is for admin/dev testing.
+    // scoreAllEligible mode is for production scoring jobs and can use the user's remaining plan capacity.
+    const limit = scoreAllEligible
+      ? Number.POSITIVE_INFINITY
+      : Math.max(1, Math.min(10, requestedLimit));
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -464,7 +614,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const batchLimit = Math.min(limit, scoresRemaining);
+    const batchLimit = scoreAllEligible
+      ? scoresRemaining
+      : Math.min(limit, scoresRemaining);
 
     const { data: opportunities, error: opportunitiesError } = await supabase
       .from("opportunities")
@@ -485,26 +637,63 @@ export async function POST(request: NextRequest) {
 
     const { data: existingScores } = await supabase
       .from("opportunity_competitiveness_scores")
-      .select("opportunity_id")
+      .select("opportunity_id, profile_scoring_hash, opportunity_content_hash, score_status")
       .eq("user_id", user.id);
 
-    const alreadyScoredIds = new Set(
-      (existingScores || []).map((score) => score.opportunity_id)
+    const { data: experienceSummaryData } = await supabase
+      .from("profile_experience_summaries")
+      .select(
+        "section_key, experience_key, experience_title, organization, raw_content_hash, summary, evidence_tags, notable_metrics"
+      )
+      .eq("user_id", user.id);
+
+    const experienceSummaries =
+      (experienceSummaryData || []) as ExperienceSummaryRow[];
+
+    const currentProfileScoringHash = buildProfileScoringHash({
+      profile: profile as Record<string, unknown>,
+      experienceSummaries,
+    });
+
+    const existingScoreMap = new Map(
+      (existingScores || []).map((score) => [
+        score.opportunity_id,
+        {
+          profile_scoring_hash: score.profile_scoring_hash,
+          opportunity_content_hash: score.opportunity_content_hash,
+          score_status: score.score_status,
+        },
+      ])
     );
 
     const unscored = (opportunities || [])
-      .filter((opportunity) => !alreadyScoredIds.has(opportunity.id))
+      .filter((opportunity) => {
+        const existing = existingScoreMap.get(opportunity.id);
+        const currentOpportunityHash = buildOpportunityContentHash(
+          opportunity as Record<string, unknown>
+        );
+
+        if (!existing) return true;
+
+        return (
+          existing.score_status !== "current" ||
+          existing.profile_scoring_hash !== currentProfileScoringHash ||
+          existing.opportunity_content_hash !== currentOpportunityHash
+        );
+      })
       .filter((opportunity) =>
         shouldScoreOpportunity(
           profile as Record<string, unknown>,
-          opportunity as Record<string, unknown>
+          opportunity as Record<string, unknown>,
+          planLimits
         )
       )
       .map((opportunity) => ({
         opportunity,
         priority: criteriaPriorityScore(
           profile as Record<string, unknown>,
-          opportunity as Record<string, unknown>
+          opportunity as Record<string, unknown>,
+          planLimits
         ),
       }))
       .sort((a, b) => b.priority - a.priority)
@@ -525,18 +714,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { data: experienceSummaryData } = await supabase
-      .from("profile_experience_summaries")
-      .select(
-        "section_key, experience_key, experience_title, organization, summary, evidence_tags, notable_metrics"
-      )
-      .eq("user_id", user.id);
-
     const compactProfile = {
       basic_profile: compactProfileForScoring(profile as Record<string, unknown>),
-      experience_summaries: groupExperienceSummaries(
-        (experienceSummaryData || []) as ExperienceSummaryRow[]
-      ),
+      experience_summaries: groupExperienceSummaries(experienceSummaries),
     };
 
     const scoringOpportunities = unscored.map((opportunity) =>
@@ -607,6 +787,27 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
     const parsed = JSON.parse(cleanJsonResponse(responseText));
     const parsedScores = Array.isArray(parsed.scores) ? parsed.scores : [];
 
+    const scoringCounts = parsedScores.reduce(
+      (counts, item) => {
+        if (
+          !unscored.some(
+            (opportunity) => opportunity.id === item.opportunity_id
+          )
+        ) {
+          return counts;
+        }
+
+        if (existingScoreMap.has(item.opportunity_id)) {
+          counts.refreshed += 1;
+        } else {
+          counts.created += 1;
+        }
+
+        return counts;
+      },
+      { created: 0, refreshed: 0 }
+    );
+
     const scoreRows = parsedScores
       .filter((item) =>
         unscored.some((opportunity) => opportunity.id === item.opportunity_id)
@@ -624,6 +825,13 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
           model_used: "gemini-2.5-pro",
           profile_snapshot: compactProfile,
           opportunity_snapshot: opportunity,
+          profile_scoring_hash: currentProfileScoringHash,
+          opportunity_content_hash: buildOpportunityContentHash(
+            opportunity as Record<string, unknown>
+          ),
+          score_status: "current",
+          stale_reason: null,
+          last_scored_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
       });
@@ -675,6 +883,11 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
 
     return NextResponse.json({
       scores: savedScores,
+      counts: {
+        total: savedScores?.length || 0,
+        created: scoringCounts.created,
+        refreshed: scoringCounts.refreshed,
+      },
       usage: {
         plan,
         competitivenessScoresUsed: newScoresUsed,

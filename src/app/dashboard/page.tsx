@@ -208,8 +208,9 @@ export default function DashboardPage() {
 
       const { data: scoreData } = await supabase
         .from("opportunity_competitiveness_scores")
-        .select("opportunity_id, score, fit_label, model_used, updated_at")
-        .eq("user_id", user.id);
+        .select("opportunity_id, score, fit_label, model_used, updated_at, score_status")
+        .eq("user_id", user.id)
+        .eq("score_status", "current");
 
       setProfile(profileData as Profile | null);
       setOpportunities((opportunityData || []) as Opportunity[]);
@@ -429,13 +430,13 @@ export default function DashboardPage() {
                 <div className="mt-6 grid gap-4 md:grid-cols-3">
                   <div className="rounded-xl border p-4">
                     <p className="text-sm text-muted-foreground">
-                      Opportunities with competitiveness scores
+                      Scored opportunities
                     </p>
                     <p className="mt-2 text-3xl font-semibold">
                       {opportunitiesWithCompetitivenessScores}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Evaluated against your profile.
+                      Opportunities with competitiveness scores assigned based on your profile.
                     </p>
                   </div>
 

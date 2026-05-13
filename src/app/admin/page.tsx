@@ -102,6 +102,8 @@ export default function AdminPage() {
   const [scoringMessage, setScoringMessage] = useState("");
   const [summarizing, setSummarizing] = useState(false);
   const [summaryMessage, setSummaryMessage] = useState("");
+  const [runningScoringJob, setRunningScoringJob] = useState(false);
+  const [scoringJobMessage, setScoringJobMessage] = useState("");
 
   useEffect(() => {
     async function loadAdminData() {
@@ -272,6 +274,68 @@ export default function AdminPage() {
     }
 
     setSummarizing(false);
+  }
+
+  async function runDueScoringJob() {
+    setRunningScoringJob(true);
+    setScoringJobMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setScoringJobMessage("Please log in again before running scoring jobs.");
+      setRunningScoringJob(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/scoring-jobs/run", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        const rawError =
+          typeof result.error === "string"
+            ? result.error
+            : result.error?.message || "Scoring job failed.";
+
+        const friendlyError = rawError.includes("high demand")
+          ? "Gemini Pro is temporarily busy. Please try again in a few minutes."
+          : rawError;
+
+        setScoringJobMessage(friendlyError);
+        setRunningScoringJob(false);
+        return;
+      }
+
+      if (!result.ran) {
+        setScoringJobMessage(result.message || "No due scoring jobs found.");
+        setRunningScoringJob(false);
+        return;
+      }
+
+      const created = result.job?.scores_created || 0;
+      const refreshed = result.job?.scores_refreshed || 0;
+      const total = created + refreshed;
+
+      setScoringJobMessage(
+        `Scoring job completed. ${total} opportunities evaluated: ${created} new, ${refreshed} refreshed.`
+      );
+    } catch (error) {
+      setScoringJobMessage(
+        error instanceof Error ? error.message : "Scoring job failed."
+      );
+    }
+
+    setRunningScoringJob(false);
   }
 
   return (
@@ -448,6 +512,34 @@ export default function AdminPage() {
                       {summaryMessage && (
                         <p className="mt-4 text-sm text-muted-foreground">
                           {summaryMessage}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="p-6">
+                      <h2 className="text-xl font-semibold">Scoring jobs</h2>
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                        Run the next due scoring job for the current user. This
+                        processes scheduled opportunity evaluations using the
+                        user’s plan rules and saved profile intelligence.
+                      </p>
+
+                      <Button
+                        type="button"
+                        className="mt-5"
+                        onClick={runDueScoringJob}
+                        disabled={runningScoringJob}
+                      >
+                        {runningScoringJob
+                          ? "Running job..."
+                          : "Run due scoring job"}
+                      </Button>
+
+                      {scoringJobMessage && (
+                        <p className="mt-4 text-sm text-muted-foreground">
+                          {scoringJobMessage}
                         </p>
                       )}
                     </CardContent>
