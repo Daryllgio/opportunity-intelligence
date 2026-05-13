@@ -66,7 +66,14 @@ export default function HarvesterLogsPage() {
         .order("created_at", { ascending: false })
         .limit(100);
 
-      setLogs((data || []) as ScanLog[]);
+      const normalizedLogs = (data || []).map((log) => ({
+        ...log,
+        opportunity_sources: Array.isArray(log.opportunity_sources)
+          ? log.opportunity_sources[0] || null
+          : log.opportunity_sources,
+      }));
+
+      setLogs(normalizedLogs as unknown as ScanLog[]);
       setLoading(false);
     }
 
