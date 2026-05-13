@@ -31,6 +31,21 @@ function createSupabaseForRequest(request: NextRequest) {
   );
 }
 
+function createServiceSupabase() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL.");
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY.");
+  }
+
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
+
 function cleanJsonResponse(text: string) {
   return text
     .replace(/^```json/i, "")
@@ -544,21 +559,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createSupabaseForRequest(request);
+    const body = await request.json();
+    const isCronRequest =
+      body.cronUserId &&
+      body.cronSecret &&
+      process.env.CRON_SECRET &&
+      body.cronSecret === process.env.CRON_SECRET;
 
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+    const supabase = isCronRequest
+      ? createServiceSupabase()
+      : createSupabaseForRequest(request);
 
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: "You must be logged in to score opportunities." },
-        { status: 401 }
-      );
+    let userId = "";
+
+    if (isCronRequest) {
+      userId = String(body.cronUserId);
+    } else {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        return NextResponse.json(
+          { error: "You must be logged in to score opportunities." },
+          { status: 401 }
+        );
+      }
+
+      userId = user.id;
     }
 
-    const body = await request.json();
     const scoreAllEligible = Boolean(body.scoreAllEligible);
     const requestedLimit = Number(body.limit || 10);
 
@@ -571,7 +602,7 @@ export async function POST(request: NextRequest) {
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("*")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle();
 
     if (profileError || !profile) {
@@ -598,7 +629,7 @@ export async function POST(request: NextRequest) {
     const { data: existingUsage } = await supabase
       .from("user_ai_usage")
       .select("id, competitiveness_scores_used, gap_reports_used")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("usage_month", usageMonth)
       .maybeSingle();
 
@@ -638,14 +669,14 @@ export async function POST(request: NextRequest) {
     const { data: existingScores } = await supabase
       .from("opportunity_competitiveness_scores")
       .select("opportunity_id, profile_scoring_hash, opportunity_content_hash, score_status")
-      .eq("user_id", user.id);
+      .eq("user_id", userId);
 
     const { data: experienceSummaryData } = await supabase
       .from("profile_experience_summaries")
       .select(
         "section_key, experience_key, experience_title, organization, raw_content_hash, summary, evidence_tags, notable_metrics"
       )
-      .eq("user_id", user.id);
+      .eq("user_id", userId);
 
     const experienceSummaries =
       (experienceSummaryData || []) as ExperienceSummaryRow[];
@@ -818,7 +849,7 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
         );
 
         return {
-          user_id: user.id,
+          user_id: userId,
           opportunity_id: item.opportunity_id,
           score: validateScore(item.overall_score),
           fit_label: validateFitLabel(item.fit_label),
@@ -870,7 +901,7 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
       }
     } else {
       const { error: usageError } = await supabase.from("user_ai_usage").insert({
-        user_id: user.id,
+        user_id: userId,
         usage_month: usageMonth,
         competitiveness_scores_used: scoreRows.length,
         gap_reports_used: 0,
