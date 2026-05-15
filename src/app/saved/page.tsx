@@ -124,7 +124,14 @@ export default function SavedPage() {
         .order("created_at", { ascending: false });
 
       if (!error && profileData) {
-        const scored = ((data || []) as SavedOpportunity[])
+        const normalizedSaved = (data || []).map((item) => ({
+          ...item,
+          opportunities: Array.isArray(item.opportunities)
+            ? item.opportunities[0] || null
+            : item.opportunities,
+        })) as unknown as SavedOpportunity[];
+
+        const scored = normalizedSaved
           .filter((item) => item.opportunities)
           .map((item) => {
             const opportunity = item.opportunities as Opportunity;

@@ -212,10 +212,17 @@ export default function DashboardPage() {
         .eq("user_id", user.id)
         .eq("score_status", "current");
 
+      const normalizedSaved = (savedData || []).map((savedItem) => ({
+        ...savedItem,
+        opportunities: Array.isArray(savedItem.opportunities)
+          ? savedItem.opportunities[0] || null
+          : savedItem.opportunities,
+      }));
+
       setProfile(profileData as Profile | null);
       setOpportunities((opportunityData || []) as Opportunity[]);
       setCompetitivenessScores((scoreData || []) as CompetitivenessScore[]);
-      setSaved((savedData || []) as SavedOpportunity[]);
+      setSaved(normalizedSaved as unknown as SavedOpportunity[]);
       setUsage(usageData as AiUsage | null);
       setLoading(false);
     }

@@ -72,6 +72,13 @@ function validateFitLabel(value: unknown) {
   return "Developing fit";
 }
 
+
+type ParsedCompetitivenessScore = {
+  opportunity_id: string;
+  overall_score: number;
+  fit_label: string;
+};
+
 type ExperienceSummaryRow = {
   section_key: string;
   experience_key: string;
@@ -816,10 +823,15 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
     }
 
     const parsed = JSON.parse(cleanJsonResponse(responseText));
-    const parsedScores = Array.isArray(parsed.scores) ? parsed.scores : [];
+    const parsedScores: ParsedCompetitivenessScore[] = Array.isArray(parsed.scores)
+      ? parsed.scores
+      : [];
 
     const scoringCounts = parsedScores.reduce(
-      (counts, item) => {
+      (
+        counts: { created: number; refreshed: number },
+        item: ParsedCompetitivenessScore
+      ) => {
         if (
           !unscored.some(
             (opportunity) => opportunity.id === item.opportunity_id

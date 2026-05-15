@@ -117,7 +117,13 @@ export default function AdminReviewPage() {
         .order("created_at", { ascending: false });
 
     if (!error) {
-      const loadedDrafts = (data || []) as DraftOpportunity[];
+      const loadedDrafts = (data || []).map((draft) => ({
+        ...draft,
+        opportunity_sources: Array.isArray(draft.opportunity_sources)
+          ? draft.opportunity_sources[0] || null
+          : draft.opportunity_sources,
+      })) as unknown as DraftOpportunity[];
+
       setDrafts(loadedDrafts);
 
       const initialNotes: Record<string, string> = {};

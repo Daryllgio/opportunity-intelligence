@@ -32,6 +32,10 @@ function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
+function laterDate(left: Date, right: Date) {
+  return left.getTime() > right.getTime() ? left : right;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = createSupabaseForRequest(request);
@@ -94,17 +98,31 @@ export async function POST(request: NextRequest) {
       .order("last_scored_at", { ascending: false, nullsFirst: false })
       .limit(1);
 
+    const { data: latestCompletedJob } = await supabase
+      .from("user_scoring_jobs")
+      .select("id, completed_at")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .in("job_type", ["initial_scoring", "profile_refresh"])
+      .order("completed_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
     const latestScore = existingScores?.[0] || null;
     const hasExistingScores = Boolean(latestScore);
 
     const now = new Date();
     const jobType = hasExistingScores ? "profile_refresh" : "initial_scoring";
 
-    const scheduledFor = !hasExistingScores
-      ? now
-      : planLimits.rankingRefreshLevel === "priority"
-        ? addMinutes(now, 15)
-        : addMinutes(now, 60);
+    const baseScheduledFor = !hasExistingScores ? now : addMinutes(now, 10);
+
+    const minimumNextRefreshAt = latestCompletedJob?.completed_at
+      ? addMinutes(new Date(latestCompletedJob.completed_at), 30)
+      : baseScheduledFor;
+
+    const scheduledFor = hasExistingScores
+      ? laterDate(baseScheduledFor, minimumNextRefreshAt)
+      : baseScheduledFor;
 
     const { data: existingPendingJob } = await supabase
       .from("user_scoring_jobs")
@@ -133,6 +151,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         scheduled: true,
         mode: "existing_pending_job_already_current",
+        message: "A scoring job is already pending for this profile version.",
         job: existingPendingJob,
       });
     }
@@ -143,7 +162,6 @@ export async function POST(request: NextRequest) {
         .update({
           job_type: jobType,
           profile_scoring_hash: currentProfileScoringHash,
-          scheduled_for: scheduledFor.toISOString(),
           last_error: null,
           updated_at: new Date().toISOString(),
         })

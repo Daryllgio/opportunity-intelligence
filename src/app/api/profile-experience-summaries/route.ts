@@ -3,6 +3,14 @@ import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
+
+type GeneratedExperienceSummary = {
+  section_key?: string;
+  experience_key?: string;
+  summary?: string;
+  evidence_tags?: string[];
+  notable_metrics?: string[];
+};
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
@@ -543,7 +551,7 @@ ${JSON.stringify(grouped, null, 2)}
     }
 
     const rows = summaries
-      .map((summary) => {
+      .map((summary: GeneratedExperienceSummary) => {
         const sectionKey = String(summary.section_key || "");
         const experienceKey = String(summary.experience_key || "");
         const original = experienceMap.get(`${sectionKey}:${experienceKey}`);

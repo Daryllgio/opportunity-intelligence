@@ -26,7 +26,7 @@ function fieldAlignment(profile: StudentProfileForScoring, opportunity: Opportun
 
   if (text.includes(profileField)) return 95;
 
-  const broadMatches = [
+  const broadMatches: [string, string[]][] = [
     ["computer", ["technology", "stem", "engineering", "data"]],
     ["biology", ["health", "medicine", "life sciences", "stem"]],
     ["medicine", ["health", "public health", "biology"]],
