@@ -110,6 +110,10 @@ export default function AdminPage() {
     useState(false);
   const [lifecycleMaintenanceMessage, setLifecycleMaintenanceMessage] =
     useState("");
+  const [runningDueOpportunityChecks, setRunningDueOpportunityChecks] =
+    useState(false);
+  const [dueOpportunityChecksMessage, setDueOpportunityChecksMessage] =
+    useState("");
 
   useEffect(() => {
     async function loadAdminData() {
@@ -342,6 +346,53 @@ export default function AdminPage() {
     }
 
     setRunningScoringJob(false);
+  }
+
+  async function runDueOpportunityChecks() {
+    setRunningDueOpportunityChecks(true);
+    setDueOpportunityChecksMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setDueOpportunityChecksMessage(
+        "Please log in again before running due opportunity checks."
+      );
+      setRunningDueOpportunityChecks(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/admin/run-due-opportunity-checks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setDueOpportunityChecksMessage(
+          result.error || "Due opportunity checks failed."
+        );
+        setRunningDueOpportunityChecks(false);
+        return;
+      }
+
+      setDueOpportunityChecksMessage(
+        `Due checks completed. ${result.processed} processed: ${result.renewalWindow} renewal, ${result.preDeadline} pre-deadline, ${result.rolling} rolling.`
+      );
+    } catch (error) {
+      setDueOpportunityChecksMessage(
+        error instanceof Error ? error.message : "Due opportunity checks failed."
+      );
+    }
+
+    setRunningDueOpportunityChecks(false);
   }
 
   async function runOpportunityLifecycleMaintenance() {
@@ -670,6 +721,35 @@ export default function AdminPage() {
                         {lifecycleMaintenanceMessage && (
                           <p className="mt-4 text-sm text-muted-foreground">
                             {lifecycleMaintenanceMessage}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-6 border-t pt-5">
+                        <h3 className="text-sm font-medium">
+                          Due opportunity checks
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                          Process opportunities whose next lifecycle check is
+                          due. This prepares renewal, rolling, and pre-deadline
+                          checks without running expensive scraping yet.
+                        </p>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="mt-4"
+                          onClick={runDueOpportunityChecks}
+                          disabled={runningDueOpportunityChecks}
+                        >
+                          {runningDueOpportunityChecks
+                            ? "Running due checks..."
+                            : "Run due opportunity checks"}
+                        </Button>
+
+                        {dueOpportunityChecksMessage && (
+                          <p className="mt-4 text-sm text-muted-foreground">
+                            {dueOpportunityChecksMessage}
                           </p>
                         )}
                       </div>
