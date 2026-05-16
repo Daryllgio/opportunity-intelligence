@@ -1,9 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import {
-  addDays,
-  computeNextLifecycleCheck,
-} from "@/lib/opportunities/lifecycle";
+import { recheckOpportunity } from "@/lib/opportunities/recheck-opportunity";
 
 function createSupabaseForRequest(request: NextRequest) {
   const authHeader = request.headers.get("authorization") || "";
@@ -69,60 +66,55 @@ export async function POST(request: NextRequest) {
     let renewalWindow = 0;
     let preDeadline = 0;
     let rolling = 0;
-    let noFurtherCheck = 0;
+    let usedGemini = 0;
+    let unchanged = 0;
+    let contentChanged = 0;
+    let criteriaChanged = 0;
+    let extractedNoStructuredChange = 0;
+    let missingUrl = 0;
+    let fetchFailed = 0;
+    let failed = 0;
+    let scoresMarkedStale = 0;
 
     for (const opportunity of dueOpportunities || []) {
       processed += 1;
 
-      let next_check_at: string | null = null;
-      let check_reason: string | null = null;
-
-      if (opportunity.check_reason === "renewal_window") {
-        renewalWindow += 1;
-
-        // During renewal windows, check every 14 days.
-        next_check_at = addDays(now, 14).toISOString();
-        check_reason = "renewal_window";
-      } else if (opportunity.check_reason === "rolling_recheck") {
-        rolling += 1;
-
-        // Rolling opportunities are rechecked every ~75 days.
-        next_check_at = addDays(now, 75).toISOString();
-        check_reason = "rolling_recheck";
-      } else if (opportunity.check_reason === "pre_deadline_verification") {
+      if (opportunity.check_reason === "renewal_window") renewalWindow += 1;
+      if (opportunity.check_reason === "pre_deadline_verification") {
         preDeadline += 1;
-
-        // After the pre-deadline verification point is reached, do not schedule
-        // repeated checks before the deadline. Expiration maintenance will handle
-        // the opportunity when the deadline passes.
-        next_check_at = null;
-        check_reason = "no_recurring_check_needed";
-        noFurtherCheck += 1;
-      } else {
-        const nextCheck = computeNextLifecycleCheck(opportunity, now);
-        next_check_at = nextCheck.next_check_at;
-        check_reason = nextCheck.check_reason;
       }
+      if (opportunity.check_reason === "rolling_recheck") rolling += 1;
 
-      const { error: updateError } = await supabase
-        .from("opportunities")
-        .update({
-          last_checked_at: now.toISOString(),
-          next_check_at,
-          check_reason,
-          updated_at: now.toISOString(),
-        })
-        .eq("id", opportunity.id);
+      try {
+        const result = await recheckOpportunity({
+          supabase,
+          opportunityId: opportunity.id,
+        });
 
-      if (updateError) {
-        return NextResponse.json(
-          {
-            error: updateError.message,
-            opportunity_id: opportunity.id,
-            title: opportunity.title,
-          },
-          { status: 500 }
-        );
+        if (result.usedGemini) usedGemini += 1;
+        if (result.outcome === "unchanged_page") unchanged += 1;
+        if (result.outcome === "missing_url") missingUrl += 1;
+        if (result.outcome === "fetch_failed") fetchFailed += 1;
+        if (result.outcome === "extracted_no_structured_change") {
+          extractedNoStructuredChange += 1;
+        }
+        if (result.contentChanged) contentChanged += 1;
+        if (result.criteriaChanged) criteriaChanged += 1;
+        scoresMarkedStale += result.scoresMarkedStale || 0;
+      } catch (error) {
+        failed += 1;
+
+        await supabase
+          .from("opportunities")
+          .update({
+            last_recheck_error:
+              error instanceof Error
+                ? error.message
+                : "Failed during due opportunity recheck.",
+            last_rechecked_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", opportunity.id);
       }
     }
 
@@ -131,7 +123,15 @@ export async function POST(request: NextRequest) {
       renewalWindow,
       preDeadline,
       rolling,
-      noFurtherCheck,
+      usedGemini,
+      unchanged,
+      contentChanged,
+      criteriaChanged,
+      extractedNoStructuredChange,
+      missingUrl,
+      fetchFailed,
+      failed,
+      scoresMarkedStale,
     });
   } catch (error) {
     return NextResponse.json(

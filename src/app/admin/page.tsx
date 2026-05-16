@@ -384,7 +384,7 @@ export default function AdminPage() {
       }
 
       setDueOpportunityChecksMessage(
-        `Due checks completed. ${result.processed} processed: ${result.renewalWindow} renewal, ${result.preDeadline} pre-deadline, ${result.rolling} rolling.`
+        `Due checks completed. ${result.processed} processed: ${result.usedGemini} used Gemini, ${result.unchanged} unchanged, ${result.contentChanged} content changed, ${result.criteriaChanged} criteria changed, ${result.extractedNoStructuredChange} extracted with no structured change, ${result.missingUrl} missing URL, ${result.fetchFailed} fetch failed, ${result.scoresMarkedStale} scores marked stale, ${result.failed} failed.`
       );
     } catch (error) {
       setDueOpportunityChecksMessage(
