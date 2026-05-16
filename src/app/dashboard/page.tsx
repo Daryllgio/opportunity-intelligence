@@ -163,6 +163,7 @@ export default function DashboardPage() {
         )
         .eq("is_active", true)
         .eq("is_approved", true)
+        .eq("lifecycle_status", "active")
         .in("type", [
           "scholarship",
           "research",
@@ -192,7 +193,8 @@ export default function DashboardPage() {
             reward_level,
             eligible_education_levels,
             eligible_fields,
-            competitiveness_factors
+            competitiveness_factors,
+            lifecycle_status
           )
         `
         )

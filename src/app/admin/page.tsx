@@ -104,6 +104,8 @@ export default function AdminPage() {
   const [summaryMessage, setSummaryMessage] = useState("");
   const [runningScoringJob, setRunningScoringJob] = useState(false);
   const [scoringJobMessage, setScoringJobMessage] = useState("");
+  const [backfillingLifecycle, setBackfillingLifecycle] = useState(false);
+  const [lifecycleMessage, setLifecycleMessage] = useState("");
 
   useEffect(() => {
     async function loadAdminData() {
@@ -338,6 +340,49 @@ export default function AdminPage() {
     setRunningScoringJob(false);
   }
 
+  async function backfillOpportunityLifecycle() {
+    setBackfillingLifecycle(true);
+    setLifecycleMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setLifecycleMessage("Please log in again before running lifecycle maintenance.");
+      setBackfillingLifecycle(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/admin/backfill-opportunity-lifecycle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setLifecycleMessage(result.error || "Lifecycle backfill failed.");
+        setBackfillingLifecycle(false);
+        return;
+      }
+
+      setLifecycleMessage(
+        `Lifecycle backfill completed. ${result.updated} opportunities updated: ${result.active} active, ${result.expired} expired.`
+      );
+    } catch (error) {
+      setLifecycleMessage(
+        error instanceof Error ? error.message : "Lifecycle backfill failed."
+      );
+    }
+
+    setBackfillingLifecycle(false);
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <AppNav />
@@ -512,6 +557,36 @@ export default function AdminPage() {
                       {summaryMessage && (
                         <p className="mt-4 text-sm text-muted-foreground">
                           {summaryMessage}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="p-6">
+                      <h2 className="text-xl font-semibold">
+                        Opportunity lifecycle
+                      </h2>
+                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                        Backfill lifecycle status, canonical keys, content
+                        hashes, criteria hashes, application cycles, and next
+                        check dates for existing opportunities.
+                      </p>
+
+                      <Button
+                        type="button"
+                        className="mt-5"
+                        onClick={backfillOpportunityLifecycle}
+                        disabled={backfillingLifecycle}
+                      >
+                        {backfillingLifecycle
+                          ? "Backfilling lifecycle..."
+                          : "Backfill opportunity lifecycle"}
+                      </Button>
+
+                      {lifecycleMessage && (
+                        <p className="mt-4 text-sm text-muted-foreground">
+                          {lifecycleMessage}
                         </p>
                       )}
                     </CardContent>

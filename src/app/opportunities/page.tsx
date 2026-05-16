@@ -117,6 +117,7 @@ export default function OpportunitiesPage() {
         )
         .eq("is_active", true)
         .eq("is_approved", true)
+        .eq("lifecycle_status", "active")
         .in("type", [
           "scholarship",
           "research",

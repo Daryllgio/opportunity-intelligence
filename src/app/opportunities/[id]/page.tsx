@@ -80,6 +80,7 @@ export default function OpportunityDetailPage() {
         .eq("id", opportunityId)
         .eq("is_active", true)
         .eq("is_approved", true)
+        .eq("lifecycle_status", "active")
         .maybeSingle();
 
       if (error) {

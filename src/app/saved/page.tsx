@@ -29,6 +29,7 @@ type Opportunity = {
   reward_level: string | null;
   application_url: string | null;
   competitiveness_factors: string[] | null;
+  lifecycle_status: string | null;
 };
 
 type SavedOpportunity = {
@@ -132,7 +133,11 @@ export default function SavedPage() {
         })) as unknown as SavedOpportunity[];
 
         const scored = normalizedSaved
-          .filter((item) => item.opportunities)
+          .filter(
+            (item) =>
+              item.opportunities &&
+              item.opportunities.lifecycle_status === "active"
+          )
           .map((item) => {
             const opportunity = item.opportunities as Opportunity;
 
