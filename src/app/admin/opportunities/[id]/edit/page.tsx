@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
+import { updateOpportunityWithLifecycle } from "@/lib/opportunities/update-opportunity";
 
 type OpportunityForm = {
   title: string;
@@ -137,32 +138,41 @@ export default function EditOpportunityPage() {
     const finalUrl = form.source_url || form.application_url;
     const normalizedUrl = normalizeUrl(finalUrl);
 
-    const { error } = await supabase
-      .from("opportunities")
-      .update({
-        title: form.title.trim(),
-        provider: form.provider.trim() || null,
-        type: form.type,
-        description: form.description.trim(),
-        ai_summary: form.ai_summary.trim(),
-        country: form.country.trim() || "Global",
-        eligible_countries: splitList(form.eligible_countries),
-        eligible_education_levels: splitList(form.eligible_education_levels),
-        eligible_fields: splitList(form.eligible_fields),
-        funding_amount: form.funding_amount.trim() || null,
-        funding_type: form.funding_type.trim() || null,
-        deadline: form.deadline || null,
-        application_url: form.application_url.trim() || null,
-        source_url: form.source_url.trim() || form.application_url.trim() || null,
-        normalized_url: normalizedUrl || null,
-        effort_level: form.effort_level,
-        reward_level: form.reward_level,
-        competitiveness_factors: splitList(form.competitiveness_factors),
-        is_active: form.is_active,
-        is_approved: form.is_approved,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", params.id);
+    let error: Error | null = null;
+
+    try {
+      await updateOpportunityWithLifecycle({
+        supabase,
+        opportunityId: String(params.id),
+        updates: {
+          title: form.title.trim(),
+          provider: form.provider.trim() || null,
+          type: form.type,
+          description: form.description.trim(),
+          ai_summary: form.ai_summary.trim(),
+          country: form.country.trim() || "Global",
+          eligible_countries: splitList(form.eligible_countries),
+          eligible_education_levels: splitList(form.eligible_education_levels),
+          eligible_fields: splitList(form.eligible_fields),
+          funding_amount: form.funding_amount.trim() || null,
+          funding_type: form.funding_type.trim() || null,
+          deadline: form.deadline || null,
+          application_url: form.application_url.trim() || null,
+          source_url: form.source_url.trim() || form.application_url.trim() || null,
+          normalized_url: normalizedUrl || null,
+          effort_level: form.effort_level,
+          reward_level: form.reward_level,
+          competitiveness_factors: splitList(form.competitiveness_factors),
+          is_active: form.is_active,
+          is_approved: form.is_approved,
+        },
+      });
+    } catch (caughtError) {
+      error =
+        caughtError instanceof Error
+          ? caughtError
+          : new Error("Failed to update opportunity.");
+    }
 
     setSaving(false);
 
