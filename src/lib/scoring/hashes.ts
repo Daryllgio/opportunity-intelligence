@@ -121,3 +121,27 @@ export function buildOpportunityContentHash(
 ) {
   return hashObject(buildOpportunityContentFingerprint(opportunity));
 }
+
+export function buildOpportunityCriteriaFingerprint(
+  opportunity: Record<string, unknown>
+) {
+  return {
+    type: opportunity.type,
+    country: opportunity.country,
+    eligible_countries: opportunity.eligible_countries,
+    eligible_education_levels: opportunity.eligible_education_levels,
+    eligible_fields: opportunity.eligible_fields,
+    funding_amount: opportunity.funding_amount,
+    funding_type: opportunity.funding_type,
+    deadline: opportunity.deadline,
+    effort_level: opportunity.effort_level,
+    reward_level: opportunity.reward_level,
+    competitiveness_factors: opportunity.competitiveness_factors,
+  };
+}
+
+export function buildOpportunityCriteriaHash(
+  opportunity: Record<string, unknown>
+) {
+  return hashObject(buildOpportunityCriteriaFingerprint(opportunity));
+}

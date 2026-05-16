@@ -8,6 +8,7 @@ import {
 } from "@/lib/billing/plans";
 import {
   buildOpportunityContentHash,
+  buildOpportunityCriteriaHash,
   buildProfileScoringHash,
 } from "@/lib/scoring/hashes";
 
@@ -675,7 +676,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existingScores } = await supabase
       .from("opportunity_competitiveness_scores")
-      .select("opportunity_id, profile_scoring_hash, opportunity_content_hash, score_status")
+      .select("opportunity_id, profile_scoring_hash, opportunity_content_hash, opportunity_criteria_hash, score_status")
       .eq("user_id", userId);
 
     const { data: experienceSummaryData } = await supabase
@@ -699,6 +700,7 @@ export async function POST(request: NextRequest) {
         {
           profile_scoring_hash: score.profile_scoring_hash,
           opportunity_content_hash: score.opportunity_content_hash,
+          opportunity_criteria_hash: score.opportunity_criteria_hash,
           score_status: score.score_status,
         },
       ])
@@ -870,6 +872,9 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
           opportunity_snapshot: opportunity,
           profile_scoring_hash: currentProfileScoringHash,
           opportunity_content_hash: buildOpportunityContentHash(
+            opportunity as Record<string, unknown>
+          ),
+          opportunity_criteria_hash: buildOpportunityCriteriaHash(
             opportunity as Record<string, unknown>
           ),
           score_status: "current",
