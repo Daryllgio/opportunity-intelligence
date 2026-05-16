@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
+import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 
 type Opportunity = {
   id: string;
@@ -50,7 +51,7 @@ export default function AdminOpportunitiesPage() {
     const { data, error } = await supabase
       .from("opportunities")
       .select(
-        "id, title, provider, type, ai_summary, country, funding_amount, deadline, is_active, is_approved, updated_at, created_at"
+        "id, title, provider, type, ai_summary, country, funding_amount, deadline, is_active, is_approved, lifecycle_status, updated_at, created_at"
       )
       .order("updated_at", { ascending: false });
 
@@ -64,12 +65,25 @@ export default function AdminOpportunitiesPage() {
   }
 
   async function toggleActive(opportunity: Opportunity) {
+    const now = new Date().toISOString();
+    const activating = !opportunity.is_active;
+
+    const updates = activating
+      ? {
+          ...buildLifecycleFields(opportunity as unknown as Record<string, unknown>),
+          archived_at: null,
+          updated_at: now,
+        }
+      : {
+          is_active: false,
+          lifecycle_status: "archived",
+          archived_at: now,
+          updated_at: now,
+        };
+
     const { error } = await supabase
       .from("opportunities")
-      .update({
-        is_active: !opportunity.is_active,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updates)
       .eq("id", opportunity.id);
 
     if (error) {

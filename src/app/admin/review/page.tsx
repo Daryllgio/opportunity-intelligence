@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
+import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
+import { updateOpportunityWithLifecycle } from "@/lib/opportunities/update-opportunity";
 
 type DraftOpportunity = {
   id: string;
@@ -190,7 +192,7 @@ export default function AdminReviewPage() {
       }
     }
 
-    const { error: insertError } = await supabase.from("opportunities").insert({
+const opportunityPayload = {
       normalized_url: normalizedUrl || null,
       title: draft.title,
       provider: draft.provider,
@@ -211,6 +213,11 @@ export default function AdminReviewPage() {
       source_url: draft.source_url || draft.application_url,
       is_active: true,
       is_approved: true,
+    };
+
+    const { error: insertError } = await supabase.from("opportunities").insert({
+      ...opportunityPayload,
+      ...buildLifecycleFields(opportunityPayload),
       updated_at: new Date().toISOString(),
     });
 
@@ -250,32 +257,41 @@ export default function AdminReviewPage() {
     const draftUrl = draft.source_url || draft.application_url || "";
     const normalizedUrl = draft.normalized_url || normalizeUrl(draftUrl);
 
-    const { error: updateError } = await supabase
-      .from("opportunities")
-      .update({
-        normalized_url: normalizedUrl || null,
-        title: draft.title,
-        provider: draft.provider,
-        type: draft.type,
-        description: draft.description,
-        ai_summary: draft.ai_summary,
-        country: draft.country || "Global",
-        eligible_countries: draft.eligible_countries || [],
-        eligible_education_levels: draft.eligible_education_levels || [],
-        eligible_fields: draft.eligible_fields || [],
-        funding_amount: draft.funding_amount,
-        funding_type: draft.funding_type,
-        deadline: draft.deadline,
-        application_url: draft.application_url,
-        effort_level: draft.effort_level,
-        reward_level: draft.reward_level,
-        competitiveness_factors: draft.competitiveness_factors || [],
-        source_url: draft.source_url || draft.application_url,
-        is_active: true,
-        is_approved: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", duplicate.id);
+    let updateError: Error | null = null;
+
+    try {
+      await updateOpportunityWithLifecycle({
+        supabase,
+        opportunityId: duplicate.id,
+        updates: {
+          normalized_url: normalizedUrl || null,
+          title: draft.title,
+          provider: draft.provider,
+          type: draft.type,
+          description: draft.description,
+          ai_summary: draft.ai_summary,
+          country: draft.country || "Global",
+          eligible_countries: draft.eligible_countries || [],
+          eligible_education_levels: draft.eligible_education_levels || [],
+          eligible_fields: draft.eligible_fields || [],
+          funding_amount: draft.funding_amount,
+          funding_type: draft.funding_type,
+          deadline: draft.deadline,
+          application_url: draft.application_url,
+          effort_level: draft.effort_level,
+          reward_level: draft.reward_level,
+          competitiveness_factors: draft.competitiveness_factors || [],
+          source_url: draft.source_url || draft.application_url,
+          is_active: true,
+          is_approved: true,
+        },
+      });
+    } catch (caughtError) {
+      updateError =
+        caughtError instanceof Error
+          ? caughtError
+          : new Error("Failed to update existing opportunity.");
+    }
 
     if (updateError) {
       setMessage(updateError.message);
