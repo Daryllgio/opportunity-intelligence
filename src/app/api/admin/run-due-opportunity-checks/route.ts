@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
     let existingRenewedLinked = 0;
     let failed = 0;
     let scoresMarkedStale = 0;
+    let scoresReused = 0;
 
     for (const opportunity of dueOpportunities || []) {
       processed += 1;
@@ -109,6 +110,7 @@ export async function POST(request: NextRequest) {
         if (result.contentChanged) contentChanged += 1;
         if (result.criteriaChanged) criteriaChanged += 1;
         scoresMarkedStale += result.scoresMarkedStale || 0;
+        scoresReused += result.reusedScores || 0;
       } catch (error) {
         failed += 1;
 
@@ -143,6 +145,7 @@ export async function POST(request: NextRequest) {
       existingRenewedLinked,
       failed,
       scoresMarkedStale,
+      scoresReused,
     });
   } catch (error) {
     return NextResponse.json(

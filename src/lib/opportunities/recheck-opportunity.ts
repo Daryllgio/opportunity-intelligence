@@ -11,6 +11,7 @@ import {
   pickRecheckUrl,
 } from "@/lib/opportunities/page-recheck";
 import { reextractOpportunityFromPage } from "@/lib/opportunities/reextract-opportunity";
+import { reuseScoresForRenewedOpportunity } from "@/lib/opportunities/reuse-renewed-scores";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -43,7 +44,7 @@ async function linkExistingRenewedCycleIfPresent({
 
   const { data: existingRenewed, error } = await supabase
     .from("opportunities")
-    .select("id, cycle_year")
+    .select("id, cycle_year, criteria_hash")
     .eq("canonical_key", canonicalKey)
     .eq("lifecycle_status", "active")
     .gt("cycle_year", cycleYear)
@@ -88,9 +89,17 @@ async function linkExistingRenewedCycleIfPresent({
     throw new Error(oldUpdateError.message);
   }
 
+  const reuseResult = await reuseScoresForRenewedOpportunity({
+    supabase,
+    oldOpportunityId: opportunityId,
+    newOpportunityId: existingRenewed.id,
+    newCriteriaHash: existingRenewed.criteria_hash || null,
+  });
+
   return {
     renewedOpportunityId: existingRenewed.id,
     renewedCycleYear: existingRenewed.cycle_year,
+    reusedScores: reuseResult.reused,
   };
 }
 
@@ -210,6 +219,7 @@ export async function recheckOpportunity({
       criteriaChanged: false,
       contentChanged: false,
       scoresMarkedStale: 0,
+      reusedScores: existingRenewalLink.reusedScores || 0,
       renewedOpportunityId: existingRenewalLink.renewedOpportunityId,
     };
   }
@@ -347,12 +357,20 @@ export async function recheckOpportunity({
 
       if (existingUpdateError) throw new Error(existingUpdateError.message);
 
+      const reuseResult = await reuseScoresForRenewedOpportunity({
+        supabase,
+        oldOpportunityId: opportunityId,
+        newOpportunityId: existingRenewed.id,
+        newCriteriaHash: renewedLifecycleFields.criteria_hash || null,
+      });
+
       return {
         outcome: "renewed_cycle_updated",
         usedGemini: true,
         criteriaChanged: false,
         contentChanged: true,
         scoresMarkedStale: 0,
+        reusedScores: reuseResult.reused,
         renewedOpportunityId: existingRenewed.id,
       };
     }
@@ -392,12 +410,20 @@ export async function recheckOpportunity({
       })
       .eq("id", opportunityId);
 
+    const reuseResult = await reuseScoresForRenewedOpportunity({
+      supabase,
+      oldOpportunityId: opportunityId,
+      newOpportunityId: renewedOpportunity.id,
+      newCriteriaHash: renewedLifecycleFields.criteria_hash || null,
+    });
+
     return {
       outcome: "renewed_cycle_created",
       usedGemini: true,
       criteriaChanged: false,
       contentChanged: true,
       scoresMarkedStale: 0,
+      reusedScores: reuseResult.reused,
       renewedOpportunityId: renewedOpportunity.id,
     };
   }
