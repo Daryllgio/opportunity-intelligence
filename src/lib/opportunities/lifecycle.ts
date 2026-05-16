@@ -165,6 +165,12 @@ export function addDays(date: Date, days: number) {
   return copy;
 }
 
+export function addMonths(date: Date, months: number) {
+  const copy = new Date(date);
+  copy.setUTCMonth(copy.getUTCMonth() + months);
+  return copy;
+}
+
 export function computeNextLifecycleCheck(opportunity: OpportunityRecord, now = new Date()) {
   const deadline = parseDate(opportunity.deadline);
 
@@ -179,7 +185,7 @@ export function computeNextLifecycleCheck(opportunity: OpportunityRecord, now = 
     const nextCycleDeadline = new Date(deadline);
     nextCycleDeadline.setUTCFullYear(nextCycleDeadline.getUTCFullYear() + 1);
 
-    const renewalWindowStart = addDays(nextCycleDeadline, -90);
+    const renewalWindowStart = addMonths(nextCycleDeadline, -4);
 
     return {
       next_check_at: renewalWindowStart.toISOString(),
