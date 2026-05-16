@@ -106,6 +106,10 @@ export default function AdminPage() {
   const [scoringJobMessage, setScoringJobMessage] = useState("");
   const [backfillingLifecycle, setBackfillingLifecycle] = useState(false);
   const [lifecycleMessage, setLifecycleMessage] = useState("");
+  const [runningLifecycleMaintenance, setRunningLifecycleMaintenance] =
+    useState(false);
+  const [lifecycleMaintenanceMessage, setLifecycleMaintenanceMessage] =
+    useState("");
 
   useEffect(() => {
     async function loadAdminData() {
@@ -338,6 +342,58 @@ export default function AdminPage() {
     }
 
     setRunningScoringJob(false);
+  }
+
+  async function runOpportunityLifecycleMaintenance() {
+    setRunningLifecycleMaintenance(true);
+    setLifecycleMaintenanceMessage("");
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setLifecycleMaintenanceMessage(
+        "Please log in again before running lifecycle maintenance."
+      );
+      setRunningLifecycleMaintenance(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        "/api/admin/run-opportunity-lifecycle-maintenance",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setLifecycleMaintenanceMessage(
+          result.error || "Lifecycle maintenance failed."
+        );
+        setRunningLifecycleMaintenance(false);
+        return;
+      }
+
+      setLifecycleMaintenanceMessage(
+        `Lifecycle maintenance completed. ${result.checked} checked, ${result.expired} expired, ${result.scoresMarkedStale} scores marked stale.`
+      );
+    } catch (error) {
+      setLifecycleMaintenanceMessage(
+        error instanceof Error
+          ? error.message
+          : "Lifecycle maintenance failed."
+      );
+    }
+
+    setRunningLifecycleMaintenance(false);
   }
 
   async function backfillOpportunityLifecycle() {
@@ -589,6 +645,34 @@ export default function AdminPage() {
                           {lifecycleMessage}
                         </p>
                       )}
+
+                      <div className="mt-6 border-t pt-5">
+                        <h3 className="text-sm font-medium">
+                          Lifecycle maintenance
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                          Expire opportunities whose deadlines have passed and
+                          mark affected scores as stale.
+                        </p>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="mt-4"
+                          onClick={runOpportunityLifecycleMaintenance}
+                          disabled={runningLifecycleMaintenance}
+                        >
+                          {runningLifecycleMaintenance
+                            ? "Running maintenance..."
+                            : "Run lifecycle maintenance"}
+                        </Button>
+
+                        {lifecycleMaintenanceMessage && (
+                          <p className="mt-4 text-sm text-muted-foreground">
+                            {lifecycleMaintenanceMessage}
+                          </p>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
 
