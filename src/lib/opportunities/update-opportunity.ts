@@ -1,4 +1,5 @@
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
+import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -55,7 +56,7 @@ export async function updateOpportunityWithLifecycle({
     Boolean(oldCriteriaHash) && oldCriteriaHash !== newCriteriaHash;
 
   if (criteriaChanged) {
-    const { error: staleError } = await supabase
+    const { data: staleRows, error: staleError } = await supabase
       .from("opportunity_competitiveness_scores")
       .update({
         score_status: "stale",
@@ -63,10 +64,23 @@ export async function updateOpportunityWithLifecycle({
         updated_at: new Date().toISOString(),
       })
       .eq("opportunity_id", opportunityId)
-      .eq("score_status", "current");
+      .eq("score_status", "current")
+      .select("user_id");
 
     if (staleError) {
       throw new Error(staleError.message);
+    }
+
+    const affectedUserIds = (staleRows || []).map(
+      (row: { user_id: string }) => row.user_id
+    );
+
+    if (affectedUserIds.length > 0) {
+      await scheduleScoringJobsForUsers({
+        supabase,
+        userIds: affectedUserIds,
+        force: true,
+      });
     }
   }
 

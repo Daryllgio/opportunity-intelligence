@@ -12,6 +12,7 @@ import {
 } from "@/lib/opportunities/page-recheck";
 import { reextractOpportunityFromPage } from "@/lib/opportunities/reextract-opportunity";
 import { reuseScoresForRenewedOpportunity } from "@/lib/opportunities/reuse-renewed-scores";
+import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -466,11 +467,23 @@ export async function recheckOpportunity({
       })
       .eq("opportunity_id", opportunityId)
       .eq("score_status", "current")
-      .select("id");
+      .select("id, user_id");
 
     if (staleError) throw new Error(staleError.message);
 
     scoresMarkedStale = staleRows?.length || 0;
+
+    const affectedUserIds = (staleRows || []).map(
+      (row: { user_id: string }) => row.user_id
+    );
+
+    if (affectedUserIds.length > 0) {
+      await scheduleScoringJobsForUsers({
+        supabase,
+        userIds: affectedUserIds,
+        force: true,
+      });
+    }
   }
 
   return {

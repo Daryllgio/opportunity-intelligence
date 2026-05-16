@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
+import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
 
 function createSupabaseForRequest(request: NextRequest) {
   const authHeader = request.headers.get("authorization") || "";
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
         })
         .eq("opportunity_id", opportunity.id)
         .eq("score_status", "current")
-        .select("id");
+        .select("id, user_id");
 
       if (staleError) {
         return NextResponse.json(
@@ -120,6 +121,18 @@ export async function POST(request: NextRequest) {
 
       expired += 1;
       scoresMarkedStale += staleRows?.length || 0;
+
+      const affectedUserIds = (staleRows || []).map(
+        (row: { user_id: string }) => row.user_id
+      );
+
+      if (affectedUserIds.length > 0) {
+        await scheduleScoringJobsForUsers({
+          supabase,
+          userIds: affectedUserIds,
+          force: true,
+        });
+      }
     }
 
     return NextResponse.json({
