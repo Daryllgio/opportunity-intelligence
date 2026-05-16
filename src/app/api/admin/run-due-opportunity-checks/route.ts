@@ -73,6 +73,9 @@ export async function POST(request: NextRequest) {
     let extractedNoStructuredChange = 0;
     let missingUrl = 0;
     let fetchFailed = 0;
+    let renewedCreated = 0;
+    let renewedUpdated = 0;
+    let existingRenewedLinked = 0;
     let failed = 0;
     let scoresMarkedStale = 0;
 
@@ -95,6 +98,11 @@ export async function POST(request: NextRequest) {
         if (result.outcome === "unchanged_page") unchanged += 1;
         if (result.outcome === "missing_url") missingUrl += 1;
         if (result.outcome === "fetch_failed") fetchFailed += 1;
+        if (result.outcome === "renewed_cycle_created") renewedCreated += 1;
+        if (result.outcome === "renewed_cycle_updated") renewedUpdated += 1;
+        if (result.outcome === "existing_renewed_cycle_linked") {
+          existingRenewedLinked += 1;
+        }
         if (result.outcome === "extracted_no_structured_change") {
           extractedNoStructuredChange += 1;
         }
@@ -130,6 +138,9 @@ export async function POST(request: NextRequest) {
       extractedNoStructuredChange,
       missingUrl,
       fetchFailed,
+      renewedCreated,
+      renewedUpdated,
+      existingRenewedLinked,
       failed,
       scoresMarkedStale,
     });
