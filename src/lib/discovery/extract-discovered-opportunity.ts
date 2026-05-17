@@ -1,0 +1,176 @@
+import { GoogleGenAI } from "@google/genai";
+import { OPPORTUNITY_TYPES } from "@/lib/discovery/taxonomy";
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
+export type DiscoveredOpportunityExtraction = {
+  title: string | null;
+  provider: string | null;
+  type: string | null;
+  description: string | null;
+  ai_summary: string | null;
+  country: string | null;
+  eligible_countries: string[];
+  eligible_education_levels: string[];
+  eligible_fields: string[];
+  funding_amount: string | null;
+  funding_type: string | null;
+  deadline: string | null;
+  application_url: string | null;
+  source_url: string | null;
+  effort_level: string | null;
+  reward_level: string | null;
+  competitiveness_factors: string[];
+};
+
+function cleanJsonResponse(text: string) {
+  return text
+    .replace(/^```json/i, "")
+    .replace(/^```/i, "")
+    .replace(/```$/i, "")
+    .trim();
+}
+
+function stringOrNull(value: unknown) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function arrayOrEmpty(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+}
+
+function normalizeOpportunityType(value: unknown) {
+  const raw = String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, "_");
+
+  if ((OPPORTUNITY_TYPES as readonly string[]).includes(raw)) {
+    return raw;
+  }
+
+  if (raw.includes("scholar")) return "scholarship";
+  if (raw.includes("fellow")) return "fellowship";
+  if (raw.includes("research")) return "research_program";
+  if (raw.includes("grant")) return "grant";
+  if (raw.includes("competition") || raw.includes("challenge")) {
+    return "competition";
+  }
+  if (raw.includes("leadership")) return "leadership_program";
+  if (raw.includes("career") || raw.includes("pipeline")) {
+    return "career_development_program";
+  }
+
+  return null;
+}
+
+export async function extractDiscoveredOpportunity({
+  pageText,
+  sourceUrl,
+  discoveryContext,
+}: {
+  pageText: string;
+  sourceUrl: string;
+  discoveryContext?: {
+    region?: string | null;
+    opportunityType?: string | null;
+    educationLevel?: string | null;
+    fieldArea?: string | null;
+  };
+}): Promise<DiscoveredOpportunityExtraction> {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("Missing GEMINI_API_KEY.");
+  }
+
+  const prompt = `
+You are OppScores' opportunity extraction engine.
+
+Extract one student opportunity from the page text below.
+
+The platform focuses on opportunities based in the United States and Canada for students and early-career applicants.
+
+Supported opportunity types:
+${OPPORTUNITY_TYPES.join(", ")}
+
+Return JSON only. No markdown. No commentary.
+
+Important rules:
+- Do not invent missing facts.
+- Use null or [] when information is unclear.
+- Deadline should be YYYY-MM-DD when possible.
+- If the opportunity is rolling/ongoing with no fixed deadline, set deadline to null and mention rolling status in description/summary.
+- Use source_url as the current page URL unless the page clearly gives a better application URL.
+- Keep type to one of the supported opportunity types.
+- Do not classify general internships as opportunities unless they are structured pipeline/career development programs.
+- Do not classify ordinary conferences as opportunities unless there is a clear student funding, presentation, leadership, selective, or career-development opportunity.
+
+Discovery context:
+${JSON.stringify(discoveryContext || {}, null, 2)}
+
+Source URL:
+${sourceUrl}
+
+Return this exact JSON shape:
+{
+  "title": string | null,
+  "provider": string | null,
+  "type": string | null,
+  "description": string | null,
+  "ai_summary": string | null,
+  "country": string | null,
+  "eligible_countries": string[],
+  "eligible_education_levels": string[],
+  "eligible_fields": string[],
+  "funding_amount": string | null,
+  "funding_type": string | null,
+  "deadline": string | null,
+  "application_url": string | null,
+  "source_url": string | null,
+  "effort_level": string | null,
+  "reward_level": string | null,
+  "competitiveness_factors": string[]
+}
+
+Page text:
+${pageText.slice(0, 30000)}
+`;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-pro",
+    contents: prompt,
+  });
+
+  const rawText = response.text;
+
+  if (!rawText) {
+    throw new Error("Gemini did not return extraction text.");
+  }
+
+  const parsed = JSON.parse(cleanJsonResponse(rawText));
+
+  return {
+    title: stringOrNull(parsed.title),
+    provider: stringOrNull(parsed.provider),
+    type: normalizeOpportunityType(parsed.type),
+    description: stringOrNull(parsed.description),
+    ai_summary: stringOrNull(parsed.ai_summary),
+    country: stringOrNull(parsed.country),
+    eligible_countries: arrayOrEmpty(parsed.eligible_countries),
+    eligible_education_levels: arrayOrEmpty(parsed.eligible_education_levels),
+    eligible_fields: arrayOrEmpty(parsed.eligible_fields),
+    funding_amount: stringOrNull(parsed.funding_amount),
+    funding_type: stringOrNull(parsed.funding_type),
+    deadline: stringOrNull(parsed.deadline),
+    application_url: stringOrNull(parsed.application_url),
+    source_url: stringOrNull(parsed.source_url) || sourceUrl,
+    effort_level: stringOrNull(parsed.effort_level),
+    reward_level: stringOrNull(parsed.reward_level),
+    competitiveness_factors: arrayOrEmpty(parsed.competitiveness_factors),
+  };
+}

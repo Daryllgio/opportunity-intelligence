@@ -127,7 +127,20 @@ export function scoreCandidateLink(link: CapturedLink): CandidateOpportunityLink
   const normalizedUrl = normalizeUrl(link.href);
   const urlText = `${parsed.hostname} ${parsed.pathname} ${parsed.search}`.toLowerCase();
   const linkText = link.text || "";
+  const normalizedLinkText = linkText.toLowerCase().trim();
   const combined = `${urlText} ${linkText}`.toLowerCase();
+
+  if (
+    parsed.hash &&
+    (normalizedLinkText.includes("skip to main") ||
+      normalizedLinkText.includes("skip to content"))
+  ) {
+    return null;
+  }
+
+  if (parsed.hash && !parsed.pathname.replace(/\/$/, "")) {
+    return null;
+  }
 
   const reasons: string[] = [];
   let score = 0;
@@ -140,7 +153,35 @@ export function scoreCandidateLink(link: CapturedLink): CandidateOpportunityLink
 
   const negativeUrlSignalCount = countSignals(urlText, NEGATIVE_URL_SIGNALS);
 
-  if (negativeUrlSignalCount > 0) {
+  const softPathSignals = [
+    "how-it-works",
+    "how_it_works",
+    "become",
+    "becoming",
+    "selection",
+    "nomination",
+    "the-program",
+    "the_program",
+  ];
+
+  const softTextSignals = [
+    "how it works",
+    "become",
+    "becoming",
+    "selection",
+    "nomination",
+    "the program",
+    "learn more",
+  ];
+
+  const hasSoftPathSignal = softPathSignals.some((signal) =>
+    urlText.includes(signal)
+  );
+  const hasSoftTextSignal = softTextSignals.some((signal) =>
+    linkText.toLowerCase().includes(signal)
+  );
+
+  if (negativeUrlSignalCount > 0 && !hasSoftPathSignal) {
     score -= negativeUrlSignalCount * 10;
     reasons.push("Contains weak/noisy URL signals.");
   }
@@ -171,6 +212,16 @@ export function scoreCandidateLink(link: CapturedLink): CandidateOpportunityLink
   if (combined.includes("apply") || combined.includes("application")) {
     score += 8;
     reasons.push("Mentions application/apply.");
+  }
+
+  if (hasSoftPathSignal) {
+    score += 22;
+    reasons.push("URL contains soft opportunity-navigation signals.");
+  }
+
+  if (hasSoftTextSignal && positiveUrlSignalCount > 0) {
+    score += 10;
+    reasons.push("Link text supports opportunity navigation.");
   }
 
   if (parsed.pathname.split("/").filter(Boolean).length >= 2) {
