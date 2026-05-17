@@ -139,12 +139,25 @@ export async function assessDuplicateRisk({
     ? `provider.ilike.%${cleanProvider}%`
     : "provider.not.is.null";
 
+  const domainQuery = sourceDomain
+    ? `source_url.ilike.%${sourceDomain}%,application_url.ilike.%${sourceDomain}%,normalized_url.ilike.%${sourceDomain}%`
+    : "";
+
+  const matchQuery = [
+    `canonical_key.eq.${canonicalKey}`,
+    titleQuery,
+    providerQuery,
+    domainQuery,
+  ]
+    .filter(Boolean)
+    .join(",");
+
   const { data: possibleMatches, error: possibleError } = await supabase
     .from("opportunities")
     .select(
       "id, title, provider, type, canonical_key, cycle_year, deadline, source_url, application_url, normalized_url"
     )
-    .or(`canonical_key.eq.${canonicalKey},${titleQuery},${providerQuery}`)
+    .or(matchQuery)
     .limit(25);
 
   if (possibleError) {

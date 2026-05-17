@@ -185,43 +185,74 @@ export async function ingestExtractedOpportunity({
     };
   }
 
-  const { data: draft, error: draftError } = await supabase
-    .from("opportunity_drafts")
-    .insert({
-      normalized_url: normalizedUrl || null,
-      title: opportunityPayload.title,
-      provider: opportunityPayload.provider,
-      type: opportunityPayload.type,
-      description: opportunityPayload.description,
-      ai_summary: opportunityPayload.ai_summary,
-      country: opportunityPayload.country,
-      eligible_countries: opportunityPayload.eligible_countries,
-      eligible_education_levels: opportunityPayload.eligible_education_levels,
-      eligible_fields: opportunityPayload.eligible_fields,
-      funding_amount: opportunityPayload.funding_amount,
-      funding_type: opportunityPayload.funding_type,
-      deadline: opportunityPayload.deadline,
-      application_url: opportunityPayload.application_url,
-      source_url: opportunityPayload.source_url,
-      source_domain: getSourceDomain(String(opportunityPayload.source_url || "")),
-      effort_level: opportunityPayload.effort_level,
-      reward_level: opportunityPayload.reward_level,
-      competitiveness_factors: opportunityPayload.competitiveness_factors,
-      extraction_status: "pending_review",
-      validation_score: validation.score,
-      validation_decision: validation.decision,
-      validation_reasons: validation.reasons,
-      duplicate_risk: duplicate.duplicateRisk,
-      source_trust: sourceTrust,
-      auto_publish_eligible: validation.autoPublishEligible,
-      discovered_page_id: discoveredPage.id,
-      updated_at: now,
-    })
-    .select("id")
-    .single();
+  const draftPayload = {
+    normalized_url: normalizedUrl || null,
+    title: opportunityPayload.title,
+    provider: opportunityPayload.provider,
+    type: opportunityPayload.type,
+    description: opportunityPayload.description,
+    ai_summary: opportunityPayload.ai_summary,
+    country: opportunityPayload.country,
+    eligible_countries: opportunityPayload.eligible_countries,
+    eligible_education_levels: opportunityPayload.eligible_education_levels,
+    eligible_fields: opportunityPayload.eligible_fields,
+    funding_amount: opportunityPayload.funding_amount,
+    funding_type: opportunityPayload.funding_type,
+    deadline: opportunityPayload.deadline,
+    application_url: opportunityPayload.application_url,
+    source_url: opportunityPayload.source_url,
+    source_domain: getSourceDomain(String(opportunityPayload.source_url || "")),
+    effort_level: opportunityPayload.effort_level,
+    reward_level: opportunityPayload.reward_level,
+    competitiveness_factors: opportunityPayload.competitiveness_factors,
+    extraction_status: "pending_review",
+    validation_score: validation.score,
+    validation_decision: validation.decision,
+    validation_reasons: validation.reasons,
+    duplicate_risk: duplicate.duplicateRisk,
+    source_trust: sourceTrust,
+    auto_publish_eligible: validation.autoPublishEligible,
+    discovered_page_id: discoveredPage.id,
+    updated_at: now,
+  };
 
-  if (draftError) {
-    throw new Error(draftError.message);
+  let draft;
+
+  if (normalizedUrl) {
+    const { data: existingDraft } = await supabase
+      .from("opportunity_drafts")
+      .select("id")
+      .eq("normalized_url", normalizedUrl)
+      .maybeSingle();
+
+    if (existingDraft?.id) {
+      const { data: updatedDraft, error: updateDraftError } = await supabase
+        .from("opportunity_drafts")
+        .update(draftPayload)
+        .eq("id", existingDraft.id)
+        .select("id")
+        .single();
+
+      if (updateDraftError) {
+        throw new Error(updateDraftError.message);
+      }
+
+      draft = updatedDraft;
+    }
+  }
+
+  if (!draft) {
+    const { data: insertedDraft, error: draftError } = await supabase
+      .from("opportunity_drafts")
+      .insert(draftPayload)
+      .select("id")
+      .single();
+
+    if (draftError) {
+      throw new Error(draftError.message);
+    }
+
+    draft = insertedDraft;
   }
 
   await supabase
