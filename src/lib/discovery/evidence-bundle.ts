@@ -1,5 +1,6 @@
 import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
 import { evaluateEvidenceCoverage } from "@/lib/discovery/evidence-coverage";
+import { scorePageUsefulness } from "@/lib/discovery/page-usefulness";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -102,16 +103,34 @@ export async function buildEvidenceBundleForDiscoveredPage({
       if (seen.has(normalized)) return false;
       seen.add(normalized);
 
-      return true;
+      const usefulness = scorePageUsefulness({
+        title: String(page.title || ""),
+        url,
+        opportunityType: String(anchorPage.opportunity_type || ""),
+        existingQualityScore: Number(page.quality_score || 0),
+      });
+
+      return !usefulness.shouldIgnore || String(page.id) === discoveredPageId;
     })
     .sort((left: Record<string, unknown>, right: Record<string, unknown>) => {
-      const leftScore = Number(left.quality_score || 0);
-      const rightScore = Number(right.quality_score || 0);
-
       if (String(left.id) === discoveredPageId) return -1;
       if (String(right.id) === discoveredPageId) return 1;
 
-      return rightScore - leftScore;
+      const leftUsefulness = scorePageUsefulness({
+        title: String(left.title || ""),
+        url: String(left.url || left.normalized_url || ""),
+        opportunityType: String(anchorPage.opportunity_type || ""),
+        existingQualityScore: Number(left.quality_score || 0),
+      });
+
+      const rightUsefulness = scorePageUsefulness({
+        title: String(right.title || ""),
+        url: String(right.url || right.normalized_url || ""),
+        opportunityType: String(anchorPage.opportunity_type || ""),
+        existingQualityScore: Number(right.quality_score || 0),
+      });
+
+      return rightUsefulness.score - leftUsefulness.score;
     })
     .slice(0, maxPages);
 

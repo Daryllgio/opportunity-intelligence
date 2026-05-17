@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildEvidenceBundleForDiscoveredPage } from "@/lib/discovery/evidence-bundle";
 import { extractDiscoveredOpportunity } from "@/lib/discovery/extract-discovered-opportunity";
 import { ingestExtractedOpportunity } from "@/lib/discovery/ingest-extracted-opportunity";
+import { scorePageUsefulness } from "@/lib/discovery/page-usefulness";
 
 function createServiceSupabase() {
   return createClient(
@@ -92,6 +93,13 @@ export async function POST(request: NextRequest) {
         url: page.url,
         status: page.discovery_status,
         quality_score: page.quality_score,
+        usefulness: scorePageUsefulness({
+          title: page.title,
+          url: page.url,
+          text: page.cleanText,
+          opportunityType: String(bundle.anchorPage.opportunity_type || ""),
+          existingQualityScore: page.quality_score,
+        }),
         textLength: page.textLength,
       })),
       extraction: extracted,
