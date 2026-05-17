@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { capturePageWithCheerio } from "@/lib/discovery/capture/cheerio-capture";
+import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,25 +10,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing url." }, { status: 400 });
     }
 
-    const result = await capturePageWithCheerio(url);
+    const result = await capturePageWithHybrid(url);
+    const finalResult = result.finalResult;
 
     return NextResponse.json({
-      url: result.url,
-      finalUrl: result.finalUrl,
-      ok: result.ok,
-      status: result.status,
-      title: result.title,
-      textPreview: result.cleanText.slice(0, 600),
-      linkCount: result.links.length,
-      sampleLinks: result.links.slice(0, 10),
-      quality: result.quality,
-      error: result.error,
+      url: finalResult.url,
+      finalUrl: finalResult.finalUrl,
+      captureMethod: result.captureMethod,
+      usedFallback: result.usedFallback,
+      ok: finalResult.ok,
+      status: finalResult.status,
+      title: finalResult.title,
+      textPreview: finalResult.cleanText.slice(0, 600),
+      linkCount: finalResult.links.length,
+      sampleLinks: finalResult.links.slice(0, 10),
+      quality: finalResult.quality,
+      cheerioQuality: result.cheerioResult.quality,
+      error: finalResult.error,
     });
   } catch (error) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Failed to test Cheerio capture.",
+          error instanceof Error ? error.message : "Failed to test hybrid capture.",
       },
       { status: 500 }
     );
