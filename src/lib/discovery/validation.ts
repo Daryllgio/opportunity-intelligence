@@ -5,7 +5,7 @@ import {
 
 export type SourceTrust = "trusted" | "standard" | "experimental" | "blocked";
 export type DuplicateRisk = "low" | "medium" | "high";
-export type ValidationDecision = "auto_publish" | "review" | "reject";
+export type ValidationDecision = "auto_publish" | "review" | "reject" | "track_for_next_cycle";
 
 export type ExtractedOpportunityForValidation = {
   title?: string | null;
@@ -20,6 +20,9 @@ export type ExtractedOpportunityForValidation = {
   funding_amount?: string | null;
   funding_type?: string | null;
   deadline?: string | null;
+  application_status?: "open" | "closed" | "rolling" | "unknown" | string | null;
+  deadline_confidence?: "high" | "medium" | "low" | "unknown" | string | null;
+  cycle_notes?: string | null;
   application_url?: string | null;
   source_url?: string | null;
   effort_level?: string | null;
@@ -50,6 +53,35 @@ function isRollingOpportunity(opportunity: ExtractedOpportunityForValidation) {
     text.includes("ongoing") ||
     text.includes("no fixed deadline") ||
     text.includes("applications accepted year-round")
+  );
+}
+
+function isClosedOpportunity(opportunity: ExtractedOpportunityForValidation) {
+  const text = [
+    opportunity.application_status,
+    opportunity.deadline,
+    opportunity.description,
+    opportunity.ai_summary,
+    opportunity.cycle_notes,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    opportunity.application_status === "closed" ||
+    text.includes("applications are closed") ||
+    text.includes("applications closed") ||
+    text.includes("currently closed") ||
+    text.includes("closed for applications")
+  );
+}
+
+function hasUsefulDeadlineOrStatus(opportunity: ExtractedOpportunityForValidation) {
+  return (
+    hasText(opportunity.deadline) ||
+    isRollingOpportunity(opportunity) ||
+    isClosedOpportunity(opportunity)
   );
 }
 
@@ -109,8 +141,8 @@ export function validateExtractedOpportunity({
     hardBlockers.push("Missing source/application URL.");
   }
 
-  if (!hasText(opportunity.deadline) && !isRollingOpportunity(opportunity)) {
-    hardBlockers.push("Missing deadline or clear rolling status.");
+  if (!hasUsefulDeadlineOrStatus(opportunity)) {
+    hardBlockers.push("Missing deadline or clear application status.");
   }
 
   if (!hasUsefulEligibility(opportunity)) {
@@ -119,6 +151,25 @@ export function validateExtractedOpportunity({
 
   if (duplicateRisk === "high") {
     hardBlockers.push("High duplicate risk.");
+  }
+
+  const closedButReal =
+    isClosedOpportunity(opportunity) &&
+    hasText(opportunity.title, 4) &&
+    hasText(opportunity.provider, 2) &&
+    Boolean(opportunity.type) &&
+    hasUsefulEligibility(opportunity) &&
+    hasUsefulFundingOrValue(opportunity);
+
+  if (closedButReal && duplicateRisk !== "high" && sourceTrust !== "blocked") {
+    return {
+      decision: "track_for_next_cycle" as ValidationDecision,
+      score: 75,
+      autoPublishEligible: false,
+      duplicateRisk,
+      sourceTrust,
+      reasons: ["Applications are closed. Track for next cycle instead of publishing live."],
+    };
   }
 
   if (hardBlockers.length > 0) {

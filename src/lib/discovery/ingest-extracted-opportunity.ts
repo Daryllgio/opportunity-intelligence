@@ -29,6 +29,13 @@ function arrayOrEmpty(value: unknown) {
     : [];
 }
 
+function computeExpectedNextCheckAt() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setMonth(next.getMonth() + 3);
+  return next.toISOString();
+}
+
 export async function ingestExtractedOpportunity({
   supabase,
   discoveredPage,
@@ -64,6 +71,9 @@ export async function ingestExtractedOpportunity({
     funding_amount: stringOrNull(extracted.funding_amount),
     funding_type: stringOrNull(extracted.funding_type),
     deadline: stringOrNull(extracted.deadline),
+    application_status: stringOrNull(extracted.application_status) || "unknown",
+    deadline_confidence: stringOrNull(extracted.deadline_confidence) || "unknown",
+    cycle_notes: stringOrNull(extracted.cycle_notes),
     application_url:
       stringOrNull(extracted.application_url) || stringOrNull(extracted.source_url),
     source_url: stringOrNull(extracted.source_url) || stringOrNull(discoveredPage.url),
@@ -147,6 +157,97 @@ export async function ingestExtractedOpportunity({
     };
   }
 
+  if (validation.decision === "track_for_next_cycle") {
+    const expectedNextCheckAt = computeExpectedNextCheckAt();
+
+    const draftPayload = {
+      normalized_url: normalizedUrl || null,
+      title: opportunityPayload.title,
+      provider: opportunityPayload.provider,
+      type: opportunityPayload.type,
+      description: opportunityPayload.description,
+      ai_summary: opportunityPayload.ai_summary,
+      country: opportunityPayload.country,
+      eligible_countries: opportunityPayload.eligible_countries,
+      eligible_education_levels: opportunityPayload.eligible_education_levels,
+      eligible_fields: opportunityPayload.eligible_fields,
+      funding_amount: opportunityPayload.funding_amount,
+      funding_type: opportunityPayload.funding_type,
+      deadline: opportunityPayload.deadline,
+      application_status: opportunityPayload.application_status,
+      deadline_confidence: opportunityPayload.deadline_confidence,
+      cycle_notes: opportunityPayload.cycle_notes,
+      expected_next_check_at: expectedNextCheckAt,
+      application_url: opportunityPayload.application_url,
+      source_url: opportunityPayload.source_url,
+      source_domain: getSourceDomain(String(opportunityPayload.source_url || "")),
+      effort_level: opportunityPayload.effort_level,
+      reward_level: opportunityPayload.reward_level,
+      competitiveness_factors: opportunityPayload.competitiveness_factors,
+      extraction_status: "closed_cycle",
+      validation_score: validation.score,
+      validation_decision: validation.decision,
+      validation_reasons: validation.reasons,
+      duplicate_risk: duplicate.duplicateRisk,
+      source_trust: sourceTrust,
+      auto_publish_eligible: false,
+      discovered_page_id: discoveredPage.id,
+      updated_at: now,
+    };
+
+    let draft;
+
+    if (normalizedUrl) {
+      const { data: existingDraft } = await supabase
+        .from("opportunity_drafts")
+        .select("id")
+        .eq("normalized_url", normalizedUrl)
+        .maybeSingle();
+
+      if (existingDraft?.id) {
+        const { data: updatedDraft, error: updateDraftError } = await supabase
+          .from("opportunity_drafts")
+          .update(draftPayload)
+          .eq("id", existingDraft.id)
+          .select("id")
+          .single();
+
+        if (updateDraftError) throw new Error(updateDraftError.message);
+        draft = updatedDraft;
+      }
+    }
+
+    if (!draft) {
+      const { data: insertedDraft, error: draftError } = await supabase
+        .from("opportunity_drafts")
+        .insert(draftPayload)
+        .select("id")
+        .single();
+
+      if (draftError) throw new Error(draftError.message);
+      draft = insertedDraft;
+    }
+
+    await supabase
+      .from("discovered_pages")
+      .update({
+        discovery_status: "future_tracking",
+        quality_score: validation.score,
+        rejection_reason: validation.reasons.join("; "),
+        expected_next_check_at: expectedNextCheckAt,
+        updated_at: now,
+      })
+      .eq("id", discoveredPage.id);
+
+    return {
+      decision: "track_for_next_cycle",
+      validation,
+      duplicate,
+      publishedOpportunityId: null,
+      draftId: draft.id,
+    };
+  }
+
   if (validation.decision === "auto_publish") {
     const lifecycleFields = buildLifecycleFields(opportunityPayload);
 
@@ -199,6 +300,9 @@ export async function ingestExtractedOpportunity({
     funding_amount: opportunityPayload.funding_amount,
     funding_type: opportunityPayload.funding_type,
     deadline: opportunityPayload.deadline,
+    application_status: opportunityPayload.application_status,
+    deadline_confidence: opportunityPayload.deadline_confidence,
+    cycle_notes: opportunityPayload.cycle_notes,
     application_url: opportunityPayload.application_url,
     source_url: opportunityPayload.source_url,
     source_domain: getSourceDomain(String(opportunityPayload.source_url || "")),

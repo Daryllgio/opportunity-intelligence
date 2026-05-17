@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       discoveredPageId,
       domain: bundle.domain,
       pageCount: bundle.pages.length,
+      coverage: bundle.coverage,
       pages: bundle.pages.map((page) => ({
         id: page.id,
         title: page.title,

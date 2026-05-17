@@ -1,4 +1,5 @@
 import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
+import { evaluateEvidenceCoverage } from "@/lib/discovery/evidence-coverage";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -49,11 +50,13 @@ ${page.cleanText.slice(0, 12000)}
 export async function buildEvidenceBundleForDiscoveredPage({
   supabase,
   discoveredPageId,
-  maxPages = 5,
+  maxPages = 10,
+  stopWhenComplete = true,
 }: {
   supabase: SupabaseClientLike;
   discoveredPageId: string;
   maxPages?: number;
+  stopWhenComplete?: boolean;
 }) {
   const { data: anchorPage, error: anchorError } = await supabase
     .from("discovered_pages")
@@ -113,6 +116,10 @@ export async function buildEvidenceBundleForDiscoveredPage({
     .slice(0, maxPages);
 
   const evidencePages: EvidencePage[] = [];
+  let coverage = evaluateEvidenceCoverage({
+    text: "",
+    opportunityType: String(anchorPage.opportunity_type || ""),
+  });
 
   for (const page of prioritized) {
     const url = String(page.url || page.normalized_url || "");
@@ -138,6 +145,19 @@ export async function buildEvidenceBundleForDiscoveredPage({
       cleanText: finalResult.cleanText,
       textLength: finalResult.cleanText.length,
     });
+
+    coverage = evaluateEvidenceCoverage({
+      text: buildEvidenceText(evidencePages),
+      opportunityType: String(anchorPage.opportunity_type || ""),
+    });
+
+    if (stopWhenComplete && coverage.completeEnough) {
+      break;
+    }
+
+    if (evidencePages.length >= maxPages) {
+      break;
+    }
   }
 
   return {
@@ -145,5 +165,6 @@ export async function buildEvidenceBundleForDiscoveredPage({
     domain,
     pages: evidencePages,
     evidenceText: buildEvidenceText(evidencePages),
+    coverage,
   };
 }

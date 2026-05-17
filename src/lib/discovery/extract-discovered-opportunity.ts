@@ -18,6 +18,9 @@ export type DiscoveredOpportunityExtraction = {
   funding_amount: string | null;
   funding_type: string | null;
   deadline: string | null;
+  application_status: "open" | "closed" | "rolling" | "unknown";
+  deadline_confidence: "high" | "medium" | "low" | "unknown";
+  cycle_notes: string | null;
   application_url: string | null;
   source_url: string | null;
   effort_level: string | null;
@@ -43,6 +46,30 @@ function arrayOrEmpty(value: unknown) {
   return Array.isArray(value)
     ? value.map((item) => String(item).trim()).filter(Boolean)
     : [];
+}
+
+function normalizeApplicationStatus(value: unknown) {
+  const raw = String(value || "").toLowerCase().trim();
+
+  if (["open", "closed", "rolling", "unknown"].includes(raw)) {
+    return raw as "open" | "closed" | "rolling" | "unknown";
+  }
+
+  if (raw.includes("closed")) return "closed";
+  if (raw.includes("rolling") || raw.includes("ongoing")) return "rolling";
+  if (raw.includes("open")) return "open";
+
+  return "unknown";
+}
+
+function normalizeDeadlineConfidence(value: unknown) {
+  const raw = String(value || "").toLowerCase().trim();
+
+  if (["high", "medium", "low", "unknown"].includes(raw)) {
+    return raw as "high" | "medium" | "low" | "unknown";
+  }
+
+  return "unknown";
 }
 
 function normalizeOpportunityType(value: unknown) {
@@ -104,7 +131,10 @@ Important rules:
 - Do not invent missing facts.
 - Use null or [] when information is unclear.
 - Deadline should be YYYY-MM-DD when possible.
-- If the opportunity is rolling/ongoing with no fixed deadline, set deadline to null and mention rolling status in description/summary.
+- If the opportunity is rolling/ongoing with no fixed deadline, set deadline to null and application_status to "rolling".
+- If applications are clearly closed and no future deadline is visible, set deadline to null, application_status to "closed", deadline_confidence to "low", and explain in cycle_notes.
+- If applications are open and a deadline is visible, set application_status to "open" and deadline_confidence to "high".
+- If status is unclear, set application_status to "unknown".
 - Use source_url as the current page URL unless the page clearly gives a better application URL.
 - Keep type to one of the supported opportunity types.
 - Do not classify general internships as opportunities unless they are structured pipeline/career development programs.
@@ -130,6 +160,9 @@ Return this exact JSON shape:
   "funding_amount": string | null,
   "funding_type": string | null,
   "deadline": string | null,
+  "application_status": "open" | "closed" | "rolling" | "unknown",
+  "deadline_confidence": "high" | "medium" | "low" | "unknown",
+  "cycle_notes": string | null,
   "application_url": string | null,
   "source_url": string | null,
   "effort_level": string | null,
@@ -167,6 +200,9 @@ ${pageText.slice(0, 30000)}
     funding_amount: stringOrNull(parsed.funding_amount),
     funding_type: stringOrNull(parsed.funding_type),
     deadline: stringOrNull(parsed.deadline),
+    application_status: normalizeApplicationStatus(parsed.application_status),
+    deadline_confidence: normalizeDeadlineConfidence(parsed.deadline_confidence),
+    cycle_notes: stringOrNull(parsed.cycle_notes),
     application_url: stringOrNull(parsed.application_url),
     source_url: stringOrNull(parsed.source_url) || sourceUrl,
     effort_level: stringOrNull(parsed.effort_level),
