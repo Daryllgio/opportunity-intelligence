@@ -7,6 +7,7 @@ import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
 import { detectCandidateOpportunityLinks } from "@/lib/discovery/candidate-detection";
 import { upsertDiscoveredPages } from "@/lib/discovery/discovered-pages";
 import { buildOpportunityFamilyKey } from "@/lib/discovery/family-key";
+import { scorePageUsefulness } from "@/lib/discovery/page-usefulness";
 
 function createServiceSupabase() {
   return createClient(
@@ -49,6 +50,65 @@ function getPageFamilyKey(page: Record<string, any>) {
     })
   );
 }
+
+function scoreLeadPage(page: Record<string, any>) {
+  const url = String(page.url || page.normalized_url || "").toLowerCase();
+  const title = String(page.title || "").toLowerCase();
+
+  let score = scorePageUsefulness({
+    title: page.title,
+    url: page.url || page.normalized_url,
+    opportunityType: page.opportunity_type,
+    existingQualityScore: Number(page.quality_score || 0),
+  }).score;
+
+  const combined = `${title} ${url}`;
+
+  if (combined.includes("how-to-apply")) score += 45;
+  if (combined.includes("apply") || combined.includes("application")) score += 35;
+  if (combined.includes("eligibility")) score += 30;
+  if (combined.includes("requirements")) score += 28;
+  if (combined.includes("deadline")) score += 25;
+  if (combined.includes("how-it-works")) score += 22;
+  if (combined.includes("program")) score += 18;
+  if (combined.includes("faq") || combined.includes("frequently-asked")) score += 12;
+  if (combined.includes("homepage") || url.replace(/https?:\/\//, "").split("/").length <= 2) {
+    score += 5;
+  }
+
+  const isApplicationPortal =
+    url.includes("apply.") ||
+    url.includes("/users/") ||
+    url.includes("sign_in") ||
+    url.includes("password") ||
+    url.includes("/closed");
+
+  const hasWeakPortalTitle =
+    !title ||
+    title.includes("login") ||
+    title.includes("sign in") ||
+    title.includes("forgot your password") ||
+    title.includes("apply.loranscholar.ca");
+
+  if (isApplicationPortal) {
+    score -= 90;
+  }
+
+  if (isApplicationPortal && hasWeakPortalTitle) {
+    score -= 80;
+  }
+
+  if (combined.includes("login") || combined.includes("sign_in") || combined.includes("password")) {
+    score -= 100;
+  }
+
+  if (combined.includes("privacy") || combined.includes("terms") || combined.includes("donate")) {
+    score -= 80;
+  }
+
+  return Math.max(0, Math.min(score, 200));
+}
+
 
 async function expandCandidateLinks({
   supabase,
@@ -223,20 +283,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const selectedLeadPages = [];
-    const seenKeys = new Set<string>();
+    const familyGroups = new Map<string, Record<string, any>[]>();
 
     for (const page of candidatePages || []) {
       if (!shouldProcessStatus(page.discovery_status)) continue;
 
-      const key = normalizePageKey(page);
-      if (!key || seenKeys.has(key)) continue;
+      const pageKey = normalizePageKey(page);
+      if (!pageKey) continue;
 
-      seenKeys.add(key);
-      selectedLeadPages.push(page);
+      const familyKey = getPageFamilyKey(page);
 
-      if (selectedLeadPages.length >= maxBundles) break;
+      if (!familyGroups.has(familyKey)) {
+        familyGroups.set(familyKey, []);
+      }
+
+      familyGroups.get(familyKey)!.push(page);
     }
+
+    const selectedLeadPages: Record<string, any>[] = Array.from(familyGroups.entries())
+      .map(([familyKey, pages]) => {
+        const sortedPages = [...pages].sort(
+          (left, right) => scoreLeadPage(right) - scoreLeadPage(left)
+        );
+
+        return {
+          familyKey,
+          page: sortedPages[0],
+          leadScore: scoreLeadPage(sortedPages[0]),
+          candidateCount: pages.length,
+        };
+      })
+      .sort((left, right) => right.leadScore - left.leadScore)
+      .slice(0, maxBundles)
+      .map((entry) => ({
+        ...entry.page,
+        selected_family_key: entry.familyKey,
+        selected_lead_score: entry.leadScore,
+        selected_family_candidate_count: entry.candidateCount,
+      }));
 
     const results = [];
     const alreadyUsedPageKeys = new Set<string>();
@@ -274,6 +358,43 @@ export async function POST(request: NextRequest) {
 
       const currentLeadKey = normalizePageKey(currentLeadPage);
       const currentFamilyKey = getPageFamilyKey(currentLeadPage);
+
+      const { data: handledFamilyPages, error: handledFamilyError } = await supabase
+        .from("discovered_pages")
+        .select("id, discovery_status")
+        .eq("opportunity_family_key", currentFamilyKey)
+        .in("discovery_status", [
+          "future_tracking",
+          "review",
+          "published",
+          "bundled"
+        ])
+        .limit(1);
+
+      if (handledFamilyError) {
+        results.push({
+          leadPageId: currentLeadPage.id,
+          leadTitle: currentLeadPage.title,
+          leadUrl: currentLeadPage.url,
+          decision: "error",
+          error: handledFamilyError.message,
+        });
+        continue;
+      }
+
+      if (handledFamilyPages && handledFamilyPages.length > 0) {
+        results.push({
+          leadPageId: currentLeadPage.id,
+          leadTitle: currentLeadPage.title,
+          leadUrl: currentLeadPage.url,
+          decision: "skipped",
+          reason: "opportunity_family_already_handled",
+          opportunityFamilyKey: currentFamilyKey,
+          currentStatus: currentLeadPage.discovery_status,
+          handledStatus: handledFamilyPages[0].discovery_status,
+        });
+        continue;
+      }
 
       if (alreadyUsedFamilyKeys.has(currentFamilyKey)) {
         results.push({
@@ -360,6 +481,10 @@ export async function POST(request: NextRequest) {
       results.push({
         leadTitle: currentLeadPage.title,
         leadUrl: currentLeadPage.url,
+        selectedFamilyKey: currentLeadPage.selected_family_key || currentFamilyKey,
+        selectedLeadScore: currentLeadPage.selected_lead_score || scoreLeadPage(currentLeadPage),
+        selectedFamilyCandidateCount:
+          currentLeadPage.selected_family_candidate_count || null,
         expansion,
         ...bundleResult,
       });
