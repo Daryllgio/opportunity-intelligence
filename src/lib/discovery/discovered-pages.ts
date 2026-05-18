@@ -1,9 +1,19 @@
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
 import type { CandidateOpportunityLink } from "@/lib/discovery/candidate-detection";
+import { buildOpportunityFamilyKey } from "@/lib/discovery/family-key";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
 };
+
+const PROTECTED_STATUSES = new Set([
+  "bundled",
+  "future_tracking",
+  "review",
+  "published",
+  "rejected",
+  "ignored",
+]);
 
 function getDomain(url: string) {
   try {
@@ -32,7 +42,7 @@ export async function upsertDiscoveredPages({
 }) {
   const now = new Date().toISOString();
 
-  const rows = candidates
+  const preparedRows = candidates
     .map((candidate) => {
       const normalizedUrl = candidate.normalizedUrl || normalizeUrl(candidate.url);
 
@@ -49,6 +59,13 @@ export async function upsertDiscoveredPages({
         opportunity_type: opportunityType,
         education_level: educationLevel,
         field_area: fieldArea,
+        opportunity_family_key: buildOpportunityFamilyKey({
+          url: candidate.url,
+          sourceDomain: getDomain(candidate.url),
+          opportunityType,
+          title: candidate.linkText,
+          discoveryQuery,
+        }),
         discovery_status: "candidate",
         quality_score: candidate.score,
         rejection_reason: null,
@@ -56,28 +73,94 @@ export async function upsertDiscoveredPages({
         updated_at: now,
       };
     })
-    .filter(Boolean);
+    .filter(
+      (row): row is NonNullable<typeof row> => row !== null
+    );
 
-  if (rows.length === 0) {
+  if (preparedRows.length === 0) {
     return {
       upserted: 0,
       rows: [],
     };
   }
 
-  const { data, error } = await supabase
-    .from("discovered_pages")
-    .upsert(rows, {
-      onConflict: "normalized_url",
-    })
-    .select("*");
+  const normalizedUrls = preparedRows
+    .map((row) => String(row.normalized_url || ""))
+    .filter(Boolean);
 
-  if (error) {
-    throw new Error(error.message);
+  const { data: existingRows, error: existingError } = await supabase
+    .from("discovered_pages")
+    .select("id, normalized_url, discovery_status")
+    .in("normalized_url", normalizedUrls);
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  type ExistingDiscoveredPageRow = {
+    id: string;
+    normalized_url: string;
+    discovery_status: string | null;
+  };
+
+  const existingByUrl = new Map<string, ExistingDiscoveredPageRow>(
+    ((existingRows || []) as ExistingDiscoveredPageRow[]).map((row) => [
+      String(row.normalized_url),
+      row,
+    ])
+  );
+
+  const savedRows = [];
+
+  for (const row of preparedRows) {
+    const existing = existingByUrl.get(String(row.normalized_url));
+
+    if (existing?.id) {
+      const currentStatus = String(existing.discovery_status || "");
+
+      const updatePayload = {
+        discovery_query: row.discovery_query,
+        url: row.url,
+        title: row.title,
+        snippet: row.snippet,
+        source_domain: row.source_domain,
+        region: row.region,
+        opportunity_type: row.opportunity_type,
+        education_level: row.education_level,
+        field_area: row.field_area,
+        opportunity_family_key: row.opportunity_family_key,
+        quality_score: row.quality_score,
+        last_seen_at: now,
+        updated_at: now,
+        ...(PROTECTED_STATUSES.has(currentStatus)
+          ? {}
+          : { discovery_status: "candidate", rejection_reason: null }),
+      };
+
+      const { data, error } = await supabase
+        .from("discovered_pages")
+        .update(updatePayload)
+        .eq("id", existing.id)
+        .select("*")
+        .single();
+
+      if (error) throw new Error(error.message);
+      savedRows.push(data);
+      continue;
+    }
+
+    const { data, error } = await supabase
+      .from("discovered_pages")
+      .insert(row)
+      .select("*")
+      .single();
+
+    if (error) throw new Error(error.message);
+    savedRows.push(data);
   }
 
   return {
-    upserted: data?.length || 0,
-    rows: data || [],
+    upserted: savedRows.length,
+    rows: savedRows,
   };
 }
