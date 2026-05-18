@@ -98,7 +98,7 @@ ${pageText.slice(0, 25000)}
 `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-pro",
+    model: "gemini-2.5-flash",
     contents: prompt,
   });
 
