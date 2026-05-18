@@ -128,13 +128,16 @@ export async function upsertDiscoveredPages({
         opportunity_type: row.opportunity_type,
         education_level: row.education_level,
         field_area: row.field_area,
-        opportunity_family_key: row.opportunity_family_key,
         quality_score: row.quality_score,
         last_seen_at: now,
         updated_at: now,
         ...(PROTECTED_STATUSES.has(currentStatus)
           ? {}
-          : { discovery_status: "candidate", rejection_reason: null }),
+          : {
+              opportunity_family_key: row.opportunity_family_key,
+              discovery_status: "candidate",
+              rejection_reason: null,
+            }),
       };
 
       const { data, error } = await supabase

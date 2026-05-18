@@ -1,10 +1,11 @@
-function normalizeText(value: unknown) {
+function normalizeSlug(value: unknown) {
   return String(value || "")
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
     .trim();
 }
 
@@ -23,7 +24,7 @@ export function getDomainFamily(url: unknown) {
 
     return hostname;
   } catch {
-    return normalizeText(raw).split(" ")[0] || "";
+    return normalizeSlug(raw).split("-")[0] || "";
   }
 }
 
@@ -43,30 +44,29 @@ export function buildOpportunityFamilyKey({
   discoveryQuery?: unknown;
 }) {
   const domain =
-    normalizeText(sourceDomain) ||
+    String(sourceDomain || "").replace(/^www\./, "").trim() ||
     getDomainFamily(url);
 
-  const type = normalizeText(opportunityType) || "unknown_type";
+  const normalizedDomain = getDomainFamily(`https://${domain}`) || domain;
+  const type = normalizeSlug(opportunityType) || "unknown-type";
 
-  const providerText = normalizeText(provider);
-  const titleText = normalizeText(title);
-  const queryText = normalizeText(discoveryQuery);
+  const providerText = normalizeSlug(provider);
+  const titleText = normalizeSlug(title);
+  const queryText = normalizeSlug(discoveryQuery);
 
   let familyHint = "";
 
-  if (domain.includes("loranscholar.ca")) {
+  if (normalizedDomain.includes("loranscholar.ca")) {
     familyHint = "loran";
   } else if (providerText) {
-    familyHint = providerText.split(" ").slice(0, 4).join("-");
+    familyHint = providerText.split("-").slice(0, 4).join("-");
   } else if (titleText) {
-    familyHint = titleText.split(" ").slice(0, 5).join("-");
+    familyHint = titleText.split("-").slice(0, 5).join("-");
   } else {
-    familyHint = queryText.split(" ").slice(0, 5).join("-");
+    familyHint = queryText.split("-").slice(0, 5).join("-");
   }
 
-  return [domain, type, familyHint || "unknown"]
+  return [normalizedDomain, type, familyHint || "unknown"]
     .filter(Boolean)
-    .join("__")
-    .replace(/_+/g, "_")
-    .replace(/\s+/g, "-");
+    .join("__");
 }
