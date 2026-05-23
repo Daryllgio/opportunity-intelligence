@@ -1,5 +1,14 @@
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
 import type { CapturedLink } from "@/lib/discovery/capture/cheerio-capture";
+import {
+  ALLOWED_OPPORTUNITY_TEXT_SIGNALS,
+  SPECIFIC_OPPORTUNITY_EVIDENCE_SIGNALS,
+  countSignals,
+  hasAnySignal,
+  looksLikeListingOrResourcePage,
+  looksLikeSpecificOpportunityUrl,
+  shouldRejectUrlBeforeQueue,
+} from "@/lib/discovery/discovery-scope-rules";
 
 export type CandidateOpportunityLink = {
   url: string;
@@ -34,28 +43,7 @@ const POSITIVE_URL_SIGNALS = [
   "students",
 ];
 
-const POSITIVE_TEXT_SIGNALS = [
-  "scholarship",
-  "fellowship",
-  "grant",
-  "award",
-  "research program",
-  "competition",
-  "challenge",
-  "leadership program",
-  "career development",
-  "pipeline program",
-  "apply",
-  "application",
-  "eligibility",
-  "students",
-  "undergraduate",
-  "graduate",
-  "phd",
-  "medical student",
-  "law student",
-  "mba",
-];
+const POSITIVE_TEXT_SIGNALS = ALLOWED_OPPORTUNITY_TEXT_SIGNALS;
 
 const NEGATIVE_URL_SIGNALS = [
   "privacy",
@@ -107,12 +95,6 @@ function safeUrl(value: string) {
   }
 }
 
-function countSignals(text: string, signals: string[]) {
-  const normalized = text.toLowerCase();
-
-  return signals.filter((signal) => normalized.includes(signal)).length;
-}
-
 function hasNegativeExtension(pathname: string) {
   return NEGATIVE_EXTENSIONS.some((extension) =>
     pathname.toLowerCase().endsWith(extension)
@@ -146,6 +128,15 @@ export function scoreCandidateLink(link: CapturedLink): CandidateOpportunityLink
   let score = 0;
 
   if (!normalizedUrl) return null;
+
+  const queueRejection = shouldRejectUrlBeforeQueue(normalizedUrl || link.href);
+  if (queueRejection.reject) {
+    return null;
+  }
+
+  if (looksLikeListingOrResourcePage({ title: linkText, url: normalizedUrl })) {
+    return null;
+  }
 
   if (hasNegativeExtension(parsed.pathname)) {
     return null;
@@ -232,7 +223,30 @@ export function scoreCandidateLink(link: CapturedLink): CandidateOpportunityLink
     score += 4;
   }
 
-  if (score < 18) {
+  const specificOpportunityEvidenceCount = countSignals(
+    combined,
+    SPECIFIC_OPPORTUNITY_EVIDENCE_SIGNALS
+  );
+
+  const isSpecificOpportunityUrl = looksLikeSpecificOpportunityUrl(normalizedUrl);
+
+  if (isSpecificOpportunityUrl) {
+    score += 25;
+    reasons.push("URL matches a specific opportunity detail-page pattern.");
+  }
+
+  if (specificOpportunityEvidenceCount >= 2) {
+    score += Math.min(specificOpportunityEvidenceCount * 6, 18);
+    reasons.push("Link has specific opportunity evidence.");
+  }
+
+  const hasAllowedSignal = hasAnySignal(combined, ALLOWED_OPPORTUNITY_TEXT_SIGNALS);
+
+  if (!isSpecificOpportunityUrl && !hasAllowedSignal && specificOpportunityEvidenceCount < 2) {
+    return null;
+  }
+
+  if (score < 24) {
     return null;
   }
 

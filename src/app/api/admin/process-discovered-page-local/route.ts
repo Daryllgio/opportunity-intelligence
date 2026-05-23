@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
 import { extractDiscoveredOpportunity } from "@/lib/discovery/extract-discovered-opportunity";
 import { ingestExtractedOpportunity } from "@/lib/discovery/ingest-extracted-opportunity";
+import { shouldRejectDiscoveredPageBeforeExtraction } from "@/lib/discovery/opportunity-scope";
 
 function createServiceSupabase() {
   return createClient(
@@ -84,6 +85,32 @@ export async function POST(request: NextRequest) {
           quality: finalResult.quality,
           error: finalResult.error,
         },
+      });
+    }
+
+    const preExtractionScope = shouldRejectDiscoveredPageBeforeExtraction({
+      opportunityType: discoveredPage.opportunity_type,
+      title: discoveredPage.title,
+      url: finalResult.finalUrl,
+      text: finalResult.cleanText,
+    });
+
+    if (preExtractionScope.reject) {
+      await supabase
+        .from("discovered_pages")
+        .update({
+          discovery_status: "rejected",
+          rejection_reason: preExtractionScope.reason || "Pre-extraction scope reject.",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", discoveredPageId);
+
+      return NextResponse.json({
+        decision: "reject",
+        reason: preExtractionScope.reason || "pre_extraction_scope_reject",
+        capturedUrl: finalResult.finalUrl,
+        captureMethod: capture.captureMethod,
+        usedFallback: capture.usedFallback,
       });
     }
 

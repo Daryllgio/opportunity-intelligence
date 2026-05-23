@@ -4,6 +4,7 @@ import { buildEvidenceBundleForDiscoveredPage } from "@/lib/discovery/evidence-b
 import { extractDiscoveredOpportunity } from "@/lib/discovery/extract-discovered-opportunity";
 import { ingestExtractedOpportunity } from "@/lib/discovery/ingest-extracted-opportunity";
 import { scorePageUsefulness } from "@/lib/discovery/page-usefulness";
+import { shouldRejectDiscoveredPageBeforeExtraction } from "@/lib/discovery/opportunity-scope";
 
 function createServiceSupabase() {
   return createClient(
@@ -59,6 +60,33 @@ export async function POST(request: NextRequest) {
     const sourceUrl = String(
       bundle.anchorPage.url || bundle.anchorPage.normalized_url || ""
     );
+
+    const preExtractionScope = shouldRejectDiscoveredPageBeforeExtraction({
+      opportunityType: bundle.anchorPage.opportunity_type,
+      title: bundle.anchorPage.title,
+      url: sourceUrl,
+      text: bundle.evidenceText,
+    });
+
+    if (preExtractionScope.reject) {
+      await supabase
+        .from("discovered_pages")
+        .update({
+          discovery_status: "rejected",
+          rejection_reason: preExtractionScope.reason || "Pre-extraction scope reject.",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", discoveredPageId);
+
+      return NextResponse.json({
+        discoveredPageId,
+        decision: "reject",
+        reason: preExtractionScope.reason || "pre_extraction_scope_reject",
+        domain: bundle.domain,
+        pageCount: bundle.pages.length,
+        coverage: bundle.coverage,
+      });
+    }
 
     const extracted = await extractDiscoveredOpportunity({
       pageText: bundle.evidenceText,

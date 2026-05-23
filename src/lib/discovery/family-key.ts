@@ -56,8 +56,30 @@ export function buildOpportunityFamilyKey({
 
   let familyHint = "";
 
+  const urlText = normalizeSlug(url);
+
   if (normalizedDomain.includes("loranscholar.ca")) {
     familyHint = "loran";
+  } else if (
+    normalizedDomain.includes("poescholarships.org") ||
+    urlText.includes("poescholarships-org-for-students")
+  ) {
+    familyHint = "pursuit-of-excellence";
+  } else if (
+    normalizedDomain.includes("questbridge.org") ||
+    normalizedDomain.includes("questbridge.zendesk.com") ||
+    urlText.includes("questbridge")
+  ) {
+    return ["questbridge.org", type, "national-college-match"].join("__");
+  } else if (
+    normalizedDomain.includes("greatmindsinstem.org") ||
+    normalizedDomain.includes("gmis-scholars.org")
+  ) {
+    if (urlText.includes("california-medical")) {
+      familyHint = "california-medical-scholarships";
+    } else {
+      familyHint = "gmis-stem-scholarship";
+    }
   } else if (providerText) {
     familyHint = providerText.split("-").slice(0, 4).join("-");
   } else if (titleText) {

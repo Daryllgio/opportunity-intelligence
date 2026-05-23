@@ -179,6 +179,15 @@ export async function assessDuplicateRisk({
     };
   }
 
+  const aggregatorDomains = new Set([
+    "scholarships.com",
+    "studentscholarships.org",
+    "scholarshiproar.com",
+    "accessscholarships.com",
+    "scholarships360.org",
+    "pathwaystoscience.org",
+  ]);
+
   const sameDomainSimilarOpportunity = matches.find(
     (match: Record<string, unknown>) => {
       const matchDomain =
@@ -193,11 +202,13 @@ export async function assessDuplicateRisk({
       const titleOverlap = overlapScore(opportunity.title, match.title);
       const providerOverlap = overlapScore(opportunity.provider, match.provider);
 
-      return (
-        titleOverlap >= 0.35 ||
-        providerOverlap >= 0.35 ||
-        normalizeText(opportunity.type) === normalizeText(match.type)
-      );
+      // Aggregator sites host many unrelated opportunities on the same domain.
+      // For those domains, same domain + same type is not duplicate evidence.
+      if (aggregatorDomains.has(sourceDomain)) {
+        return titleOverlap >= 0.55 || providerOverlap >= 0.55;
+      }
+
+      return titleOverlap >= 0.35 || providerOverlap >= 0.35;
     }
   );
 

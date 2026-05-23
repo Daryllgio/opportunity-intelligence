@@ -3,6 +3,7 @@ import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 import { validateExtractedOpportunity } from "@/lib/discovery/validation";
 import { assessDuplicateRisk } from "@/lib/discovery/duplicate-risk";
 import { shouldRejectExtractedOpportunity } from "@/lib/discovery/opportunity-scope";
+import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -174,7 +175,7 @@ export async function ingestExtractedOpportunity({
     duplicateRisk: duplicate.duplicateRisk,
   });
 
-  const trustMetadata = {
+  let trustMetadata = {
     validation_score: validation.score,
     validation_decision: validation.decision,
     validation_reasons: validation.reasons,
@@ -185,7 +186,66 @@ export async function ingestExtractedOpportunity({
     review_flags: validation.reviewFlags,
     source_quality_reasons: validation.sourceQualityReasons,
     auto_publish_eligible: validation.autoPublishEligible,
+    official_source_url: null as string | null,
+    official_source_verified: false,
+    application_note: null as string | null,
+    application_destination_url: null as string | null,
+    application_destination_type: null as string | null,
+    official_source_status: null as string | null,
+    destination_confidence: null as string | null,
+    destination_reasons: [] as string[],
+    application_document_url: null as string | null,
+    application_document_type: null as string | null,
   };
+
+  if (
+    validation.sourceCategory === "aggregator" ||
+    validation.reviewFlags.includes("needs_official_source") ||
+    validation.applicationUrlQuality === "aggregator_application" ||
+    validation.applicationUrlQuality === "same_as_source" ||
+    validation.applicationUrlQuality === "missing_application"
+  ) {
+    try {
+      const destinationResult = await rankApplicationDestination({
+        title: opportunityPayload.title,
+        provider: opportunityPayload.provider,
+        type: opportunityPayload.type,
+        sourceUrl: opportunityPayload.source_url,
+        deadline: opportunityPayload.deadline,
+      });
+
+      trustMetadata = {
+        ...trustMetadata,
+        official_source_url: destinationResult.officialSourceUrl,
+        official_source_verified:
+          destinationResult.officialSourceStatus === "verified_destination",
+        application_destination_url: destinationResult.applicationDestinationUrl,
+        application_destination_type: destinationResult.applicationDestinationType,
+        official_source_status: destinationResult.officialSourceStatus,
+        destination_confidence: destinationResult.destinationConfidence,
+        destination_reasons: destinationResult.destinationReasons,
+        application_document_url: destinationResult.applicationDocumentUrl,
+        application_document_type: destinationResult.applicationDocumentType,
+        application_note:
+          destinationResult.destinationConfidence !== "none"
+            ? `Applicant destination selected with ${destinationResult.destinationConfidence} confidence. Review before publishing.`
+            : "No strong applicant-facing destination was found. Review manually.",
+        source_quality_reasons: [
+          ...trustMetadata.source_quality_reasons,
+          ...destinationResult.destinationReasons,
+        ],
+      };
+    } catch (error) {
+      trustMetadata = {
+        ...trustMetadata,
+        official_source_status: "failed_lookup",
+        destination_confidence: "none",
+        application_note: `Application destination ranking failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      };
+    }
+  }
 
   const now = new Date().toISOString();
 

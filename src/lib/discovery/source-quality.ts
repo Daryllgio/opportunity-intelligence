@@ -46,6 +46,18 @@ export type ReviewFlag =
   | "needs_more_pages"
   | "closed_opportunity";
 
+export type AggregatorBehaviorResult = {
+  isAggregatorLike: boolean;
+  score: number;
+  reasons: string[];
+};
+
+export type ProviderSourceRelationship = {
+  isProviderAligned: boolean;
+  score: number;
+  reasons: string[];
+};
+
 export function getDomain(url: string | null | undefined) {
   if (!url) return null;
 
@@ -54,6 +66,35 @@ export function getDomain(url: string | null | undefined) {
   } catch {
     return null;
   }
+}
+
+function normalizeText(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenSet(value: unknown) {
+  return new Set(
+    normalizeText(value)
+      .split(" ")
+      .filter((token) => token.length >= 3)
+  );
+}
+
+function tokenOverlap(left: unknown, right: unknown) {
+  const leftTokens = tokenSet(left);
+  const rightTokens = tokenSet(right);
+
+  if (!leftTokens.size || !rightTokens.size) return 0;
+
+  const intersection = Array.from(leftTokens).filter((token) =>
+    rightTokens.has(token)
+  );
+
+  return intersection.length / Math.min(leftTokens.size, rightTokens.size);
 }
 
 function domainMatches(domain: string, knownDomain: string) {
@@ -76,7 +117,7 @@ function sameOrRelatedDomain(left: string | null, right: string | null) {
   );
 }
 
-const blockedDomains = new Set([
+export const blockedDomains = new Set([
   "facebook.com",
   "instagram.com",
   "linkedin.com",
@@ -87,27 +128,41 @@ const blockedDomains = new Set([
   "reddit.com",
 ]);
 
-const aggregatorDomains = new Set([
+export const aggregatorDomains = new Set([
   "scholarships.com",
   "studentscholarships.org",
   "scholarshiproar.com",
   "accessscholarships.com",
   "scholarships360.org",
+  "fastweb.com",
+  "bold.org",
+  "unigo.com",
+  "niche.com",
+  "cappex.com",
+  "goingmerry.com",
+  "scholarshipowl.com",
+  "collegegreenlight.com",
+  "appily.com",
+  "petersons.com",
+  "brokescholar.com",
+  "careerkarma.com",
 ]);
 
-const trustedDatabaseDomains = new Set([
+export const trustedDatabaseDomains = new Set([
   "pathwaystoscience.org",
   "profellow.com",
 ]);
 
-const officialProviderDomains = new Set([
+export const officialProviderDomains = new Set([
   "innovation.ca",
   "bmifoundation.org",
   "wdc.org",
   "seafwa.org",
+  "nysra.org",
+  "napawash.org",
 ]);
 
-const applicationPortalDomains = new Set([
+export const applicationPortalDomains = new Set([
   "smapply.io",
   "awardspring.com",
   "submittable.com",
@@ -117,13 +172,35 @@ const applicationPortalDomains = new Set([
   "surveyapply.com",
 ]);
 
-const lowTrustDomains = new Set([
+export const lowTrustDomains = new Set([
   "weebly.com",
   "wixsite.com",
   "blogspot.com",
   "wordpress.com",
   "medium.com",
 ]);
+
+export function isKnownAggregatorDomain(urlOrDomain: string | null | undefined) {
+  const domain =
+    urlOrDomain && urlOrDomain.includes("://")
+      ? getDomain(urlOrDomain)
+      : String(urlOrDomain || "").replace(/^www\./, "").toLowerCase();
+
+  if (!domain) return false;
+
+  return domainInSet(domain, aggregatorDomains);
+}
+
+export function isKnownBlockedDomain(urlOrDomain: string | null | undefined) {
+  const domain =
+    urlOrDomain && urlOrDomain.includes("://")
+      ? getDomain(urlOrDomain)
+      : String(urlOrDomain || "").replace(/^www\./, "").toLowerCase();
+
+  if (!domain) return false;
+
+  return domainInSet(domain, blockedDomains);
+}
 
 function isGovernmentDomain(domain: string) {
   return (
@@ -168,6 +245,250 @@ function isFoundationOrNonprofitDomain(domain: string) {
     domain.includes("trust") ||
     domain.includes("institute")
   );
+}
+
+export function detectAggregatorBehavior({
+  url,
+  title,
+  text,
+  provider,
+}: {
+  url?: string | null;
+  title?: string | null;
+  text?: string | null;
+  provider?: string | null;
+}): AggregatorBehaviorResult {
+  const domain = getDomain(url);
+  const combined = normalizeText([title, text, url].filter(Boolean).join(" "));
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (domain && isKnownAggregatorDomain(domain)) {
+    score += 100;
+    reasons.push("Known opportunity aggregator/database domain.");
+  }
+
+  const generalOpportunityAggregatorSignals = [
+    "opportunity database",
+    "opportunity directory",
+    "browse opportunities",
+    "search opportunities",
+    "recommended opportunities",
+    "similar opportunities",
+    "matched opportunities",
+    "student opportunities",
+    "funding opportunities",
+    "external opportunities",
+    "listing of opportunities",
+    "opportunities for students",
+    "save this opportunity",
+    "create a profile",
+    "sign up to apply",
+    "log in to apply",
+    "more opportunities like this",
+    "find opportunities",
+    "apply to opportunities",
+  ];
+
+  for (const signal of generalOpportunityAggregatorSignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 18;
+      reasons.push(`Opportunity aggregator behavior signal: ${signal}.`);
+    }
+  }
+
+  const scholarshipAggregatorSignals = [
+    "scholarship database",
+    "scholarship directory",
+    "search scholarships",
+    "find scholarships",
+    "matched scholarships",
+    "recommended scholarships",
+    "similar scholarships",
+    "scholarship matches",
+    "college scholarships",
+    "top scholarships",
+    "featured scholarships",
+    "no essay scholarship",
+  ];
+
+  for (const signal of scholarshipAggregatorSignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 14;
+      reasons.push(`Scholarship aggregator signal: ${signal}.`);
+    }
+  }
+
+  const researchProgramAggregatorSignals = [
+    "research opportunity database",
+    "research opportunities database",
+    "undergraduate research opportunities",
+    "summer research program list",
+    "research program list",
+    "research program directory",
+    "student research opportunities",
+  ];
+
+  for (const signal of researchProgramAggregatorSignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 14;
+      reasons.push(`Research-program aggregator signal: ${signal}.`);
+    }
+  }
+
+  const fellowshipAggregatorSignals = [
+    "fellowship database",
+    "fellowship directory",
+    "search fellowships",
+    "find fellowships",
+    "external fellowships",
+    "national fellowship listings",
+    "fellowship advising search",
+  ];
+
+  for (const signal of fellowshipAggregatorSignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 14;
+      reasons.push(`Fellowship aggregator signal: ${signal}.`);
+    }
+  }
+
+  const grantAggregatorSignals = [
+    "grant database",
+    "grant directory",
+    "grant search",
+    "funding database",
+    "funding directory",
+    "funding opportunity database",
+    "funding opportunity search",
+  ];
+
+  for (const signal of grantAggregatorSignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 14;
+      reasons.push(`Grant/funding aggregator signal: ${signal}.`);
+    }
+  }
+
+  const competitionAggregatorSignals = [
+    "competition directory",
+    "competition database",
+    "student competitions",
+    "case competition list",
+    "hackathon directory",
+    "challenge database",
+    "pitch competition list",
+  ];
+
+  for (const signal of competitionAggregatorSignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 14;
+      reasons.push(`Competition aggregator signal: ${signal}.`);
+    }
+  }
+
+  const leadershipCareerPipelineAggregatorSignals = [
+    "leadership program directory",
+    "leadership program list",
+    "career development program list",
+    "career development programs",
+    "pipeline program directory",
+    "pipeline program list",
+    "student program directory",
+    "student programs directory",
+  ];
+
+  for (const signal of leadershipCareerPipelineAggregatorSignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 14;
+      reasons.push(`Leadership/career/pipeline aggregator signal: ${signal}.`);
+    }
+  }
+
+  const weakDirectorySignals = [
+    "directory",
+    "database",
+    "browse",
+    "search results",
+    "filter by",
+    "sort by",
+    "results found",
+    "view all",
+    "learn more about this opportunity",
+  ];
+
+  for (const signal of weakDirectorySignals) {
+    if (combined.includes(normalizeText(signal))) {
+      score += 5;
+      reasons.push(`Weak directory/listing signal: ${signal}.`);
+    }
+  }
+
+  const sourceProviderOverlap = tokenOverlap(provider, domain || "");
+  const pageProviderOverlap = tokenOverlap(provider, combined);
+
+  if (provider && domain && sourceProviderOverlap < 0.15 && pageProviderOverlap < 0.25) {
+    score += 10;
+    reasons.push("Provider does not appear aligned with source domain/page.");
+  }
+
+  return {
+    isAggregatorLike: score >= 35,
+    score,
+    reasons,
+  };
+}
+
+export function assessProviderSourceRelationship({
+  provider,
+  url,
+  pageText,
+}: {
+  provider?: string | null;
+  url?: string | null;
+  pageText?: string | null;
+}): ProviderSourceRelationship {
+  const domain = getDomain(url);
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (!provider || !domain) {
+    return {
+      isProviderAligned: false,
+      score: 0,
+      reasons: ["Missing provider or source domain."],
+    };
+  }
+
+  const providerDomainOverlap = tokenOverlap(provider, domain);
+  const providerPageOverlap = tokenOverlap(provider, pageText || "");
+
+  if (providerDomainOverlap >= 0.35) {
+    score += 50;
+    reasons.push("Provider name aligns with source domain.");
+  } else if (providerDomainOverlap >= 0.2) {
+    score += 25;
+    reasons.push("Provider name partially aligns with source domain.");
+  }
+
+  if (providerPageOverlap >= 0.45) {
+    score += 35;
+    reasons.push("Provider is clearly mentioned on the page.");
+  } else if (providerPageOverlap >= 0.25) {
+    score += 15;
+    reasons.push("Provider is partially mentioned on the page.");
+  }
+
+  if (isKnownAggregatorDomain(domain)) {
+    score -= 60;
+    reasons.push("Source domain is a known aggregator, not provider-aligned.");
+  }
+
+  return {
+    isProviderAligned: score >= 35,
+    score,
+    reasons,
+  };
 }
 
 export function assessSourceQuality(url: string | null | undefined): SourceQuality {

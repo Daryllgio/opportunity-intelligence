@@ -23,6 +23,57 @@ function getDomain(url: string) {
   }
 }
 
+function shouldRejectDiscoveredUrl(url: string) {
+  const lower = url.toLowerCase();
+
+  const blockedSignals = [
+    "/login",
+    "sign_in",
+    "sign-in",
+    "/password",
+    "password/reset",
+    "/privacy",
+    "privacy-policy",
+    "/terms",
+    "/cookie",
+    "/contact",
+    "/newsletter",
+    "/videos",
+    "/wages",
+    "/careers",
+    "/maps/",
+    "/course-search",
+    "/university-search",
+    "/majors-home",
+    "/colleges",
+    "/admin",
+    "cms.omniupdate.com",
+    "manage/login",
+  ];
+
+  const allowedSignals = [
+    "/scholarship",
+    "/scholarships",
+    "/apply",
+    "/application",
+    "/eligibility",
+    "/requirements",
+    "/how-to-apply",
+    "/program",
+    "/programs",
+    "/research-training",
+    "/financial-aid",
+    "/funding",
+  ];
+
+  if (allowedSignals.some((signal) => lower.includes(signal))) {
+    return false;
+  }
+
+  return blockedSignals.some((signal) => lower.includes(signal));
+}
+
+
 export async function upsertDiscoveredPages({
   supabase,
   candidates,
@@ -47,6 +98,8 @@ export async function upsertDiscoveredPages({
       const normalizedUrl = candidate.normalizedUrl || normalizeUrl(candidate.url);
 
       if (!normalizedUrl) return null;
+
+      if (shouldRejectDiscoveredUrl(normalizedUrl)) return null;
 
       return {
         discovery_query: discoveryQuery,
