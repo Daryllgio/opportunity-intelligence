@@ -100,6 +100,13 @@ const trustedDatabaseDomains = new Set([
   "profellow.com",
 ]);
 
+const officialProviderDomains = new Set([
+  "innovation.ca",
+  "bmifoundation.org",
+  "wdc.org",
+  "seafwa.org",
+]);
+
 const applicationPortalDomains = new Set([
   "smapply.io",
   "awardspring.com",
@@ -138,6 +145,8 @@ function isUniversityDomain(domain: string) {
     domain.endsWith(".edu.ng") ||
     domain.includes("university") ||
     domain.includes("college") ||
+    domain.includes("mcmaster") ||
+    domain.includes("ualberta") ||
     domain.includes("carleton") ||
     domain.includes("uottawa") ||
     domain.includes("utoronto") ||
@@ -207,6 +216,17 @@ export function assessSourceQuality(url: string | null | undefined): SourceQuali
       isAggregator: false,
       isOfficialLeaning: false,
       reasons: ["Trusted opportunity database."],
+    };
+  }
+
+  if (domainInSet(domain, officialProviderDomains)) {
+    return {
+      domain,
+      category: "official_provider",
+      trust: "trusted",
+      isAggregator: false,
+      isOfficialLeaning: true,
+      reasons: ["Known official opportunity provider source."],
     };
   }
 
