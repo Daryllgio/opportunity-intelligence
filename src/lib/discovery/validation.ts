@@ -2,10 +2,22 @@ import {
   isSupportedOpportunityType,
   type OpportunityType,
 } from "@/lib/discovery/taxonomy";
+import {
+  assessApplicationUrlQuality,
+  assessSourceQuality,
+  buildSourceReviewFlags,
+  type ApplicationUrlQuality,
+  type ReviewFlag,
+  type SourceCategory,
+} from "@/lib/discovery/source-quality";
 
 export type SourceTrust = "trusted" | "standard" | "experimental" | "blocked";
 export type DuplicateRisk = "low" | "medium" | "high";
-export type ValidationDecision = "auto_publish" | "review" | "reject" | "track_for_next_cycle";
+export type ValidationDecision =
+  | "auto_publish"
+  | "review"
+  | "reject"
+  | "track_for_next_cycle";
 
 export type ExtractedOpportunityForValidation = {
   title?: string | null;
@@ -30,12 +42,33 @@ export type ExtractedOpportunityForValidation = {
   competitiveness_factors?: string[] | null;
 };
 
+type ValidationResult = {
+  decision: ValidationDecision;
+  score: number;
+  autoPublishEligible: boolean;
+  duplicateRisk: DuplicateRisk;
+  sourceTrust: SourceTrust;
+  sourceCategory: SourceCategory;
+  applicationUrlQuality: ApplicationUrlQuality;
+  reviewFlags: ReviewFlag[];
+  sourceQualityReasons: string[];
+  reasons: string[];
+};
+
 function hasText(value: unknown, minLength = 1) {
   return typeof value === "string" && value.trim().length >= minLength;
 }
 
 function hasArrayItems(value: unknown, minItems = 1) {
   return Array.isArray(value) && value.filter(Boolean).length >= minItems;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function uniqueReviewFlags(values: ReviewFlag[]) {
+  return Array.from(new Set(values));
 }
 
 function isRollingOpportunity(opportunity: ExtractedOpportunityForValidation) {
@@ -109,6 +142,60 @@ function getDescriptionLength(opportunity: ExtractedOpportunityForValidation) {
     .trim().length;
 }
 
+function parseDeadlineDate(value: unknown) {
+  const raw = String(value || "").trim();
+
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return parsed;
+}
+
+function isPastDeadline(value: unknown) {
+  const deadline = parseDeadlineDate(value);
+
+  if (!deadline) return false;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const deadlineDay = new Date(
+    deadline.getFullYear(),
+    deadline.getMonth(),
+    deadline.getDate()
+  );
+
+  return deadlineDay < today;
+}
+
+function buildValidationResult({
+  decision,
+  score,
+  autoPublishEligible,
+  duplicateRisk,
+  sourceTrust,
+  sourceCategory,
+  applicationUrlQuality,
+  reviewFlags,
+  sourceQualityReasons,
+  reasons,
+}: ValidationResult): ValidationResult {
+  return {
+    decision,
+    score,
+    autoPublishEligible,
+    duplicateRisk,
+    sourceTrust,
+    sourceCategory,
+    applicationUrlQuality,
+    reviewFlags: uniqueReviewFlags(reviewFlags),
+    sourceQualityReasons: uniqueStrings(sourceQualityReasons),
+    reasons: uniqueStrings(reasons),
+  };
+}
+
 export function validateExtractedOpportunity({
   opportunity,
   sourceTrust = "standard",
@@ -117,11 +204,33 @@ export function validateExtractedOpportunity({
   opportunity: ExtractedOpportunityForValidation;
   sourceTrust?: SourceTrust;
   duplicateRisk?: DuplicateRisk;
-}) {
+}): ValidationResult {
+  const sourceQuality = assessSourceQuality(
+    opportunity.source_url || opportunity.application_url
+  );
+
+  const effectiveSourceTrust: SourceTrust =
+    sourceTrust === "blocked" || sourceQuality.trust === "blocked"
+      ? "blocked"
+      : sourceQuality.trust || sourceTrust;
+
+  const applicationUrlQuality = assessApplicationUrlQuality({
+    applicationUrl: opportunity.application_url,
+    sourceUrl: opportunity.source_url,
+  });
+
+  const reviewFlags = buildSourceReviewFlags({
+    sourceQuality,
+    applicationUrlQuality,
+    duplicateRisk,
+    provider: opportunity.provider,
+    deadlineConfidence: opportunity.deadline_confidence,
+  });
+
   const reasons: string[] = [];
   const hardBlockers: string[] = [];
 
-  if (sourceTrust === "blocked") {
+  if (effectiveSourceTrust === "blocked") {
     hardBlockers.push("Source is blocked.");
   }
 
@@ -161,26 +270,57 @@ export function validateExtractedOpportunity({
     hasUsefulEligibility(opportunity) &&
     hasUsefulFundingOrValue(opportunity);
 
-  if (closedButReal && duplicateRisk !== "high" && sourceTrust !== "blocked") {
-    return {
-      decision: "track_for_next_cycle" as ValidationDecision,
+  if (
+    closedButReal &&
+    duplicateRisk !== "high" &&
+    effectiveSourceTrust !== "blocked"
+  ) {
+    return buildValidationResult({
+      decision: "track_for_next_cycle",
       score: 75,
       autoPublishEligible: false,
       duplicateRisk,
-      sourceTrust,
-      reasons: ["Applications are closed. Track for next cycle instead of publishing live."],
-    };
+      sourceTrust: effectiveSourceTrust,
+      sourceCategory: sourceQuality.category,
+      applicationUrlQuality,
+      reviewFlags: [...reviewFlags, "closed_opportunity"],
+      sourceQualityReasons: sourceQuality.reasons,
+      reasons: [
+        "Applications are closed. Track for next cycle instead of publishing live.",
+      ],
+    });
+  }
+
+  if (isPastDeadline(opportunity.deadline)) {
+    return buildValidationResult({
+      decision: "track_for_next_cycle",
+      score: 75,
+      autoPublishEligible: false,
+      duplicateRisk,
+      sourceTrust: effectiveSourceTrust,
+      sourceCategory: sourceQuality.category,
+      applicationUrlQuality,
+      reviewFlags: [...reviewFlags, "closed_opportunity"],
+      sourceQualityReasons: sourceQuality.reasons,
+      reasons: [
+        "Deadline has passed. Track for next cycle instead of publishing live.",
+      ],
+    });
   }
 
   if (hardBlockers.length > 0) {
-    return {
-      decision: "reject" as ValidationDecision,
+    return buildValidationResult({
+      decision: "reject",
       score: 0,
       autoPublishEligible: false,
       duplicateRisk,
-      sourceTrust,
+      sourceTrust: effectiveSourceTrust,
+      sourceCategory: sourceQuality.category,
+      applicationUrlQuality,
+      reviewFlags,
+      sourceQualityReasons: sourceQuality.reasons,
       reasons: hardBlockers,
-    };
+    });
   }
 
   let score = 0;
@@ -223,54 +363,132 @@ export function validateExtractedOpportunity({
   // Safety/source quality: 15
   if (duplicateRisk === "low") score += 6;
   if (duplicateRisk === "medium") score += 2;
-  if (sourceTrust === "trusted") score += 5;
-  if (sourceTrust === "standard") score += 3;
-  if (sourceTrust === "experimental") score += 1;
+
+  if (effectiveSourceTrust === "trusted") score += 5;
+  if (effectiveSourceTrust === "standard") score += 3;
+  if (effectiveSourceTrust === "experimental") score += 1;
+
+  if (sourceQuality.isOfficialLeaning) score += 2;
+  if (sourceQuality.isAggregator) score -= 8;
+
+  if (applicationUrlQuality === "official_application") score += 3;
+  if (applicationUrlQuality === "third_party_application_portal") score += 2;
+  if (applicationUrlQuality === "aggregator_application") score -= 6;
+  if (
+    applicationUrlQuality === "same_as_source" &&
+    sourceQuality.isAggregator
+  ) {
+    score -= 6;
+  }
+  if (applicationUrlQuality === "missing_application") score -= 8;
+
   if (getDescriptionLength(opportunity) >= 2000) score += 4;
 
-  score = Math.min(score, 100);
+  score = Math.max(0, Math.min(score, 100));
 
   if (duplicateRisk === "medium") {
     reasons.push("Medium duplicate risk.");
   }
 
-  if (sourceTrust === "experimental") {
+  if (effectiveSourceTrust === "experimental") {
     reasons.push("Experimental source requires review.");
   }
 
+  if (sourceQuality.isAggregator) {
+    reasons.push("Aggregator source requires review before publishing.");
+  }
+
+  if (sourceQuality.category === "low_trust_blog") {
+    reasons.push("Low-trust source requires review.");
+  }
+
+  if (sourceQuality.category === "unknown") {
+    reasons.push("Unknown source category requires review.");
+  }
+
+  if (applicationUrlQuality === "aggregator_application") {
+    reasons.push("Application appears to be hosted by an aggregator.");
+  }
+
+  if (
+    applicationUrlQuality === "same_as_source" &&
+    sourceQuality.isAggregator
+  ) {
+    reasons.push("Application URL is the same as an aggregator source page.");
+  }
+
+  if (applicationUrlQuality === "missing_application") {
+    reasons.push("Missing application URL.");
+  }
+
+  if (applicationUrlQuality === "unknown_application") {
+    reasons.push("Application URL quality is unknown.");
+  }
+
+  if (opportunity.deadline_confidence === "low") {
+    reasons.push("Low confidence deadline.");
+  }
+
   if (score < 70) {
-    return {
-      decision: "reject" as ValidationDecision,
+    return buildValidationResult({
+      decision: "reject",
       score,
       autoPublishEligible: false,
       duplicateRisk,
-      sourceTrust,
+      sourceTrust: effectiveSourceTrust,
+      sourceCategory: sourceQuality.category,
+      applicationUrlQuality,
+      reviewFlags,
+      sourceQualityReasons: sourceQuality.reasons,
       reasons: reasons.length ? reasons : ["Validation score below 70."],
-    };
+    });
   }
 
-  const trustedAutoPublish = sourceTrust === "trusted" && score >= 88;
-  const standardAutoPublish = sourceTrust === "standard" && score >= 94;
+  const needsSourceReview =
+    sourceQuality.isAggregator ||
+    sourceQuality.category === "low_trust_blog" ||
+    sourceQuality.category === "unknown" ||
+    applicationUrlQuality === "aggregator_application" ||
+    applicationUrlQuality === "missing_application" ||
+    applicationUrlQuality === "unknown_application" ||
+    (applicationUrlQuality === "same_as_source" && sourceQuality.isAggregator);
+
+  const trustedAutoPublish =
+    effectiveSourceTrust === "trusted" && score >= 88 && !needsSourceReview;
+
+  const standardAutoPublish =
+    effectiveSourceTrust === "standard" &&
+    score >= 94 &&
+    sourceQuality.isOfficialLeaning &&
+    !needsSourceReview;
 
   if (duplicateRisk === "low" && (trustedAutoPublish || standardAutoPublish)) {
-    return {
-      decision: "auto_publish" as ValidationDecision,
+    return buildValidationResult({
+      decision: "auto_publish",
       score,
       autoPublishEligible: true,
       duplicateRisk,
-      sourceTrust,
+      sourceTrust: effectiveSourceTrust,
+      sourceCategory: sourceQuality.category,
+      applicationUrlQuality,
+      reviewFlags,
+      sourceQualityReasons: sourceQuality.reasons,
       reasons: ["Passed auto-publish validation."],
-    };
+    });
   }
 
-  return {
-    decision: "review" as ValidationDecision,
+  return buildValidationResult({
+    decision: "review",
     score,
     autoPublishEligible: false,
     duplicateRisk,
-    sourceTrust,
+    sourceTrust: effectiveSourceTrust,
+    sourceCategory: sourceQuality.category,
+    applicationUrlQuality,
+    reviewFlags,
+    sourceQualityReasons: sourceQuality.reasons,
     reasons: reasons.length
       ? reasons
       : ["Opportunity requires review before publishing."],
-  };
+  });
 }

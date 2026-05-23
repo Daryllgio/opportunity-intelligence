@@ -2,6 +2,7 @@ import { normalizeUrl } from "@/lib/utils/url-normalizer";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 import { validateExtractedOpportunity } from "@/lib/discovery/validation";
 import { assessDuplicateRisk } from "@/lib/discovery/duplicate-risk";
+import { shouldRejectExtractedOpportunity } from "@/lib/discovery/opportunity-scope";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -36,15 +37,52 @@ function computeExpectedNextCheckAt() {
   return next.toISOString();
 }
 
+function normalizeOpportunityStatusByDeadline<T extends Record<string, any>>(payload: T): T {
+  const deadline = stringOrNull(payload.deadline);
+
+  if (!deadline || !/^\\d{4}-\\d{2}-\\d{2}$/.test(deadline)) {
+    return payload;
+  }
+
+  const [year, month, day] = deadline.split("-").map(Number);
+  const deadlineUtc = Date.UTC(year, month - 1, day, 23, 59, 59);
+  const now = new Date();
+  const todayUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    0,
+    0,
+    0
+  );
+
+  if (deadlineUtc < todayUtc) {
+    const existingNotes = stringOrNull(payload.cycle_notes);
+    const passedNote = "Deadline has passed; track this opportunity for the next cycle.";
+
+    return {
+      ...payload,
+      application_status: "closed",
+      cycle_notes: existingNotes
+        ? `${existingNotes} ${passedNote}`
+        : passedNote,
+    };
+  }
+
+  return payload;
+}
+
 export async function ingestExtractedOpportunity({
   supabase,
   discoveredPage,
   extracted,
+  opportunityFamilyKey = null,
   sourceTrust = "standard",
 }: {
   supabase: SupabaseClientLike;
   discoveredPage: Record<string, unknown>;
   extracted: Record<string, unknown>;
+  opportunityFamilyKey?: string | null;
   sourceTrust?: "trusted" | "standard" | "experimental" | "blocked";
 }) {
   const normalizedUrl = normalizeUrl(
@@ -57,7 +95,7 @@ export async function ingestExtractedOpportunity({
     )
   );
 
-  const opportunityPayload = {
+  let opportunityPayload = {
     normalized_url: normalizedUrl || null,
     title: stringOrNull(extracted.title),
     provider: stringOrNull(extracted.provider),
@@ -82,6 +120,49 @@ export async function ingestExtractedOpportunity({
     competitiveness_factors: arrayOrEmpty(extracted.competitiveness_factors),
   };
 
+  opportunityPayload = normalizeOpportunityStatusByDeadline(opportunityPayload);
+
+  const scopeCheck = shouldRejectExtractedOpportunity({
+    type: opportunityPayload.type,
+    title: opportunityPayload.title,
+    url: opportunityPayload.source_url || opportunityPayload.application_url,
+    description: opportunityPayload.description,
+    ai_summary: opportunityPayload.ai_summary,
+  });
+
+  if (scopeCheck.reject) {
+    const now = new Date().toISOString();
+
+    await supabase
+      .from("discovered_pages")
+      .update({
+        discovery_status: "rejected",
+        quality_score: 0,
+        rejection_reason: scopeCheck.reason || "Opportunity is outside target scope.",
+        updated_at: now,
+      })
+      .eq("id", discoveredPage.id);
+
+    return {
+      decision: "reject",
+      validation: {
+        decision: "reject",
+        score: 0,
+        autoPublishEligible: false,
+        duplicateRisk: "low",
+        sourceTrust,
+        reasons: [scopeCheck.reason || "Opportunity is outside target scope."],
+      },
+      duplicate: {
+        duplicateRisk: "low",
+        reasons: [],
+        matches: [],
+      },
+      publishedOpportunityId: null,
+      draftId: null,
+    };
+  }
+
   const duplicate = await assessDuplicateRisk({
     supabase,
     opportunity: opportunityPayload,
@@ -92,6 +173,19 @@ export async function ingestExtractedOpportunity({
     sourceTrust,
     duplicateRisk: duplicate.duplicateRisk,
   });
+
+  const trustMetadata = {
+    validation_score: validation.score,
+    validation_decision: validation.decision,
+    validation_reasons: validation.reasons,
+    duplicate_risk: duplicate.duplicateRisk,
+    source_trust: validation.sourceTrust,
+    source_category: validation.sourceCategory,
+    application_url_quality: validation.applicationUrlQuality,
+    review_flags: validation.reviewFlags,
+    source_quality_reasons: validation.sourceQualityReasons,
+    auto_publish_eligible: validation.autoPublishEligible,
+  };
 
   const now = new Date().toISOString();
 
@@ -185,11 +279,7 @@ export async function ingestExtractedOpportunity({
       reward_level: opportunityPayload.reward_level,
       competitiveness_factors: opportunityPayload.competitiveness_factors,
       extraction_status: "closed_cycle",
-      validation_score: validation.score,
-      validation_decision: validation.decision,
-      validation_reasons: validation.reasons,
-      duplicate_risk: duplicate.duplicateRisk,
-      source_trust: sourceTrust,
+      ...trustMetadata,
       auto_publish_eligible: false,
       discovered_page_id: discoveredPage.id,
       updated_at: now,
@@ -197,12 +287,26 @@ export async function ingestExtractedOpportunity({
 
     let draft;
 
-    if (normalizedUrl) {
-      const { data: existingDraft } = await supabase
-        .from("opportunity_drafts")
-        .select("id")
-        .eq("normalized_url", normalizedUrl)
-        .maybeSingle();
+    if (normalizedUrl || opportunityFamilyKey) {
+      const { data: existingDraftByUrl } = normalizedUrl
+        ? await supabase
+            .from("opportunity_drafts")
+            .select("id")
+            .eq("normalized_url", normalizedUrl)
+            .maybeSingle()
+        : { data: null };
+
+      const { data: existingDraftByFamily } = opportunityFamilyKey
+        ? await supabase
+            .from("opportunity_drafts")
+            .select("id")
+            .eq("opportunity_family_key", opportunityFamilyKey)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : { data: null };
+
+      const existingDraft = existingDraftByUrl || existingDraftByFamily;
 
       if (existingDraft?.id) {
         const { data: updatedDraft, error: updateDraftError } = await supabase
@@ -256,6 +360,7 @@ export async function ingestExtractedOpportunity({
       .insert({
         ...opportunityPayload,
         ...lifecycleFields,
+        ...trustMetadata,
         is_active: true,
         is_approved: true,
         updated_at: now,
@@ -310,12 +415,7 @@ export async function ingestExtractedOpportunity({
     reward_level: opportunityPayload.reward_level,
     competitiveness_factors: opportunityPayload.competitiveness_factors,
     extraction_status: "pending_review",
-    validation_score: validation.score,
-    validation_decision: validation.decision,
-    validation_reasons: validation.reasons,
-    duplicate_risk: duplicate.duplicateRisk,
-    source_trust: sourceTrust,
-    auto_publish_eligible: validation.autoPublishEligible,
+    ...trustMetadata,
     discovered_page_id: discoveredPage.id,
     updated_at: now,
   };
