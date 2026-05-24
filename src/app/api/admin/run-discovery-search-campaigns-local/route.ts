@@ -6,6 +6,10 @@ import { upsertDiscoveredPages } from "@/lib/discovery/discovered-pages";
 import type { CandidateOpportunityLink } from "@/lib/discovery/candidate-detection";
 import { assessSearchResultIntake } from "@/lib/discovery/search-result-intake-gate";
 
+type SearchCampaignCandidate = CandidateOpportunityLink & {
+  inferredOpportunityType?: string | null;
+};
+
 function createServiceSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,17 +40,64 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceSupabase();
     const now = new Date();
 
-    const { data: campaigns, error: campaignError } = await supabase
+    const campaignPoolLimit = Math.max(maxCampaigns * 12, 80);
+
+    const { data: campaignPool, error: campaignError } = await supabase
       .from("discovery_campaigns")
       .select("*")
       .eq("status", "active")
       .or(`next_run_at.is.null,next_run_at.lte.${now.toISOString()}`)
       .order("next_run_at", { ascending: true, nullsFirst: true })
-      .limit(maxCampaigns);
+      .limit(campaignPoolLimit);
 
     if (campaignError) {
       return NextResponse.json({ error: campaignError.message }, { status: 500 });
     }
+
+    const preferredTypeOrder = [
+      "pipeline_program",
+      "career_development_program",
+      "competition",
+      "leadership_program",
+      "grant",
+      "research_program",
+      "fellowship",
+      "scholarship",
+    ];
+
+    function selectBalancedCampaigns(pool: Record<string, any>[], limit: number) {
+      const selected: Record<string, any>[] = [];
+      const selectedIds = new Set<string>();
+
+      function addCampaign(campaign: Record<string, any> | undefined) {
+        if (!campaign) return false;
+        if (selected.length >= limit) return false;
+        if (selectedIds.has(String(campaign.id))) return false;
+
+        selected.push(campaign);
+        selectedIds.add(String(campaign.id));
+        return true;
+      }
+
+      for (const opportunityType of preferredTypeOrder) {
+        const candidate = pool.find(
+          (campaign) =>
+            String(campaign.opportunity_type || "") === opportunityType &&
+            !selectedIds.has(String(campaign.id))
+        );
+
+        addCampaign(candidate);
+      }
+
+      for (const campaign of pool) {
+        if (selected.length >= limit) break;
+        addCampaign(campaign);
+      }
+
+      return selected.slice(0, limit);
+    }
+
+    const campaigns = selectBalancedCampaigns(campaignPool || [], maxCampaigns);
 
     const campaignResults = [];
 
@@ -89,8 +140,8 @@ export async function POST(request: NextRequest) {
           reason: string;
         }> = [];
 
-        const candidates: CandidateOpportunityLink[] = results
-          .map((result) => {
+        const candidates: SearchCampaignCandidate[] = results
+          .map<SearchCampaignCandidate | null>((result) => {
             const normalizedUrl = normalizeUrl(result.url);
 
             if (!normalizedUrl) return null;
@@ -120,14 +171,19 @@ export async function POST(request: NextRequest) {
               normalizedUrl,
               linkText: result.title || result.url,
               score: intake.score,
+              inferredOpportunityType:
+                intake.inferredOpportunityType || campaign.opportunity_type || null,
               reasons: [
                 result.snippet || "Search result",
                 `Search intake score: ${intake.score}`,
+                intake.inferredOpportunityType
+                  ? `Inferred opportunity type: ${intake.inferredOpportunityType}`
+                  : "Inferred opportunity type: unknown",
                 ...intake.reasons,
               ],
             };
           })
-          .filter((candidate): candidate is CandidateOpportunityLink => candidate !== null);
+          .filter((candidate): candidate is SearchCampaignCandidate => candidate !== null);
 
         const saved = await upsertDiscoveredPages({
           supabase,
@@ -168,6 +224,10 @@ export async function POST(request: NextRequest) {
 
         campaignResults.push({
           campaignId: campaign.id,
+          opportunityType: campaign.opportunity_type,
+          educationLevel: campaign.education_level,
+          fieldArea: campaign.field_area,
+          region: campaign.region,
           query: campaign.query,
           status: "completed",
           resultsFound: results.length,
@@ -205,6 +265,10 @@ export async function POST(request: NextRequest) {
 
         campaignResults.push({
           campaignId: campaign.id,
+          opportunityType: campaign.opportunity_type,
+          educationLevel: campaign.education_level,
+          fieldArea: campaign.field_area,
+          region: campaign.region,
           query: campaign.query,
           status: "failed",
           error: message,

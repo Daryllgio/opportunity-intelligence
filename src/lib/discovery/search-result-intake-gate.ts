@@ -21,6 +21,7 @@ export type SearchResultIntakeResult = {
   domain: string;
   sourceCategory: SourceCategory;
   reasons: string[];
+  inferredOpportunityType?: string | null;
 };
 
 function normalize(value: unknown) {
@@ -61,9 +62,12 @@ function getOpportunityTypeTerms(type: string | null | undefined) {
     leadership_program: [
       "leadership program",
       "leadership",
+      "leadership scholars",
+      "leadership development",
       "civic leadership",
       "youth leadership",
       "student leaders",
+      "student leadership",
     ],
     career_development_program: [
       "career development",
@@ -71,17 +75,115 @@ function getOpportunityTypeTerms(type: string | null | undefined) {
       "career preparation",
       "career program",
       "student development",
+      "career services",
+      "development program",
+      "scholars program",
+      "fellows program",
+      "student success program",
     ],
     pipeline_program: [
       "pipeline program",
+      "pipeline programs",
       "pathway program",
+      "pathway programs",
       "pathways program",
+      "pathways programs",
+      "access program",
+      "access programs",
+      "academic access",
+      "health care pipeline",
+      "medical pipeline",
       "pre med pipeline",
+      "pre-health pipeline",
+      "college pipeline",
+      "educational pipeline",
+      "community pipeline",
       "pipeline",
+      "pathway",
+      "pathways",
     ],
   };
 
   return termsByType[normalized] || [];
+}
+
+function getConflictingTypeSignals(type: string | null | undefined) {
+  const normalized = normalize(type);
+
+  const conflicts: Record<string, string[]> = {
+    scholarship: [
+      "case competition",
+      "pitch competition",
+      "hackathon",
+      "pipeline program",
+      "career development program",
+    ],
+    fellowship: [
+      "scholarship directory",
+      "case competition",
+      "student grant",
+    ],
+    research_program: [
+      "scholarship directory",
+      "case competition",
+      "essay contest",
+    ],
+    grant: [
+      "case competition",
+      "scholarship directory",
+      "no essay scholarship",
+    ],
+    competition: [
+      "scholarship",
+      "financial aid",
+      "grant",
+      "bursary",
+    ],
+    leadership_program: [
+      "scholarship directory",
+      "financial aid",
+      "grant",
+    ],
+    career_development_program: [
+      "scholarship directory",
+      "financial aid",
+      "no essay scholarship",
+    ],
+    pipeline_program: [
+      "scholarship directory",
+      "financial aid",
+      "no essay scholarship",
+      "case competition",
+    ],
+  };
+
+  return conflicts[normalized] || [];
+}
+
+function isInstitutionHostedPipelineLike({
+  combined,
+  sourceCategory,
+}: {
+  combined: string;
+  sourceCategory: SourceCategory;
+}) {
+  return (
+    ["university", "government", "foundation_or_nonprofit"].includes(sourceCategory) &&
+    includesAny(combined, [
+      "pipeline program",
+      "pipeline programs",
+      "pathway program",
+      "pathway programs",
+      "pathways program",
+      "access program",
+      "access programs",
+      "academic access",
+      "health care pipeline",
+      "medical pipeline",
+      "educational pipeline",
+      "community pipeline",
+    ])
+  );
 }
 
 const applicantSignals = [
@@ -178,6 +280,291 @@ const secondaryDatabaseDomains = new Set([
   "profellow.com",
 ]);
 
+
+function hasScholarshipOnlySignalV2(combined: string) {
+  return includesAny(combined, [
+    "scholarship",
+    "scholarships",
+    "financial aid",
+    "bursary",
+    "bursaries",
+    "tuition aid",
+    "student aid",
+    "no essay scholarship",
+    "scholarship search",
+    "scholarship directory",
+  ]);
+}
+
+function hasCompetitionSignalV2(combined: string) {
+  return includesAny(combined, [
+    "competition",
+    "competitions",
+    "challenge",
+    "contest",
+    "case competition",
+    "pitch competition",
+    "hackathon",
+    "student research competition",
+    "essay contest",
+  ]);
+}
+
+function hasPipelineSignalV2(combined: string) {
+  return includesAny(combined, [
+    "pipeline program",
+    "pipeline programs",
+    "pathway program",
+    "pathway programs",
+    "access program",
+    "access programs",
+    "academic access",
+    "health care pipeline",
+    "medical pipeline",
+    "educational pipeline",
+    "college pipeline",
+  ]);
+}
+
+function hasCareerLeadershipSignalV2(combined: string) {
+  return includesAny(combined, [
+    "leadership program",
+    "student leadership",
+    "leadership development",
+    "career development",
+    "professional development",
+    "career preparation",
+    "career program",
+    "student development program",
+  ]);
+}
+
+function hasDocumentOrMetaUrlV2(urlLower: string) {
+  return (
+    urlLower.endsWith(".pdf") ||
+    urlLower.includes("/faq") ||
+    urlLower.includes("faq-") ||
+    urlLower.includes("-faq") ||
+    urlLower.includes("fact-sheet") ||
+    urlLower.includes("factsheet") ||
+    urlLower.includes("/search") ||
+    urlLower.includes("handler=search") ||
+    urlLower.includes("scholarship/index")
+  );
+}
+
+function hasMetaPageSignalV2(combined: string) {
+  return includesAny(combined, [
+    "faq",
+    "frequently asked questions",
+    "fact sheet",
+    "fact-sheet",
+    "review",
+    "trustable site",
+    "is bold org",
+    "application management system",
+    "search scholarship",
+    "search scholarships",
+    "find scholarships",
+    "scholarship search",
+    "scholarship database",
+    "scholarship directory",
+  ]);
+}
+
+function isStrictWrongTypeResultV2({
+  combined,
+  urlLower,
+  campaignOpportunityType,
+}: {
+  combined: string;
+  urlLower: string;
+  campaignOpportunityType?: string | null;
+}) {
+  const type = normalize(campaignOpportunityType);
+
+  if (!type) return false;
+
+  const isScholarshipOnly =
+    hasScholarshipOnlySignalV2(combined) &&
+    !hasCompetitionSignalV2(combined) &&
+    !hasPipelineSignalV2(combined) &&
+    !hasCareerLeadershipSignalV2(combined) &&
+    !includesAny(combined, ["fellowship", "grant"]);
+
+  const nonScholarshipCampaign =
+    type !== "scholarship" && type !== "grant" && type !== "fellowship";
+
+  const scholarshipWrongType =
+    nonScholarshipCampaign && isScholarshipOnly;
+
+  const competitionWrongType =
+    type === "competition" &&
+    hasScholarshipOnlySignalV2(combined) &&
+    !hasCompetitionSignalV2(combined);
+
+  const pipelineCareerLeadershipWrongType =
+    [
+      "pipeline program",
+      "pipeline_program",
+      "career development program",
+      "career_development_program",
+      "leadership program",
+      "leadership_program",
+    ].includes(type) &&
+    hasScholarshipOnlySignalV2(combined) &&
+    !hasPipelineSignalV2(combined) &&
+    !hasCareerLeadershipSignalV2(combined);
+
+  return (
+    scholarshipWrongType ||
+    competitionWrongType ||
+    pipelineCareerLeadershipWrongType ||
+    hasDocumentOrMetaUrlV2(urlLower) ||
+    hasMetaPageSignalV2(combined)
+  );
+}
+
+
+function hasRequiredStrictTypeSignalV2({
+  combined,
+  campaignOpportunityType,
+}: {
+  combined: string;
+  campaignOpportunityType?: string | null;
+}) {
+  const type = normalize(campaignOpportunityType);
+
+  if (!type) return true;
+
+  if (type === "competition") {
+    return hasCompetitionSignalV2(combined);
+  }
+
+  if (type === "pipeline program" || type === "pipeline_program") {
+    return hasPipelineSignalV2(combined);
+  }
+
+  if (type === "career development program" || type === "career_development_program") {
+    return includesAny(combined, [
+      "career development",
+      "professional development",
+      "career preparation",
+      "career program",
+      "student development program",
+      "workforce development",
+      "career readiness",
+      "career pathway",
+      "career pathways",
+    ]);
+  }
+
+  if (type === "leadership program" || type === "leadership_program") {
+    return includesAny(combined, [
+      "leadership program",
+      "leadership development",
+      "student leadership",
+      "youth leadership",
+      "leadership scholars",
+      "leadership academy",
+      "leadership institute",
+      "leadership fellowship",
+    ]);
+  }
+
+  return true;
+}
+
+
+function inferSearchResultOpportunityType({
+  title,
+  snippet,
+  url,
+}: {
+  title?: string | null;
+  snippet?: string | null;
+  url?: string | null;
+}) {
+  const combined = normalize([title, snippet, url].filter(Boolean).join(" "));
+
+  const trueCompetitionSignals = [
+    "case competition",
+    "pitch competition",
+    "business competition",
+    "student competition",
+    "student research competition",
+    "innovation competition",
+    "entrepreneurship competition",
+    "startup competition",
+    "hackathon",
+    "challenge",
+    "essay contest",
+    "moot court",
+    "debate tournament",
+  ];
+
+  const scholarshipSignals = [
+    "scholarship",
+    "scholarships",
+    "bursary",
+    "bursaries",
+    "financial aid",
+    "student aid",
+    "tuition aid",
+  ];
+
+  const pipelineSignals = [
+    "pipeline program",
+    "pipeline programs",
+    "pathway program",
+    "pathway programs",
+    "academic access",
+    "health care pipeline",
+    "medical pipeline",
+    "college pipeline",
+    "educational pipeline",
+  ];
+
+  const careerSignals = [
+    "career development program",
+    "career development",
+    "professional development program",
+    "professional development",
+    "career preparation",
+    "career readiness",
+    "workforce development",
+  ];
+
+  const leadershipSignals = [
+    "leadership program",
+    "leadership development",
+    "student leadership",
+    "youth leadership",
+    "leadership academy",
+    "leadership institute",
+  ];
+
+  if (includesAny(combined, trueCompetitionSignals)) return "competition";
+  if (includesAny(combined, pipelineSignals)) return "pipeline_program";
+  if (includesAny(combined, careerSignals)) return "career_development_program";
+  if (includesAny(combined, leadershipSignals)) return "leadership_program";
+  if (includesAny(combined, ["research program", "summer research", "research opportunity", "student research"])) return "research_program";
+  if (includesAny(combined, ["fellowship", "fellowships", "fellows"])) return "fellowship";
+  if (includesAny(combined, ["research grant", "travel grant", "student grant", "grant application"])) return "grant";
+  if (includesAny(combined, scholarshipSignals)) return "scholarship";
+
+  return null;
+}
+
+function isStrictCampaignType(type?: string | null) {
+  return [
+    "competition",
+    "pipeline_program",
+    "career_development_program",
+    "leadership_program",
+  ].includes(String(type || ""));
+}
+
 export function assessSearchResultIntake({
   url,
   title,
@@ -195,6 +582,7 @@ export function assessSearchResultIntake({
 
   const combined = normalize([title, snippet, url].filter(Boolean).join(" "));
   const urlLower = url.toLowerCase();
+  const inferredOpportunityType = inferSearchResultOpportunityType({ title, snippet, url });
 
   const reasons: string[] = [];
   let score = 0;
@@ -216,6 +604,24 @@ export function assessSearchResultIntake({
       domain,
       sourceCategory: sourceQuality.category,
       reasons: ["Low-trust blog/source domain."],
+      inferredOpportunityType,
+    };
+  }
+
+  if (
+    isStrictCampaignType(campaignOpportunityType) &&
+    inferredOpportunityType &&
+    inferredOpportunityType !== campaignOpportunityType
+  ) {
+    return {
+      decision: "skip",
+      score: -120,
+      domain,
+      sourceCategory: sourceQuality.category,
+      reasons: [
+        `Hard skip: inferred result type ${inferredOpportunityType} conflicts with campaign type ${campaignOpportunityType}.`,
+      ],
+      inferredOpportunityType,
     };
   }
 
@@ -281,12 +687,29 @@ export function assessSearchResultIntake({
   }
 
   const opportunityTerms = getOpportunityTypeTerms(campaignOpportunityType);
-  if (opportunityTerms.length && includesAny(combined, opportunityTerms)) {
-    score += 15;
+  const conflictingTerms = getConflictingTypeSignals(campaignOpportunityType);
+  const hasTypeMatch = opportunityTerms.length && includesAny(combined, opportunityTerms);
+  const hasTypeConflict = conflictingTerms.length && includesAny(combined, conflictingTerms);
+  const institutionPipelineLike =
+    normalize(campaignOpportunityType) === "pipeline program" ||
+    normalize(campaignOpportunityType) === "pipeline_program"
+      ? isInstitutionHostedPipelineLike({
+          combined,
+          sourceCategory: sourceQuality.category,
+        })
+      : false;
+
+  if (hasTypeMatch || institutionPipelineLike) {
+    score += 20;
     reasons.push("Matches campaign opportunity type.");
   } else if (campaignOpportunityType) {
-    score -= 20;
+    score -= 15;
     reasons.push("Weak match to campaign opportunity type.");
+  }
+
+  if (hasTypeConflict) {
+    score -= 30;
+    reasons.push("Strong signal for a different opportunity type.");
   }
 
   if (includesAny(combined, directoryAdviceSignals)) {
@@ -319,11 +742,36 @@ export function assessSearchResultIntake({
     reasons.push("Stricter threshold context: site:com campaign.");
   }
 
+  const isStrictWrongType = isStrictWrongTypeResultV2({
+    combined,
+    urlLower,
+    campaignOpportunityType,
+  });
+
+  const hasRequiredStrictTypeSignal = hasRequiredStrictTypeSignalV2({
+    combined,
+    campaignOpportunityType,
+  });
+
+  if (isStrictWrongType) {
+    score -= 90;
+    reasons.push(
+      "Hard skip: wrong-type, document, FAQ, search, database, meta, or scholarship-only page for this campaign."
+    );
+  }
+
+  if (!hasRequiredStrictTypeSignal) {
+    score -= 90;
+    reasons.push(
+      "Hard skip: strict campaign type requires an explicit matching type signal."
+    );
+  }
+
   let decision: SearchResultIntakeDecision = "skip";
 
-  if (score >= 45) {
+  if (!isStrictWrongType && hasRequiredStrictTypeSignal && score >= 45) {
     decision = "candidate";
-  } else if (score >= 25) {
+  } else if (!isStrictWrongType && hasRequiredStrictTypeSignal && score >= 25) {
     decision = "secondary";
   }
 
@@ -338,5 +786,6 @@ export function assessSearchResultIntake({
     domain,
     sourceCategory: sourceQuality.category,
     reasons,
+    inferredOpportunityType,
   };
 }

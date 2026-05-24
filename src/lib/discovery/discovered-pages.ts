@@ -6,6 +6,11 @@ type SupabaseClientLike = {
   from: (table: string) => any;
 };
 
+type DiscoveredPageCandidate = CandidateOpportunityLink & {
+  inferredOpportunityType?: string | null;
+  opportunityType?: string | null;
+};
+
 const PROTECTED_STATUSES = new Set([
   "bundled",
   "future_tracking",
@@ -84,7 +89,7 @@ export async function upsertDiscoveredPages({
   fieldArea = null,
 }: {
   supabase: SupabaseClientLike;
-  candidates: CandidateOpportunityLink[];
+  candidates: DiscoveredPageCandidate[];
   discoveryQuery?: string | null;
   region?: string | null;
   opportunityType?: string | null;
@@ -101,6 +106,9 @@ export async function upsertDiscoveredPages({
 
       if (shouldRejectDiscoveredUrl(normalizedUrl)) return null;
 
+      const effectiveOpportunityType =
+        candidate.inferredOpportunityType || candidate.opportunityType || opportunityType;
+
       return {
         discovery_query: discoveryQuery,
         url: candidate.url,
@@ -109,13 +117,13 @@ export async function upsertDiscoveredPages({
         snippet: candidate.reasons.join("; ") || null,
         source_domain: getDomain(candidate.url),
         region,
-        opportunity_type: opportunityType,
+        opportunity_type: effectiveOpportunityType,
         education_level: educationLevel,
         field_area: fieldArea,
         opportunity_family_key: buildOpportunityFamilyKey({
           url: candidate.url,
           sourceDomain: getDomain(candidate.url),
-          opportunityType,
+          opportunityType: effectiveOpportunityType,
           title: candidate.linkText,
           discoveryQuery,
         }),
