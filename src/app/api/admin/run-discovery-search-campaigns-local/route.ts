@@ -4,6 +4,7 @@ import { normalizeUrl } from "@/lib/utils/url-normalizer";
 import { searchDiscoveryWeb } from "@/lib/discovery/search/search-provider";
 import { upsertDiscoveredPages } from "@/lib/discovery/discovered-pages";
 import type { CandidateOpportunityLink } from "@/lib/discovery/candidate-detection";
+import { assessSearchResultIntake } from "@/lib/discovery/search-result-intake-gate";
 
 function createServiceSupabase() {
   return createClient(
@@ -18,6 +19,7 @@ function addDays(date: Date, days: number) {
   next.setDate(next.getDate() + days);
   return next;
 }
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,18 +81,50 @@ export async function POST(request: NextRequest) {
           maxResults: Number(campaign.max_results || 10),
         });
 
+        const skippedResults: Array<{
+          title: string | null;
+          url: string;
+          domain: string;
+          sourceCategory: string;
+          reason: string;
+        }> = [];
+
         const candidates: CandidateOpportunityLink[] = results
           .map((result) => {
             const normalizedUrl = normalizeUrl(result.url);
 
             if (!normalizedUrl) return null;
 
+            const intake = assessSearchResultIntake({
+              url: result.url,
+              title: result.title || null,
+              snippet: result.snippet || null,
+              campaignOpportunityType: campaign.opportunity_type || null,
+              campaignQuery: campaign.query || null,
+            });
+
+            if (intake.decision !== "candidate") {
+              skippedResults.push({
+                title: result.title || null,
+                url: result.url,
+                domain: intake.domain,
+                sourceCategory: intake.sourceCategory,
+                reason: `${intake.decision}: score ${intake.score}. ${intake.reasons.join(" ")}`,
+              });
+
+              return null;
+            }
+
             return {
               url: result.url,
               normalizedUrl,
               linkText: result.title || result.url,
-              score: 50,
-              reasons: [result.snippet || "Search result"],
+              score: intake.score,
+              reasons: [
+                result.snippet || "Search result",
+                `Search intake score: ${intake.score}`,
+                ...intake.reasons,
+              ],
             };
           })
           .filter((candidate): candidate is CandidateOpportunityLink => candidate !== null);
@@ -137,7 +171,9 @@ export async function POST(request: NextRequest) {
           query: campaign.query,
           status: "completed",
           resultsFound: results.length,
+          resultsSkipped: skippedResults.length,
           pagesAdded: savedRows.length,
+          skipped: skippedResults.slice(0, 10),
           saved: savedRows.map((row) => ({
             id: row.id,
             title: row.title,

@@ -20,9 +20,18 @@ async function main() {
 
   const now = new Date().toISOString();
   const seededRows: Record<string, unknown>[] = [];
+  const activeSeedQueries = new Set(
+    DISCOVERY_CAMPAIGN_SEEDS.map((seed) => seed.query)
+  );
+
+  console.log(`Preparing to seed ${DISCOVERY_CAMPAIGN_SEEDS.length} discovery campaigns...`);
 
   for (let index = 0; index < DISCOVERY_CAMPAIGN_SEEDS.length; index++) {
     const seed = DISCOVERY_CAMPAIGN_SEEDS[index];
+
+    if (index === 0 || (index + 1) % 25 === 0 || index + 1 === DISCOVERY_CAMPAIGN_SEEDS.length) {
+      console.log(`Seeding campaign ${index + 1}/${DISCOVERY_CAMPAIGN_SEEDS.length}: ${seed.opportunity_type} | ${seed.education_level} | ${seed.region}`);
+    }
 
     const payload = {
       query: seed.query,
@@ -74,6 +83,54 @@ async function main() {
       seededRows.push(data);
     }
   }
+
+  const { data: activeCampaigns, error: activeCampaignsError } = await supabase
+    .from("discovery_campaigns")
+    .select("id, query, status")
+    .eq("status", "active");
+
+  if (activeCampaignsError) {
+    throw activeCampaignsError;
+  }
+
+  const staleCampaignIds = (activeCampaigns || [])
+    .filter((campaign) => !activeSeedQueries.has(String(campaign.query || "")))
+    .map((campaign) => campaign.id);
+
+  if (staleCampaignIds.length > 0) {
+    const batchSize = 50;
+
+    for (let index = 0; index < staleCampaignIds.length; index += batchSize) {
+      const batch = staleCampaignIds.slice(index, index + batchSize);
+
+      const { error: deactivateError } = await supabase
+        .from("discovery_campaigns")
+        .update({
+          status: "inactive",
+          updated_at: now,
+        })
+        .in("id", batch);
+
+      if (deactivateError) {
+        console.error("Failed to deactivate stale campaign batch:", {
+          index,
+          batchSize: batch.length,
+          message: deactivateError.message,
+          details: deactivateError.details,
+          hint: deactivateError.hint,
+          code: deactivateError.code,
+        });
+
+        throw deactivateError;
+      }
+
+      console.log(
+        `Deactivated stale campaign batch ${Math.min(index + batch.length, staleCampaignIds.length)}/${staleCampaignIds.length}`
+      );
+    }
+  }
+
+  console.log(`\nDeactivated stale campaigns: ${staleCampaignIds.length}`);
 
   const counts = new Map<string, number>();
 

@@ -7,280 +7,214 @@ export type DiscoveryCampaignSeed = {
     | "grant"
     | "competition"
     | "leadership_program"
-    | "career_development_program";
+    | "career_development_program"
+    | "pipeline_program";
   education_level:
     | "high_school"
     | "undergraduate"
-    | "transfer_student"
     | "masters"
     | "phd"
     | "medical_student"
     | "law_student"
-    | "mba"
-    | "professional_student"
-    | "recent_graduate"
-    | "early_career";
+    | "mba";
   field_area: string;
   region: "united_states" | "canada";
   max_results: number;
   status: "active";
 };
 
-export const DISCOVERY_CAMPAIGN_SEEDS: DiscoveryCampaignSeed[] = [
-  // Scholarships
+type CampaignTemplate = {
+  opportunity_type: DiscoveryCampaignSeed["opportunity_type"];
+  field_area: string;
+  education_levels: DiscoveryCampaignSeed["education_level"][];
+  phrases: string[];
+};
+
+const EDUCATION_TERMS: Record<DiscoveryCampaignSeed["education_level"], string[]> = {
+  high_school: ["high school students", "secondary students"],
+  undergraduate: ["undergraduate students", "college students", "university students"],
+  masters: ["masters students", "graduate students"],
+  phd: ["phd students", "doctoral students"],
+  medical_student: ["medical students", "md students"],
+  law_student: ["law students", "jd students"],
+  mba: ["mba students", "business students"],
+};
+
+const REGION_CONFIG: Record<
+  DiscoveryCampaignSeed["region"],
+  { regionTerm: string; domainHints: string[] }
+> = {
+  united_states: {
+    regionTerm: "United States",
+    domainHints: ["site:edu", "site:gov", "site:org", "site:com"],
+  },
+  canada: {
+    regionTerm: "Canada",
+    domainHints: ["site:ca", "site:edu", "site:org", "site:com"],
+  },
+};
+
+const NEGATIVE_AGGREGATORS =
+  "-scholarships.com -fastweb -bold.org -unigo -niche -cappex -scholarshiproar -studentscholarships";
+
+const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
   {
-    query: "United States undergraduate scholarship students application deadline",
     opportunity_type: "scholarship",
-    education_level: "undergraduate",
     field_area: "all_fields",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
+    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    phrases: [
+      'scholarship application deadline',
+      'student scholarship apply eligibility',
+      'financial aid scholarship application students',
+    ],
   },
   {
-    query: "Canada undergraduate scholarship students application deadline",
-    opportunity_type: "scholarship",
-    education_level: "undergraduate",
-    field_area: "all_fields",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "United States first generation undergraduate scholarship application deadline",
-    opportunity_type: "scholarship",
-    education_level: "undergraduate",
-    field_area: "all_fields",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-
-  // Research programs
-  {
-    query: "United States undergraduate summer research program STEM application deadline",
     opportunity_type: "research_program",
-    education_level: "undergraduate",
-    field_area: "stem",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
+    field_area: "research",
+    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student"],
+    phrases: [
+      'research program application deadline',
+      'summer research program apply students',
+      'research opportunity application students',
+      'research program application students',
+    ],
   },
   {
-    query: "Canada undergraduate summer research program STEM application deadline",
-    opportunity_type: "research_program",
-    education_level: "undergraduate",
-    field_area: "stem",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "United States undergraduate biomedical research program application deadline",
-    opportunity_type: "research_program",
-    education_level: "undergraduate",
-    field_area: "medicine_health",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "Canada undergraduate research opportunity health sciences application deadline",
-    opportunity_type: "research_program",
-    education_level: "undergraduate",
-    field_area: "medicine_health",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-
-  // Fellowships
-  {
-    query: "United States undergraduate fellowship students application deadline",
     opportunity_type: "fellowship",
-    education_level: "undergraduate",
     field_area: "all_fields",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
+    education_levels: ["undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    phrases: [
+      'fellowship application deadline',
+      'student fellowship apply eligibility',
+      'graduate fellowship application deadline',
+    ],
   },
   {
-    query: "Canada undergraduate fellowship students application deadline",
-    opportunity_type: "fellowship",
-    education_level: "undergraduate",
-    field_area: "all_fields",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "United States public policy fellowship undergraduate students application deadline",
-    opportunity_type: "fellowship",
-    education_level: "undergraduate",
-    field_area: "public_policy",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "Canada global affairs fellowship students application deadline",
-    opportunity_type: "fellowship",
-    education_level: "undergraduate",
-    field_area: "international_relations",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-
-  // Grants
-  {
-    query: "United States undergraduate research travel grant application deadline",
     opportunity_type: "grant",
-    education_level: "undergraduate",
     field_area: "all_fields",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
+    education_levels: ["undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    phrases: [
+      'student grant application eligibility',
+      'research grant students application',
+      'travel grant students application',
+      'education grant students apply',
+    ],
   },
   {
-    query: "Canada undergraduate research travel grant application deadline",
-    opportunity_type: "grant",
-    education_level: "undergraduate",
-    field_area: "all_fields",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "United States student social impact grant application deadline",
-    opportunity_type: "grant",
-    education_level: "undergraduate",
-    field_area: "social_sciences",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "Canada student innovation grant application deadline undergraduate",
-    opportunity_type: "grant",
-    education_level: "undergraduate",
-    field_area: "business",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-
-  // Competitions
-  {
-    query: "United States undergraduate case competition application deadline students",
     opportunity_type: "competition",
-    education_level: "undergraduate",
-    field_area: "business",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "Canada undergraduate case competition application deadline students",
-    opportunity_type: "competition",
-    education_level: "undergraduate",
-    field_area: "business",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "United States student hackathon competition application deadline undergraduate",
-    opportunity_type: "competition",
-    education_level: "undergraduate",
-    field_area: "computer_science",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "Canada student pitch competition application deadline undergraduate",
-    opportunity_type: "competition",
-    education_level: "undergraduate",
-    field_area: "business",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-
-  // Leadership programs
-  {
-    query: "United States student leadership program application deadline undergraduate",
-    opportunity_type: "leadership_program",
-    education_level: "undergraduate",
     field_area: "all_fields",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
+    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    phrases: [
+      'student competition application deadline',
+      'student challenge apply deadline',
+      'case competition registration students',
+      'pitch competition students apply',
+      'essay competition students deadline',
+    ],
   },
   {
-    query: "Canada student leadership program application deadline undergraduate",
     opportunity_type: "leadership_program",
-    education_level: "undergraduate",
-    field_area: "all_fields",
-    region: "canada",
-    max_results: 10,
-    status: "active",
+    field_area: "leadership",
+    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    phrases: [
+      'student leadership program application deadline',
+      'leadership program students apply',
+      'civic leadership program students application',
+      'global leadership program students deadline',
+    ],
   },
   {
-    query: "United States civic leadership program students application deadline",
-    opportunity_type: "leadership_program",
-    education_level: "undergraduate",
-    field_area: "public_policy",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "Canada youth leadership program students application deadline",
-    opportunity_type: "leadership_program",
-    education_level: "undergraduate",
-    field_area: "public_policy",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-
-  // Career development programs
-  {
-    query: "United States pre-med pipeline program undergraduate application deadline",
     opportunity_type: "career_development_program",
-    education_level: "undergraduate",
-    field_area: "medicine_health",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
+    field_area: "career_development",
+    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    phrases: [
+      'career development program students application',
+      'professional development program students apply',
+      'career preparation program students deadline',
+      'student development program application deadline',
+    ],
   },
   {
-    query: "Canada undergraduate career development program application deadline students",
-    opportunity_type: "career_development_program",
-    education_level: "undergraduate",
-    field_area: "all_fields",
-    region: "canada",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "United States undergraduate finance leadership development program students application deadline",
-    opportunity_type: "career_development_program",
-    education_level: "undergraduate",
-    field_area: "finance",
-    region: "united_states",
-    max_results: 10,
-    status: "active",
-  },
-  {
-    query: "Canada undergraduate technology career development program students application deadline",
-    opportunity_type: "career_development_program",
-    education_level: "undergraduate",
-    field_area: "computer_science",
-    region: "canada",
-    max_results: 10,
-    status: "active",
+    opportunity_type: "pipeline_program",
+    field_area: "pipeline",
+    education_levels: ["high_school", "undergraduate", "masters", "medical_student", "law_student", "mba"],
+    phrases: [
+      'pipeline program students application',
+      'student pipeline program apply deadline',
+      'pre-med pipeline program students application',
+      'pathway program students apply',
+    ],
   },
 ];
+
+function buildQuery({
+  domainHint,
+  educationTerm,
+  phrase,
+  regionTerm,
+}: {
+  domainHint: string;
+  educationTerm: string;
+  phrase: string;
+  regionTerm: string;
+}) {
+  const shouldIncludeRegion =
+    domainHint === "site:com" || domainHint === "site:org";
+
+  return [
+    domainHint,
+    phrase,
+    educationTerm,
+    shouldIncludeRegion ? regionTerm : "",
+    NEGATIVE_AGGREGATORS,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildCampaignSeeds() {
+  const seeds: DiscoveryCampaignSeed[] = [];
+  const seenQueries = new Set<string>();
+
+  for (const template of CAMPAIGN_TEMPLATES) {
+    for (const region of ["united_states", "canada"] as const) {
+      const regionConfig = REGION_CONFIG[region];
+
+      for (const educationLevel of template.education_levels) {
+        const educationTerms = EDUCATION_TERMS[educationLevel];
+
+        for (const phrase of template.phrases.slice(0, 2)) {
+          for (const educationTerm of educationTerms.slice(0, 1)) {
+            for (const domainHint of regionConfig.domainHints) {
+              const query = buildQuery({
+                domainHint,
+                educationTerm,
+                phrase,
+                regionTerm: regionConfig.regionTerm,
+              });
+
+              if (seenQueries.has(query)) continue;
+              seenQueries.add(query);
+
+              seeds.push({
+                query,
+                opportunity_type: template.opportunity_type,
+                education_level: educationLevel,
+                field_area: template.field_area,
+                region,
+                max_results: 8,
+                status: "active",
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return seeds;
+}
+
+export const DISCOVERY_CAMPAIGN_SEEDS: DiscoveryCampaignSeed[] = buildCampaignSeeds();
