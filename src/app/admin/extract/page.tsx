@@ -73,9 +73,7 @@ export default function AdminExtractPage() {
     try {
       const response = await fetch("/api/extract-url", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: await buildAuthedJsonHeaders(),
         body: JSON.stringify({ url: sourceUrl }),
       });
 
@@ -115,9 +113,7 @@ export default function AdminExtractPage() {
     try {
       const response = await fetch("/api/gemini-extract-opportunity", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: await buildAuthedJsonHeaders(),
         body: JSON.stringify({
           rawText,
           sourceUrl: finalSourceUrl,

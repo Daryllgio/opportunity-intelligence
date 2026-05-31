@@ -262,9 +262,7 @@ export default function AdminHarvesterPage() {
     try {
       const response = await fetch("/api/scan-source", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: await buildAuthedJsonHeaders(),
         body: JSON.stringify({ url: scanUrl }),
       });
 
