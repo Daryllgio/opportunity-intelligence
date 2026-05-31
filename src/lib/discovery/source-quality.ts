@@ -177,6 +177,10 @@ export const aggregatorDomains = new Set([
   "scholarsworld.ng",
   "persmind.com",
   "resultuniraj.co.in",
+  "oyaop.com",
+  "bridgeseduscholarships.com",
+  "immigrationnewscanada.ca",
+  "academiquirk.com",
 ]);
 
 export const trustedDatabaseDomains = new Set([

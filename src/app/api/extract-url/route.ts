@@ -1,5 +1,7 @@
 import * as cheerio from "cheerio";
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminRequest } from "@/lib/auth/admin";
+import { isPubliclyFetchableUrl } from "@/lib/utils/url-safety";
 
 function cleanText(text: string) {
   return text
@@ -8,17 +10,13 @@ function cleanText(text: string) {
     .trim();
 }
 
-function isAllowedUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdminRequest(request);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     const body = await request.json();
     const url = body.url;
 
@@ -29,7 +27,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isAllowedUrl(url)) {
+    if (!isPubliclyFetchableUrl(url)) {
       return NextResponse.json(
         { error: "Only valid http/https URLs are supported." },
         { status: 400 }
@@ -113,13 +111,9 @@ export async function POST(request: NextRequest) {
       text: extractedText.slice(0, 15000),
     });
   } catch (error) {
+    console.error("extract-url error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong while fetching the URL.",
-      },
+      { error: "Something went wrong while fetching the URL." },
       { status: 500 }
     );
   }

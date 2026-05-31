@@ -18,6 +18,14 @@ async function main() {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  const DRY_RUN = process.env.DRY_RUN !== "false";
+
+  if (DRY_RUN) {
+    console.log(
+      "DRY_RUN is on (default). No writes will be made. Set DRY_RUN=false to apply."
+    );
+  }
+
   const now = new Date().toISOString();
   const seededRows: Record<string, unknown>[] = [];
   const activeSeedQueries = new Set(
@@ -53,6 +61,11 @@ async function main() {
 
     if (lookupError) {
       throw lookupError;
+    }
+
+    if (DRY_RUN) {
+      seededRows.push({ ...payload, _dryRun: true });
+      continue;
     }
 
     if (existing?.id) {
@@ -97,7 +110,7 @@ async function main() {
     .filter((campaign) => !activeSeedQueries.has(String(campaign.query || "")))
     .map((campaign) => campaign.id);
 
-  if (staleCampaignIds.length > 0) {
+  if (!DRY_RUN && staleCampaignIds.length > 0) {
     const batchSize = 50;
 
     for (let index = 0; index < staleCampaignIds.length; index += batchSize) {

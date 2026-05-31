@@ -1,5 +1,6 @@
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
 import { buildOpportunityCanonicalKey } from "@/lib/opportunities/lifecycle";
+import { aggregatorDomains } from "@/lib/discovery/source-quality";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -179,15 +180,8 @@ export async function assessDuplicateRisk({
     };
   }
 
-  const aggregatorDomains = new Set([
-    "scholarships.com",
-    "studentscholarships.org",
-    "scholarshiproar.com",
-    "accessscholarships.com",
-    "scholarships360.org",
-    "pathwaystoscience.org",
-  ]);
-
+  // Aggregator domains come from the single source of truth in source-quality.
+  // (Note: pathwaystoscience.org is a trusted_database there, not an aggregator.)
   const sameDomainSimilarOpportunity = matches.find(
     (match: Record<string, unknown>) => {
       const matchDomain =

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminRequest } from "@/lib/auth/admin";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -81,6 +82,11 @@ function validateExtractedOpportunity(data: Partial<ExtractedOpportunity>) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdminRequest(request);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         {
@@ -186,13 +192,9 @@ ${rawText.slice(0, 12000)}
 
     return NextResponse.json({ extracted });
   } catch (error) {
+    console.error("gemini-extract-opportunity error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Gemini extraction failed. Try fallback extraction or Claude.",
-      },
+      { error: "Gemini extraction failed." },
       { status: 500 }
     );
   }

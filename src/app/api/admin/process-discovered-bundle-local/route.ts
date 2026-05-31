@@ -134,13 +134,9 @@ export async function POST(request: NextRequest) {
       ingestion,
     });
   } catch (error) {
+    console.error("process-discovered-bundle-local error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to process discovered page bundle.",
-      },
+      { error: "Failed to process discovered page bundle." },
       { status: 500 }
     );
   }

@@ -80,13 +80,9 @@ export async function POST(request: NextRequest) {
       })),
     });
   } catch (error) {
+    console.error("test-discover-candidates-local error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to discover candidates locally.",
-      },
+      { error: "Failed to discover candidates locally." },
       { status: 500 }
     );
   }

@@ -119,13 +119,9 @@ export async function POST(request: NextRequest) {
       })),
     });
   } catch (error) {
+    console.error("expand-discovered-page-local error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to expand discovered page.",
-      },
+      { error: "Failed to expand discovered page." },
       { status: 500 }
     );
   }

@@ -150,11 +150,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    console.error("scoring-jobs/run error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to run scoring job.",
-      },
+      { error: "Failed to run scoring job." },
       { status: 500 }
     );
   }

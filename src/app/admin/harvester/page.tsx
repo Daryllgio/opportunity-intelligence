@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
+import { buildAuthedJsonHeaders } from "@/lib/api/auth-headers";
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
 
 type Source = {

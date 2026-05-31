@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
-import { calculateCompetitivenessScore } from "@/lib/scoring";
 
 type Opportunity = {
   id: string;
@@ -42,7 +41,7 @@ type SavedOpportunity = {
 type ScoredSavedOpportunity = {
   savedId: string;
   opportunity: Opportunity;
-  score: ReturnType<typeof calculateCompetitivenessScore>;
+  score: { score: number | null; recommendation: string };
 };
 
 function formatOpportunityType(type: string) {
@@ -85,14 +84,6 @@ export default function SavedPage() {
         return;
       }
 
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select(
-          "nationality, country_of_study, student_status, school, school_other, education_level, field_of_study, field_of_study_other, gpa, languages, target_opportunity_types, leadership_experiences, research_experiences, volunteer_experiences, work_project_experiences, awards"
-        )
-        .eq("id", user.id)
-        .maybeSingle();
-
       const { data, error } = await supabase
         .from("saved_opportunities")
         .select(
@@ -117,14 +108,38 @@ export default function SavedPage() {
             effort_level,
             reward_level,
             application_url,
-            competitiveness_factors
+            competitiveness_factors,
+            lifecycle_status
           )
         `
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-      if (!error && profileData) {
+      // Read scores from the single source of truth (server-computed scores),
+      // the same table the dashboard and opportunities list use.
+      const { data: scoreRows } = await supabase
+        .from("opportunity_competitiveness_scores")
+        .select("opportunity_id, score, fit_label, score_status")
+        .eq("user_id", user.id)
+        .eq("score_status", "current");
+
+      const scoreMap = new Map<
+        string,
+        { score: number | null; fit_label: string | null }
+      >();
+      for (const row of (scoreRows as Array<{
+        opportunity_id: string;
+        score: number | null;
+        fit_label: string | null;
+      }>) || []) {
+        scoreMap.set(row.opportunity_id, {
+          score: typeof row.score === "number" ? row.score : null,
+          fit_label: row.fit_label ?? null,
+        });
+      }
+
+      if (!error) {
         const normalizedSaved = (data || []).map((item) => ({
           ...item,
           opportunities: Array.isArray(item.opportunities)
@@ -140,14 +155,15 @@ export default function SavedPage() {
           )
           .map((item) => {
             const opportunity = item.opportunities as Opportunity;
+            const entry = scoreMap.get(opportunity.id);
 
             return {
               savedId: item.id,
               opportunity,
-              score: calculateCompetitivenessScore({
-                profile: profileData as never,
-                opportunity,
-              }),
+              score: {
+                score: entry?.score ?? null,
+                recommendation: entry?.fit_label ?? "",
+              },
             };
           });
 
@@ -302,12 +318,14 @@ export default function SavedPage() {
                               Score
                             </p>
                             <p className="text-lg font-semibold">
-                              {score.score}/100
+                              {score.score !== null ? `${score.score}/100` : "—"}
                             </p>
                           </div>
 
                           <p className="mt-1 text-sm text-muted-foreground">
-                            {formatRecommendation(score.recommendation)}
+                            {score.score !== null
+                              ? formatRecommendation(score.recommendation)
+                              : "Not scored yet"}
                           </p>
                         </div>
 

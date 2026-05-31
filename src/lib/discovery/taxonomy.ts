@@ -6,6 +6,7 @@ export const OPPORTUNITY_TYPES = [
   "competition",
   "leadership_program",
   "career_development_program",
+  "pipeline_program",
 ] as const;
 
 export type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
@@ -18,6 +19,7 @@ export const OPPORTUNITY_TYPE_LABELS: Record<OpportunityType, string> = {
   competition: "Competition",
   leadership_program: "Leadership Program",
   career_development_program: "Career Development Program",
+  pipeline_program: "Pipeline Program",
 };
 
 export const EDUCATION_LEVELS = [

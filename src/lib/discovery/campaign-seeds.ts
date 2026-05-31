@@ -54,6 +54,9 @@ const REGION_CONFIG: Record<
   },
 };
 
+// Curated subset of the worst aggregators to exclude at query time. The full
+// canonical aggregator list lives in source-quality.ts (`aggregatorDomains`);
+// this is intentionally short to keep Brave search queries within length limits.
 const NEGATIVE_AGGREGATORS =
   "-scholarships.com -fastweb -bold.org -unigo -niche -cappex -scholarshiproar -studentscholarships";
 

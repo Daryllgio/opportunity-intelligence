@@ -72,7 +72,7 @@ function normalizeDeadlineConfidence(value: unknown) {
   return "unknown";
 }
 
-function normalizeOpportunityType(value: unknown) {
+export function normalizeOpportunityType(value: unknown) {
   const raw = String(value || "")
     .toLowerCase()
     .trim()
@@ -90,9 +90,8 @@ function normalizeOpportunityType(value: unknown) {
     return "competition";
   }
   if (raw.includes("leadership")) return "leadership_program";
-  if (raw.includes("career") || raw.includes("pipeline")) {
-    return "career_development_program";
-  }
+  if (raw.includes("pipeline")) return "pipeline_program";
+  if (raw.includes("career")) return "career_development_program";
 
   return null;
 }

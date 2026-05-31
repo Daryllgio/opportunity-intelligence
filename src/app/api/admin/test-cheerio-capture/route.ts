@@ -55,11 +55,9 @@ export async function POST(request: NextRequest) {
       error: finalResult.error,
     });
   } catch (error) {
+    console.error("test-cheerio-capture error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to test hybrid capture.",
-      },
+      { error: "Failed to test hybrid capture." },
       { status: 500 }
     );
   }

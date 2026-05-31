@@ -16,6 +16,8 @@ const ALLOWED_CORE_TYPES = [
   "research opportunity",
   "leadership program",
   "competition",
+  "career development program",
+  "pipeline program",
 ];
 
 const DISALLOWED_STANDALONE_TYPES = [

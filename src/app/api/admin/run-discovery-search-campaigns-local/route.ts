@@ -281,13 +281,9 @@ export async function POST(request: NextRequest) {
       results: campaignResults,
     });
   } catch (error) {
+    console.error("run-discovery-search-campaigns-local error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to run discovery search campaigns.",
-      },
+      { error: "Failed to run discovery search campaigns." },
       { status: 500 }
     );
   }

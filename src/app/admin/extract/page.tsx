@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
+import { buildAuthedJsonHeaders } from "@/lib/api/auth-headers";
 import { extractOpportunityDraft } from "@/lib/extraction/opportunity-extractor";
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
 

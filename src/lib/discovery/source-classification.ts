@@ -1,3 +1,5 @@
+import { aggregatorDomains } from "@/lib/discovery/source-quality";
+
 export type SourcePageClassification =
   | "direct_opportunity_page"
   | "provider_listing"
@@ -37,22 +39,8 @@ function getPathname(value: unknown) {
   }
 }
 
-const AGGREGATOR_DOMAINS = [
-  "studentscholarships.org",
-  "scholarships.com",
-  "scholarshiproar.com",
-  "unigo.com",
-  "bold.org",
-  "fastweb.com",
-  "niche.com",
-  "pathwaystoscience.org",
-  "oyaop.com",
-  "lumiere-education.com",
-  "scholarships360.org",
-  "immigrationnewscanada.ca",
-  "academiquirk.com",
-  "bridgeseduscholarships.com",
-];
+// Single source of truth for aggregator domains lives in source-quality.ts.
+const AGGREGATOR_DOMAINS = Array.from(aggregatorDomains);
 
 const RESOURCE_GUIDE_SIGNALS = [
   "resource guide",

@@ -1064,13 +1064,9 @@ export async function POST(request: NextRequest) {
       results,
     });
   } catch (error) {
+    console.error("run-discovery-batch-local error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to run discovery batch.",
-      },
+      { error: "Failed to run discovery batch." },
       { status: 500 }
     );
   }

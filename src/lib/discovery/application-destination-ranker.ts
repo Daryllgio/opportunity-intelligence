@@ -1,6 +1,7 @@
 import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
 import {
   assessProviderSourceRelationship,
+  assessSourceQuality,
   detectAggregatorBehavior,
   getDomain,
   isKnownAggregatorDomain,
@@ -1198,7 +1199,7 @@ async function rankDestinationCandidate({
 
   const confidence = confidenceFromScore(score);
 
-  return {
+  const rankedCandidate: RankedDestinationCandidate = {
     ...candidate,
     purpose: purposeResult.purpose,
     score,
@@ -1223,7 +1224,427 @@ async function rankDestinationCandidate({
                 ? "nomination_based"
                 : purposeResult.purpose,
   };
+
+  return applyDestinationAlignmentGuard({
+    input,
+    candidate: rankedCandidate,
+  });
 }
+
+
+function sourceUrlDestinationResult(
+  input: ApplicationDestinationInput
+): ApplicationDestinationResult | null {
+  const sourceUrl = input.sourceUrl;
+
+  if (!sourceUrl) return null;
+
+  const domain = getDomain(sourceUrl);
+  const sourceQuality = assessSourceQuality(sourceUrl);
+  const urlLower = sourceUrl.toLowerCase();
+  const combined = normalizeText(
+    [input.title, input.provider, input.type, input.sourceUrl].filter(Boolean).join(" ")
+  );
+
+  if (!domain) return null;
+
+  if (isKnownBlockedDomain(sourceUrl) || isKnownAggregatorDomain(sourceUrl)) {
+    return null;
+  }
+
+  const strongApplicationSignals = [
+    "/apply",
+    "/application",
+    "/applications",
+    "/register",
+    "/registration",
+    "/submit",
+    "/submission",
+    "/scholarshipdetails",
+    "/scholarship-details",
+    "/home/scholarshipdetails",
+    "apply now",
+    "start application",
+    "submit application",
+    "application portal",
+    "scholarship details",
+    "sign in to apply",
+    "login to apply",
+    "create account",
+  ];
+
+  const programPageSignals = [
+    "/scholarship",
+    "/scholarships",
+    "/fellowship",
+    "/fellowships",
+    "/grant",
+    "/grants",
+    "/program",
+    "/programs",
+    "/funding",
+    "/awards",
+    "/opportunities",
+  ];
+
+  const hasStrongApplicationSignal =
+    strongApplicationSignals.some((signal) =>
+      urlLower.includes(normalizeText(signal).replaceAll(" ", ""))
+    ) || hasAnySignal(combined, strongApplicationSignals);
+
+  const hasProgramPageSignal = programPageSignals.some((signal) =>
+    urlLower.includes(signal)
+  );
+
+  const isTrustedOfficialSource = [
+    "government",
+    "university",
+    "official_provider",
+    "foundation_or_nonprofit",
+  ].includes(sourceQuality.category);
+
+  if (sourceQuality.category === "application_portal") {
+    const confidence: DestinationConfidence = hasStrongApplicationSignal
+      ? "high"
+      : "medium";
+
+    return {
+      officialSourceUrl: null,
+      applicationDestinationUrl: sourceUrl,
+      applicationDestinationType: "third_party_portal",
+      officialSourceStatus: "candidate_found",
+      destinationConfidence: confidence,
+      destinationReasons: [
+        `Source URL is a known application portal (${domain}) and was used as the applicant destination.`,
+        ...sourceQuality.reasons,
+      ],
+      applicationDocumentUrl: null,
+      applicationDocumentType: null,
+      candidates: [],
+    };
+  }
+
+  if (isTrustedOfficialSource && hasStrongApplicationSignal) {
+    return {
+      officialSourceUrl: sourceUrl,
+      applicationDestinationUrl: sourceUrl,
+      applicationDestinationType: "official_application_page",
+      officialSourceStatus: "verified_destination",
+      destinationConfidence: "high",
+      destinationReasons: [
+        "Source URL is an official or institution-hosted applicant-facing page with strong application signals.",
+        ...sourceQuality.reasons,
+      ],
+      applicationDocumentUrl: null,
+      applicationDocumentType: null,
+      candidates: [],
+    };
+  }
+
+  if (isTrustedOfficialSource && hasProgramPageSignal) {
+    return {
+      officialSourceUrl: sourceUrl,
+      applicationDestinationUrl: sourceUrl,
+      applicationDestinationType: "official_program_page",
+      officialSourceStatus: "verified_destination",
+      destinationConfidence: "medium",
+      destinationReasons: [
+        "Source URL is an official or institution-hosted program/funding page and was used as the applicant destination candidate.",
+        ...sourceQuality.reasons,
+      ],
+      applicationDocumentUrl: null,
+      applicationDocumentType: null,
+      candidates: [],
+    };
+  }
+
+  if (
+    sourceQuality.category === "unknown" &&
+    hasStrongApplicationSignal &&
+    !isKnownAggregatorDomain(sourceUrl)
+  ) {
+    return {
+      officialSourceUrl: null,
+      applicationDestinationUrl: sourceUrl,
+      applicationDestinationType: "unknown",
+      officialSourceStatus: "needs_human_review",
+      destinationConfidence: "low",
+      destinationReasons: [
+        "Unknown source has strong application behavior signals, but needs human review before publishing.",
+        ...sourceQuality.reasons,
+      ],
+      applicationDocumentUrl: null,
+      applicationDocumentType: null,
+      candidates: [],
+    };
+  }
+
+  return null;
+}
+
+
+
+function downgradeDestinationConfidence(
+  confidence: DestinationConfidence
+): DestinationConfidence {
+  if (confidence === "high") return "low";
+  if (confidence === "medium") return "low";
+  return confidence;
+}
+
+function applyDestinationAlignmentGuard({
+  input,
+  candidate,
+}: {
+  input: ApplicationDestinationInput;
+  candidate: RankedDestinationCandidate;
+}): RankedDestinationCandidate {
+  if (candidate.confidence === "none") return candidate;
+
+  const destinationUrl = candidate.applicationDestinationUrl || candidate.url;
+  const destinationDomain = getDomain(destinationUrl);
+  const sourceDomain = getDomain(input.sourceUrl || null);
+  const destinationQuality = assessSourceQuality(destinationUrl);
+  const sourceQuality = input.sourceUrl ? assessSourceQuality(input.sourceUrl) : null;
+
+  const destinationText = [
+    candidate.title,
+    candidate.snippet,
+    candidate.url,
+    candidate.applicationDestinationUrl,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const destinationAggregatorBehavior = detectAggregatorBehavior({
+    url: destinationUrl,
+    title: candidate.title || input.title,
+    text: destinationText,
+    provider: input.provider,
+  });
+
+  const hardAggregatorDestinationDomains = new Set([
+    "scholarshipbuddy.com",
+    "scholarshipguidance.com",
+    "scholarshipinstitute.org",
+    "scholarshipscanada.com",
+    "collegescholarships.org",
+    "collegevine.com",
+    "collegewhale.com",
+    "sallie.com",
+    "biglawinvestor.com",
+    "mastersportal.com",
+    "findamasters.com",
+    "findaphd.com",
+    "hotcoursesabroad.com",
+    "applykite.com",
+    "gyandhan.com",
+    "yocket.com",
+    "leverageedu.com",
+    "upgrad.com",
+  ]);
+
+  const isHardAggregatorDestination =
+    destinationDomain !== null &&
+    Array.from(hardAggregatorDestinationDomains).some(
+      (knownDomain) =>
+        destinationDomain === knownDomain ||
+        destinationDomain.endsWith(`.${knownDomain}`)
+    );
+
+  if (
+    destinationQuality.isAggregator ||
+    destinationAggregatorBehavior.isAggregatorLike ||
+    isHardAggregatorDestination
+  ) {
+    return {
+      ...candidate,
+      purpose: "aggregator_or_database",
+      confidence: "none",
+      score: -100,
+      applicationDestinationUrl: null,
+      applicationDestinationType: "aggregator_or_database",
+      reasons: Array.from(
+        new Set([
+          ...candidate.reasons,
+          "Destination rejected because it is an aggregator/listing/database page, not an applicant destination.",
+          ...destinationQuality.reasons,
+          ...destinationAggregatorBehavior.reasons,
+        ])
+      ),
+    };
+  }
+
+  const providerRelationship = assessProviderSourceRelationship({
+    provider: input.provider,
+    url: destinationUrl,
+    pageText: destinationText,
+  });
+
+  const titleOverlap = tokenOverlap(input.title, destinationText);
+  const providerDomainOverlap = tokenOverlap(input.provider, destinationDomain || "");
+
+  const sameTrustedSourceDomain =
+    Boolean(sourceDomain && destinationDomain) &&
+    sourceDomain === destinationDomain &&
+    sourceQuality !== null &&
+    !sourceQuality.isAggregator;
+
+  const isKnownPortalDestination =
+    destinationQuality.category === "application_portal";
+
+  const isTrustedOfficialDestination = [
+    "government",
+    "university",
+    "official_provider",
+    "foundation_or_nonprofit",
+  ].includes(destinationQuality.category);
+
+  const providerDomainAligned =
+    providerDomainOverlap >= 0.15 ||
+    providerRelationship.reasons.some((reason) =>
+      reason.toLowerCase().includes("provider appears aligned with source domain")
+    );
+
+  const isApplicationDocument =
+    candidate.applicationDestinationType === "application_document";
+
+  const isSafeDocument =
+    isApplicationDocument &&
+    (providerDomainAligned ||
+      sameTrustedSourceDomain ||
+      isKnownPortalDestination ||
+      isTrustedOfficialDestination);
+
+  const isSafeNonDocument =
+    !isApplicationDocument &&
+    (providerRelationship.isProviderAligned ||
+      sameTrustedSourceDomain ||
+      isKnownPortalDestination ||
+      (isTrustedOfficialDestination && titleOverlap >= 0.35));
+
+  const isSafe = isSafeDocument || isSafeNonDocument;
+
+  if (isSafe) {
+    return candidate;
+  }
+
+  return {
+    ...candidate,
+    confidence: downgradeDestinationConfidence(candidate.confidence),
+    score: Math.min(candidate.score, 25),
+    reasons: Array.from(
+      new Set([
+        ...candidate.reasons,
+        "Destination confidence downgraded because provider/domain alignment was weak.",
+        ...providerRelationship.reasons,
+      ])
+    ),
+  };
+}
+
+
+
+type DestinationAvailabilityResult = {
+  isAvailable: boolean;
+  reason: string | null;
+};
+
+async function verifyDestinationAvailability(
+  url: string | null | undefined
+): Promise<DestinationAvailabilityResult> {
+  if (!url) {
+    return {
+      isAvailable: false,
+      reason: "Missing destination URL.",
+    };
+  }
+
+  const lower = url.toLowerCase();
+
+  if (
+    lower.startsWith("mailto:") ||
+    lower.startsWith("tel:") ||
+    lower.endsWith(".pdf") ||
+    lower.endsWith(".doc") ||
+    lower.endsWith(".docx") ||
+    lower.endsWith(".xls") ||
+    lower.endsWith(".xlsx")
+  ) {
+    return {
+      isAvailable: true,
+      reason: null,
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (compatible; OppscoresBot/1.0; +https://oppscores.com)",
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+    });
+
+    if (response.status === 404 || response.status === 410) {
+      return {
+        isAvailable: false,
+        reason: `Destination returned HTTP ${response.status}.`,
+      };
+    }
+
+    if (response.status >= 500) {
+      return {
+        isAvailable: false,
+        reason: `Destination returned server error HTTP ${response.status}.`,
+      };
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+
+    if (contentType.includes("text/html")) {
+      const html = (await response.text()).slice(0, 12000);
+      const normalizedHtml = normalizeText(html);
+
+      const pageNotFoundSignals = [
+        "404 page not found",
+        "page not found",
+        "the page you re looking for doesn t exist",
+        "the page you are looking for does not exist",
+        "may have been moved",
+        "not found error",
+      ];
+
+      if (hasAnySignal(normalizedHtml, pageNotFoundSignals)) {
+        return {
+          isAvailable: false,
+          reason: "Destination page content indicates a 404/page-not-found page.",
+        };
+      }
+    }
+
+    return {
+      isAvailable: true,
+      reason: null,
+    };
+  } catch (error) {
+    return {
+      isAvailable: false,
+      reason: `Destination availability check failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 
 export function emptyApplicationDestinationResult(
   reason: string
@@ -1250,6 +1671,12 @@ export async function rankApplicationDestination(
     );
   }
 
+  const sourceUrlResult = sourceUrlDestinationResult(input);
+
+  if (sourceUrlResult) {
+    return sourceUrlResult;
+  }
+
   const candidates = await collectDestinationCandidates(input);
   const ranked: RankedDestinationCandidate[] = [];
 
@@ -1263,7 +1690,30 @@ export async function rankApplicationDestination(
   }
 
   const sorted = ranked.sort((left, right) => right.score - left.score);
-  const best = sorted.find((candidate) => candidate.confidence !== "none");
+  let best: RankedDestinationCandidate | null = null;
+
+  for (const candidate of sorted) {
+    if (candidate.confidence === "none") continue;
+
+    const destinationUrl = candidate.applicationDestinationUrl || candidate.url;
+    const availability = await verifyDestinationAvailability(destinationUrl);
+
+    if (availability.isAvailable) {
+      best = candidate;
+      break;
+    }
+
+    candidate.confidence = "none";
+    candidate.score = -100;
+    candidate.applicationDestinationUrl = null;
+    candidate.applicationDestinationType = "unknown";
+    candidate.reasons = Array.from(
+      new Set([
+        ...candidate.reasons,
+        availability.reason || "Destination failed availability check.",
+      ])
+    );
+  }
 
   if (!best) {
     return {
@@ -1273,7 +1723,10 @@ export async function rankApplicationDestination(
       officialSourceStatus: candidates.length ? "needs_human_review" : "aggregator_only",
       destinationConfidence: "none",
       destinationReasons: candidates.length
-        ? ["No strong applicant-facing destination found among candidates."]
+        ? [
+            "No strong applicant-facing destination found among candidates.",
+            "Candidate destinations were either weak, aggregator-like, unavailable, or failed availability checks.",
+          ]
         : ["No destination candidates found."],
       applicationDocumentUrl: null,
       applicationDocumentType: null,
@@ -1281,15 +1734,44 @@ export async function rankApplicationDestination(
     };
   }
 
-  const isVerified =
-    best.confidence === "high" || best.confidence === "medium";
+  // `best` here came from web search (the sourceUrl self-check path returns
+  // earlier). A searched candidate may only be marked "verified_destination"
+  // when it is high confidence AND has strong provider/domain ownership.
+  const bestDestinationUrl = best.applicationDestinationUrl || best.url;
+  const bestDestinationDomain = getDomain(bestDestinationUrl);
+  const bestSourceDomain = getDomain(input.sourceUrl || null);
+  const bestDestinationQuality = assessSourceQuality(bestDestinationUrl);
+  const bestProviderRelationship = assessProviderSourceRelationship({
+    provider: input.provider,
+    url: bestDestinationUrl,
+    pageText: [best.title, best.snippet].filter(Boolean).join(" "),
+  });
+  const bestSameTrustedSourceDomain =
+    Boolean(bestSourceDomain && bestDestinationDomain) &&
+    bestSourceDomain === bestDestinationDomain &&
+    !assessSourceQuality(input.sourceUrl || "").isAggregator;
+
+  const hasStrongOwnership =
+    bestProviderRelationship.isProviderAligned ||
+    bestDestinationQuality.category === "application_portal" ||
+    isRecognizedApplicationPortalUrl(bestDestinationUrl) ||
+    bestSameTrustedSourceDomain;
+
+  let officialSourceStatus: ApplicationDestinationResult["officialSourceStatus"];
+  if (best.confidence === "high" && hasStrongOwnership) {
+    officialSourceStatus = "verified_destination";
+  } else if (best.confidence === "low") {
+    officialSourceStatus = "needs_human_review";
+  } else {
+    officialSourceStatus = "candidate_found";
+  }
 
   return {
     officialSourceUrl:
       best.purpose === "application_document" ? null : best.url,
     applicationDestinationUrl: best.applicationDestinationUrl,
     applicationDestinationType: best.applicationDestinationType,
-    officialSourceStatus: isVerified ? "verified_destination" : "candidate_found",
+    officialSourceStatus,
     destinationConfidence: best.confidence,
     destinationReasons: [
       `Best applicant destination selected with ${best.confidence} confidence.`,

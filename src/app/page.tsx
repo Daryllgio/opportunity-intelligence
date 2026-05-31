@@ -181,7 +181,7 @@ export default function Home() {
           <Card className="max-w-xl">
             <CardContent className="p-8">
               <Badge variant="secondary">Premium</Badge>
-              <h2 className="mt-4 text-4xl font-semibold">$12.99/month</h2>
+              <h2 className="mt-4 text-4xl font-semibold">$35/month</h2>
               <p className="mt-4 text-muted-foreground">
                 Full access to competitiveness scores, ranked opportunities,
                 gap reports, saved opportunities, opportunity stacks, and

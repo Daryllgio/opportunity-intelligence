@@ -4,6 +4,7 @@ import { validateExtractedOpportunity } from "@/lib/discovery/validation";
 import { assessDuplicateRisk } from "@/lib/discovery/duplicate-risk";
 import { shouldRejectExtractedOpportunity } from "@/lib/discovery/opportunity-scope";
 import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
+import { normalizeOpportunityType } from "@/lib/discovery/extract-discovered-opportunity";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -41,7 +42,7 @@ function computeExpectedNextCheckAt() {
 function normalizeOpportunityStatusByDeadline<T extends Record<string, any>>(payload: T): T {
   const deadline = stringOrNull(payload.deadline);
 
-  if (!deadline || !/^\\d{4}-\\d{2}-\\d{2}$/.test(deadline)) {
+  if (!deadline || !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
     return payload;
   }
 
@@ -100,10 +101,10 @@ export async function ingestExtractedOpportunity({
     normalized_url: normalizedUrl || null,
     title: stringOrNull(extracted.title),
     provider: stringOrNull(extracted.provider),
-    type: stringOrNull(extracted.type),
+    type: normalizeOpportunityType(extracted.type),
     description: stringOrNull(extracted.description),
     ai_summary: stringOrNull(extracted.ai_summary),
-    country: stringOrNull(extracted.country) || "United States/Canada",
+    country: stringOrNull(extracted.country),
     eligible_countries: arrayOrEmpty(extracted.eligible_countries),
     eligible_education_levels: arrayOrEmpty(extracted.eligible_education_levels),
     eligible_fields: arrayOrEmpty(extracted.eligible_fields),
@@ -198,53 +199,49 @@ export async function ingestExtractedOpportunity({
     application_document_type: null as string | null,
   };
 
-  if (
-    validation.sourceCategory === "aggregator" ||
-    validation.reviewFlags.includes("needs_official_source") ||
-    validation.applicationUrlQuality === "aggregator_application" ||
-    validation.applicationUrlQuality === "same_as_source" ||
-    validation.applicationUrlQuality === "missing_application"
-  ) {
-    try {
-      const destinationResult = await rankApplicationDestination({
-        title: opportunityPayload.title,
-        provider: opportunityPayload.provider,
-        type: opportunityPayload.type,
-        sourceUrl: opportunityPayload.source_url,
-        deadline: opportunityPayload.deadline,
-      });
+  // Always rank the applicant destination, regardless of source quality. The
+  // ranker has a fast sourceUrl self-check path for trusted/official pages
+  // (no web search), so good sources are populated cheaply while aggregator/
+  // unknown sources fall back to the full web-search ranker.
+  try {
+    const destinationResult = await rankApplicationDestination({
+      title: opportunityPayload.title,
+      provider: opportunityPayload.provider,
+      type: opportunityPayload.type,
+      sourceUrl: opportunityPayload.source_url,
+      deadline: opportunityPayload.deadline,
+    });
 
-      trustMetadata = {
-        ...trustMetadata,
-        official_source_url: destinationResult.officialSourceUrl,
-        official_source_verified:
-          destinationResult.officialSourceStatus === "verified_destination",
-        application_destination_url: destinationResult.applicationDestinationUrl,
-        application_destination_type: destinationResult.applicationDestinationType,
-        official_source_status: destinationResult.officialSourceStatus,
-        destination_confidence: destinationResult.destinationConfidence,
-        destination_reasons: destinationResult.destinationReasons,
-        application_document_url: destinationResult.applicationDocumentUrl,
-        application_document_type: destinationResult.applicationDocumentType,
-        application_note:
-          destinationResult.destinationConfidence !== "none"
-            ? `Applicant destination selected with ${destinationResult.destinationConfidence} confidence. Review before publishing.`
-            : "No strong applicant-facing destination was found. Review manually.",
-        source_quality_reasons: [
-          ...trustMetadata.source_quality_reasons,
-          ...destinationResult.destinationReasons,
-        ],
-      };
-    } catch (error) {
-      trustMetadata = {
-        ...trustMetadata,
-        official_source_status: "failed_lookup",
-        destination_confidence: "none",
-        application_note: `Application destination ranking failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      };
-    }
+    trustMetadata = {
+      ...trustMetadata,
+      official_source_url: destinationResult.officialSourceUrl,
+      official_source_verified:
+        destinationResult.officialSourceStatus === "verified_destination",
+      application_destination_url: destinationResult.applicationDestinationUrl,
+      application_destination_type: destinationResult.applicationDestinationType,
+      official_source_status: destinationResult.officialSourceStatus,
+      destination_confidence: destinationResult.destinationConfidence,
+      destination_reasons: destinationResult.destinationReasons,
+      application_document_url: destinationResult.applicationDocumentUrl,
+      application_document_type: destinationResult.applicationDocumentType,
+      application_note:
+        destinationResult.destinationConfidence !== "none"
+          ? `Applicant destination selected with ${destinationResult.destinationConfidence} confidence. Review before publishing.`
+          : "No strong applicant-facing destination was found. Review manually.",
+      source_quality_reasons: [
+        ...trustMetadata.source_quality_reasons,
+        ...destinationResult.destinationReasons,
+      ],
+    };
+  } catch (error) {
+    trustMetadata = {
+      ...trustMetadata,
+      official_source_status: "failed_lookup",
+      destination_confidence: "none",
+      application_note: `Application destination ranking failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
+    };
   }
 
   const now = new Date().toISOString();

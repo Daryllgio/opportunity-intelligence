@@ -1,5 +1,7 @@
 import * as cheerio from "cheerio";
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdminRequest } from "@/lib/auth/admin";
+import { isPubliclyFetchableUrl } from "@/lib/utils/url-safety";
 
 type CandidateLink = {
   title: string;
@@ -34,15 +36,6 @@ const opportunityKeywords = [
 
 function cleanText(text: string) {
   return text.replace(/\s+/g, " ").trim();
-}
-
-function isAllowedUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function normalizeUrl(href: string, baseUrl: string) {
@@ -91,6 +84,11 @@ function scoreCandidate(title: string, url: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdminRequest(request);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     const body = await request.json();
     const sourceUrl = body.url;
 
@@ -101,7 +99,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isAllowedUrl(sourceUrl)) {
+    if (!isPubliclyFetchableUrl(sourceUrl)) {
       return NextResponse.json(
         { error: "Only valid http/https URLs are supported." },
         { status: 400 }
@@ -179,13 +177,9 @@ export async function POST(request: NextRequest) {
       totalCandidates: candidates.length,
     });
   } catch (error) {
+    console.error("scan-source error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong while scanning this source.",
-      },
+      { error: "Something went wrong while scanning this source." },
       { status: 500 }
     );
   }
