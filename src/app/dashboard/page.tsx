@@ -214,7 +214,9 @@ export default function DashboardPage() {
         .eq("user_id", user.id)
         .eq("score_status", "current");
 
-      const normalizedSaved = (savedData || []).map((savedItem) => ({
+      const normalizedSaved = ((savedData ?? []) as unknown as Array<
+        Record<string, unknown>
+      >).map((savedItem) => ({
         ...savedItem,
         opportunities: Array.isArray(savedItem.opportunities)
           ? savedItem.opportunities[0] || null

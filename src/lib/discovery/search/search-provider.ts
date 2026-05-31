@@ -1,3 +1,5 @@
+import { withTimeout } from "@/lib/utils/timeout";
+
 export type DiscoverySearchResult = {
   title: string | null;
   url: string;
@@ -82,13 +84,19 @@ export async function searchDiscoveryWeb({
   url.searchParams.set("safesearch", "moderate");
   url.searchParams.set("text_decorations", "false");
 
-  const response = await fetch(url.toString(), {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": apiKey,
-    },
-  });
+  const response = await withTimeout(
+    (signal) =>
+      fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "X-Subscription-Token": apiKey,
+        },
+        signal,
+      }),
+    15000,
+    "Brave search"
+  );
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");

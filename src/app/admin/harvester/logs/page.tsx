@@ -66,7 +66,9 @@ export default function HarvesterLogsPage() {
         .order("created_at", { ascending: false })
         .limit(100);
 
-      const normalizedLogs = (data || []).map((log) => ({
+      const normalizedLogs = ((data ?? []) as unknown as Array<
+        Record<string, unknown>
+      >).map((log) => ({
         ...log,
         opportunity_sources: Array.isArray(log.opportunity_sources)
           ? log.opportunity_sources[0] || null

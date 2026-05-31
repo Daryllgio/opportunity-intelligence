@@ -1,4 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
+import { withRetry } from "@/lib/utils/retry";
+import { withTimeout } from "@/lib/utils/timeout";
+import { safeParseJson } from "@/lib/utils/safe-json";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -45,14 +48,6 @@ function createServiceSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
-}
-
-function cleanJsonResponse(text: string) {
-  return text
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
 }
 
 function validateScore(value: unknown) {
@@ -805,15 +800,25 @@ Opportunities:
 ${JSON.stringify(scoringOpportunities, null, 2)}
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: prompt,
-      config: {
-        temperature: 0,
-        topP: 0.8,
-        topK: 20,
-      },
-    });
+    const response = await withRetry(
+      () =>
+        withTimeout(
+          () =>
+            ai.models.generateContent({
+              model: "gemini-2.5-pro",
+              contents: prompt,
+              config: {
+                temperature: 0,
+                topP: 0.8,
+                topK: 20,
+                maxOutputTokens: 2048,
+              },
+            }),
+          90000,
+          "Gemini batch scoring"
+        ),
+      { maxRetries: 2 }
+    );
 
     const responseText = response.text;
 
@@ -824,7 +829,19 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
       );
     }
 
-    const parsed = JSON.parse(cleanJsonResponse(responseText));
+    const parsedResult = safeParseJson<Record<string, unknown>>(
+      responseText,
+      "Gemini batch scoring"
+    );
+
+    if (!parsedResult.success) {
+      return NextResponse.json(
+        { error: "Gemini returned malformed output." },
+        { status: 502 }
+      );
+    }
+
+    const parsed = parsedResult.data;
     const parsedScores: ParsedCompetitivenessScore[] = Array.isArray(parsed.scores)
       ? parsed.scores
       : [];

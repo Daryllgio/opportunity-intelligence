@@ -140,7 +140,9 @@ export default function SavedPage() {
       }
 
       if (!error) {
-        const normalizedSaved = (data || []).map((item) => ({
+        const normalizedSaved = ((data ?? []) as unknown as Array<
+          Record<string, unknown>
+        >).map((item) => ({
           ...item,
           opportunities: Array.isArray(item.opportunities)
             ? item.opportunities[0] || null

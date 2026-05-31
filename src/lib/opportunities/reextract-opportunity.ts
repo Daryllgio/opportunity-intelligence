@@ -1,4 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
+import { withRetry } from "@/lib/utils/retry";
+import { withTimeout } from "@/lib/utils/timeout";
+import { safeParseJson } from "@/lib/utils/safe-json";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -22,14 +25,6 @@ export type ReextractedOpportunity = {
   reward_level?: string | null;
   competitiveness_factors?: string[] | null;
 };
-
-function cleanJsonResponse(text: string) {
-  return text
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
 
 function arrayOrEmpty(value: unknown) {
   return Array.isArray(value)
@@ -97,10 +92,22 @@ Current page text:
 ${pageText.slice(0, 25000)}
 `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-  });
+  const response = await withRetry(
+    () =>
+      withTimeout(
+        () =>
+          ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              maxOutputTokens: 4096,
+            },
+          }),
+        60000,
+        "Gemini re-extraction"
+      ),
+    { maxRetries: 2 }
+  );
 
   const rawText = response.text;
 
@@ -108,7 +115,16 @@ ${pageText.slice(0, 25000)}
     throw new Error("Gemini did not return readable extraction text.");
   }
 
-  const parsed = JSON.parse(cleanJsonResponse(rawText));
+  const parsedResult = safeParseJson<Record<string, unknown>>(
+    rawText,
+    "Gemini re-extraction"
+  );
+
+  if (!parsedResult.success) {
+    throw new Error(parsedResult.error);
+  }
+
+  const parsed = parsedResult.data;
 
   return {
     title: stringOrNull(parsed.title),

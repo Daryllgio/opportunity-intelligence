@@ -1,4 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
+import { withRetry } from "@/lib/utils/retry";
+import { withTimeout } from "@/lib/utils/timeout";
+import { safeParseJson } from "@/lib/utils/safe-json";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUsageMonth, getPlanLimits } from "@/lib/billing/plans";
@@ -21,14 +24,6 @@ function createSupabaseForRequest(request: NextRequest) {
       },
     }
   );
-}
-
-function cleanJsonResponse(text: string) {
-  return text
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
 }
 
 function validateScore(value: unknown) {
@@ -256,16 +251,25 @@ Opportunity:
 ${JSON.stringify(opportunity, null, 2)}
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: prompt,
-      config: {
-        temperature: 0,
-        topP: 0.8,
-        topK: 20,
-        maxOutputTokens: 1800,
-      },
-    });
+    const response = await withRetry(
+      () =>
+        withTimeout(
+          () =>
+            ai.models.generateContent({
+              model: "gemini-2.5-pro",
+              contents: prompt,
+              config: {
+                temperature: 0,
+                topP: 0.8,
+                topK: 20,
+                maxOutputTokens: 2048,
+              },
+            }),
+          30000,
+          "Gemini gap report"
+        ),
+      { maxRetries: 2 }
+    );
 
     const responseText = response.text;
 
@@ -276,7 +280,19 @@ ${JSON.stringify(opportunity, null, 2)}
       );
     }
 
-    const parsed = JSON.parse(cleanJsonResponse(responseText));
+    const parsedResult = safeParseJson<Record<string, unknown>>(
+      responseText,
+      "Gemini gap report"
+    );
+
+    if (!parsedResult.success) {
+      return NextResponse.json(
+        { error: "Gemini returned malformed output." },
+        { status: 502 }
+      );
+    }
+
+    const parsed = parsedResult.data;
 
     const report = {
       user_id: user.id,

@@ -522,12 +522,23 @@ export function ProfileForm() {
           gpa: data.gpa ? String(data.gpa) : "",
           languages: data.languages || [],
           target_opportunity_types: data.target_opportunity_types || [],
-          subscription_plan: data.subscription_plan || "free",
-          leadership_experiences: data.leadership_experiences || [],
-          research_experiences: data.research_experiences || [],
-          volunteer_experiences: data.volunteer_experiences || [],
-          work_project_experiences: data.work_project_experiences || [],
-          awards: data.awards || [],
+          subscription_plan:
+            (data.subscription_plan as "free" | "pro" | "premium" | null) ||
+            "free",
+          leadership_experiences:
+            (data.leadership_experiences as unknown as ExperienceEntry[] | null) ||
+            [],
+          research_experiences:
+            (data.research_experiences as unknown as ExperienceEntry[] | null) ||
+            [],
+          volunteer_experiences:
+            (data.volunteer_experiences as unknown as ExperienceEntry[] | null) ||
+            [],
+          work_project_experiences:
+            (data.work_project_experiences as unknown as
+              | ExperienceEntry[]
+              | null) || [],
+          awards: (data.awards as unknown as AwardEntry[] | null) || [],
         });
       }
 
@@ -662,7 +673,6 @@ export function ProfileForm() {
     const { error } = await supabase.from("profiles").upsert({
       id: user.id,
       nationality: form.nationality,
-      country: form.nationality,
       country_of_study: form.country_of_study,
       student_status: form.student_status,
       school: form.school,

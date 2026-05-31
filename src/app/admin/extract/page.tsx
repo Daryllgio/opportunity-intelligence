@@ -176,7 +176,7 @@ export default function AdminExtractPage() {
       setSaving(false);
       setDuplicateOpportunity({
         id: existingOpportunity.id,
-        title: existingOpportunity.title,
+        title: existingOpportunity.title ?? "",
       });
       setMessage(
         `Duplicate detected. This opportunity already exists live: ${existingOpportunity.title}`

@@ -1,5 +1,8 @@
 import { createHash } from "crypto";
 import { GoogleGenAI } from "@google/genai";
+import { withRetry } from "@/lib/utils/retry";
+import { withTimeout } from "@/lib/utils/timeout";
+import { safeParseJson } from "@/lib/utils/safe-json";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -76,14 +79,6 @@ function createSupabaseForRequest(request: NextRequest) {
       },
     }
   );
-}
-
-function cleanJsonResponse(text: string) {
-  return text
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
 }
 
 function normalizeWhitespace(value: string) {
@@ -519,15 +514,25 @@ Experiences grouped by section:
 ${JSON.stringify(grouped, null, 2)}
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: prompt,
-      config: {
-        temperature: 0,
-        topP: 0.8,
-        topK: 20,
-      },
-    });
+    const response = await withRetry(
+      () =>
+        withTimeout(
+          () =>
+            ai.models.generateContent({
+              model: "gemini-2.5-pro",
+              contents: prompt,
+              config: {
+                temperature: 0,
+                topP: 0.8,
+                topK: 20,
+                maxOutputTokens: 2048,
+              },
+            }),
+          30000,
+          "Gemini experience summaries"
+        ),
+      { maxRetries: 2 }
+    );
 
     const responseText = response.text;
 
@@ -538,7 +543,19 @@ ${JSON.stringify(grouped, null, 2)}
       );
     }
 
-    const parsed = JSON.parse(cleanJsonResponse(responseText));
+    const parsedResult = safeParseJson<Record<string, unknown>>(
+      responseText,
+      "Gemini experience summaries"
+    );
+
+    if (!parsedResult.success) {
+      return NextResponse.json(
+        { error: "Gemini returned malformed output." },
+        { status: 502 }
+      );
+    }
+
+    const parsed = parsedResult.data;
     const summaries = Array.isArray(parsed.summaries) ? parsed.summaries : [];
 
     const experienceMap = new Map<string, NormalizedExperience>();

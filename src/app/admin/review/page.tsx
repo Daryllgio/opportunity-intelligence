@@ -119,7 +119,9 @@ export default function AdminReviewPage() {
         .order("created_at", { ascending: false });
 
     if (!error) {
-      const loadedDrafts = (data || []).map((draft) => ({
+      const loadedDrafts = ((data ?? []) as unknown as Array<
+        Record<string, unknown>
+      >).map((draft) => ({
         ...draft,
         opportunity_sources: Array.isArray(draft.opportunity_sources)
           ? draft.opportunity_sources[0] || null
@@ -181,7 +183,7 @@ export default function AdminReviewPage() {
           ...current,
           [draft.id]: {
             id: existingOpportunity.id,
-            title: existingOpportunity.title,
+            title: existingOpportunity.title ?? "",
           },
         }));
 

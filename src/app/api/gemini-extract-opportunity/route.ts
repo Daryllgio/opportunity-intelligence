@@ -1,6 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminRequest } from "@/lib/auth/admin";
+import { withRetry } from "@/lib/utils/retry";
+import { withTimeout } from "@/lib/utils/timeout";
+import { safeParseJson } from "@/lib/utils/safe-json";
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -35,14 +38,6 @@ type ExtractedOpportunity = {
   soft_preferences: string[];
   extraction_confidence: "low" | "medium" | "high";
 };
-
-function cleanJsonResponse(text: string) {
-  return text
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
 
 function validateExtractedOpportunity(data: Partial<ExtractedOpportunity>) {
   return {
@@ -163,15 +158,25 @@ Raw webpage/opportunity text:
 ${rawText.slice(0, 12000)}
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite",
-      contents: prompt,
-      config: {
-        temperature: 0,
-        topP: 0.8,
-        topK: 20,
-      },
-    });
+    const response = await withRetry(
+      () =>
+        withTimeout(
+          () =>
+            ai.models.generateContent({
+              model: "gemini-2.5-flash-lite",
+              contents: prompt,
+              config: {
+                temperature: 0,
+                topP: 0.8,
+                topK: 20,
+                maxOutputTokens: 4096,
+              },
+            }),
+          60000,
+          "Gemini extraction"
+        ),
+      { maxRetries: 2 }
+    );
 
     const text = response.text;
 
@@ -182,8 +187,19 @@ ${rawText.slice(0, 12000)}
       );
     }
 
-    const cleaned = cleanJsonResponse(text);
-    const parsed = JSON.parse(cleaned);
+    const parsedResult = safeParseJson<Record<string, unknown>>(
+      text,
+      "Gemini extraction"
+    );
+
+    if (!parsedResult.success) {
+      return NextResponse.json(
+        { error: "Gemini returned malformed output." },
+        { status: 502 }
+      );
+    }
+
+    const parsed = parsedResult.data;
 
     const extracted = validateExtractedOpportunity({
       ...parsed,
