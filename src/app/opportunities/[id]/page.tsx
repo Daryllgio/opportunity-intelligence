@@ -8,6 +8,10 @@ import { SaveOpportunityButton } from "@/components/opportunities/save-opportuni
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { OpportunityTypeBadge } from "@/components/ui/opportunity-type-badge";
+import { ApplicationStatusBadge } from "@/components/ui/application-status-badge";
+import { SourceTrustBadge } from "@/components/ui/source-trust-badge";
+import { DestinationConfidenceBadge } from "@/components/ui/destination-confidence-badge";
 import { supabase } from "@/lib/supabase";
 
 type Opportunity = {
@@ -24,10 +28,21 @@ type Opportunity = {
   funding_amount: string | null;
   funding_type: string | null;
   deadline: string | null;
+  deadline_confidence: string | null;
+  application_status: string | null;
   effort_level: string | null;
   reward_level: string | null;
   application_url: string | null;
+  source_url: string | null;
   competitiveness_factors: string[] | null;
+  // Source & verification fields
+  source_category: string | null;
+  application_destination_url: string | null;
+  application_destination_type: string | null;
+  application_url_quality: string | null;
+  destination_confidence: string | null;
+  official_source_url: string | null;
+  updated_at: string | null;
 };
 
 type ScoreReport = {
@@ -43,11 +58,165 @@ type ScoreReport = {
   updated_at: string | null;
 };
 
+const OPPORTUNITY_SELECT =
+  "id, title, provider, type, description, ai_summary, country, eligible_countries, eligible_education_levels, eligible_fields, funding_amount, funding_type, deadline, deadline_confidence, application_status, effort_level, reward_level, application_url, source_url, competitiveness_factors, source_category, application_destination_url, application_destination_type, application_url_quality, destination_confidence, official_source_url, updated_at";
+
+const DESTINATION_TYPE_LABELS: Record<string, string> = {
+  official_application_page: "Official application page",
+  official_program_page: "Official program page",
+  third_party_portal: "Third-party application portal",
+  login_gated_portal: "Login-gated portal",
+  email_based_application: "Email-based application",
+  aggregator_or_database: "Aggregator page",
+  not_found: "Application destination not verified",
+};
+
+function destinationTypeLabel(type: string | null): string {
+  if (!type) return "Application destination not verified";
+  return DESTINATION_TYPE_LABELS[type] ?? type.replace(/_/g, " ");
+}
+
 function formatOpportunityType(type: string) {
   return type
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+function formatDate(value: string | null): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+// Derive a readable domain from any of the opportunity's URLs.
+function domainFromUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+const PORTAL_NAMES: Array<{ match: string; name: string }> = [
+  { match: "awardspring", name: "AwardSpring" },
+  { match: "submittable", name: "Submittable" },
+  { match: "scholarshipowl", name: "ScholarshipOwl" },
+  { match: "smapply", name: "SM Apply" },
+  { match: "fluidreview", name: "FluidReview" },
+  { match: "wizehive", name: "WizeHive" },
+];
+
+function detectPortalName(opp: Opportunity): string | null {
+  const haystack = [opp.application_destination_url, opp.application_url]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  for (const { match, name } of PORTAL_NAMES) {
+    if (haystack.includes(match)) return name;
+  }
+  return null;
+}
+
+// Best application URL, in priority order.
+function resolveApplyUrl(opp: Opportunity): string | null {
+  return (
+    opp.application_destination_url ||
+    opp.application_url ||
+    opp.source_url ||
+    null
+  );
+}
+
+const VERIFIED_DEST = new Set([
+  "official_application_page",
+  "official_program_page",
+]);
+const PORTAL_DEST = new Set(["third_party_portal", "login_gated_portal"]);
+const OFFICIAL_SOURCES = new Set([
+  "government",
+  "university",
+  "official_provider",
+]);
+const FOUNDATION_SOURCES = new Set(["foundation", "nonprofit"]);
+
+type TrustMessage = {
+  tone: "positive" | "neutral" | "caution";
+  text: string;
+  officialSourceUrl?: string | null;
+};
+
+// Contextual trust message describing source quality and verification.
+function buildTrustMessage(opp: Opportunity): TrustMessage {
+  const category = opp.source_category;
+  const destType = opp.application_destination_type;
+  const confidence = opp.destination_confidence;
+  const domain = domainFromUrl(opp.source_url) || "an external source";
+  const portal = detectPortalName(opp);
+
+  const destinationFound = destType !== null && destType !== "not_found";
+
+  if (!destinationFound || !confidence || confidence === "none") {
+    return {
+      tone: "caution",
+      text: "The application destination has not been fully verified. Please check the provider's website directly before applying.",
+    };
+  }
+
+  if (destType && PORTAL_DEST.has(destType)) {
+    return {
+      tone: "neutral",
+      text: `The application is hosted through ${
+        portal ?? "a third-party application portal"
+      }.`,
+    };
+  }
+
+  if (category === "aggregator") {
+    return {
+      tone: "caution",
+      text: `This opportunity was found through ${domain}. We recommend verifying details on the official provider's website.`,
+      officialSourceUrl: opp.official_source_url,
+    };
+  }
+
+  if (category && OFFICIAL_SOURCES.has(category) && destType && VERIFIED_DEST.has(destType)) {
+    return {
+      tone: "positive",
+      text: "This opportunity was found on an official source and links to a verified destination.",
+    };
+  }
+
+  if (category && FOUNDATION_SOURCES.has(category)) {
+    return {
+      tone: "positive",
+      text: "This opportunity comes from a foundation or nonprofit. The application link has been verified.",
+    };
+  }
+
+  return {
+    tone: "neutral",
+    text: "The application link for this opportunity has been verified.",
+  };
+}
+
+function applyButtonLabel(opp: Opportunity): string {
+  const destType = opp.application_destination_type;
+  const portal = detectPortalName(opp);
+  const domain = domainFromUrl(opp.source_url);
+
+  if (destType && VERIFIED_DEST.has(destType)) return "Apply on official website →";
+  if (destType && PORTAL_DEST.has(destType))
+    return `Apply through ${portal ?? "application portal"} →`;
+  if (opp.source_category === "aggregator")
+    return `View on ${domain ?? "source"} →`;
+  return "Visit provider website →";
 }
 
 export default function OpportunityDetailPage() {
@@ -74,9 +243,7 @@ export default function OpportunityDetailPage() {
 
       const { data: opportunityData, error } = await supabase
         .from("opportunities")
-        .select(
-          "id, title, provider, type, description, ai_summary, country, eligible_countries, eligible_education_levels, eligible_fields, funding_amount, funding_type, deadline, effort_level, reward_level, application_url, competitiveness_factors"
-        )
+        .select(OPPORTUNITY_SELECT)
         .eq("id", opportunityId)
         .eq("is_active", true)
         .eq("is_approved", true)
@@ -95,7 +262,7 @@ export default function OpportunityDetailPage() {
         return;
       }
 
-      setOpportunity(opportunityData as Opportunity);
+      setOpportunity(opportunityData as unknown as Opportunity);
 
       const { data: reportData } = await supabase
         .from("opportunity_score_reports")
@@ -160,6 +327,21 @@ export default function OpportunityDetailPage() {
     setScoring(false);
   }
 
+  const trust = opportunity ? buildTrustMessage(opportunity) : null;
+  const applyUrl = opportunity ? resolveApplyUrl(opportunity) : null;
+  const sourceDomain = opportunity ? domainFromUrl(opportunity.source_url) : null;
+  const deadlineText = opportunity ? formatDate(opportunity.deadline) : null;
+  const lastChecked = opportunity ? formatDate(opportunity.updated_at) : null;
+
+  const trustToneClass: Record<TrustMessage["tone"], string> = {
+    positive:
+      "bg-teal-50 dark:bg-teal-950 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-800",
+    neutral:
+      "bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-800",
+    caution:
+      "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800",
+  };
+
   return (
     <main className="min-h-screen bg-background">
       <AppNav />
@@ -185,45 +367,222 @@ export default function OpportunityDetailPage() {
           ) : opportunity ? (
             <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_360px]">
               <div className="space-y-6">
+                {/* ── Header ─────────────────────────────────────── */}
                 <Card>
                   <CardContent className="p-8">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">
-                        {formatOpportunityType(opportunity.type)}
-                      </Badge>
-
-                      {opportunity.deadline && (
-                        <Badge variant="outline">
-                          Deadline: {opportunity.deadline}
-                        </Badge>
-                      )}
-
-                      {opportunity.effort_level && (
-                        <Badge variant="outline">
-                          Effort: {opportunity.effort_level}
-                        </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <OpportunityTypeBadge type={opportunity.type} />
+                      {opportunity.application_status && (
+                        <ApplicationStatusBadge
+                          status={opportunity.application_status}
+                        />
                       )}
                     </div>
 
-                    <h1 className="mt-4 text-4xl font-semibold tracking-tight">
+                    <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
                       {opportunity.title}
                     </h1>
 
                     {opportunity.provider && (
-                      <p className="mt-2 text-muted-foreground">
-                        Provider: {opportunity.provider}
+                      <p className="mt-2 text-lg text-muted-foreground">
+                        {opportunity.provider}
                       </p>
                     )}
+
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      {applyUrl && (
+                        <Button asChild>
+                          <a
+                            href={applyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Apply
+                          </a>
+                        </Button>
+                      )}
+                      <SaveOpportunityButton opportunityId={opportunity.id} />
+                    </div>
+
+                    {/* Key details grid */}
+                    <dl className="mt-8 grid grid-cols-2 gap-6 border-t pt-8 sm:grid-cols-3">
+                      {deadlineText && (
+                        <div>
+                          <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                            Deadline
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium">
+                            {deadlineText}
+                            {opportunity.deadline_confidence && (
+                              <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500 dark:bg-neutral-800">
+                                {opportunity.deadline_confidence} confidence
+                              </span>
+                            )}
+                          </dd>
+                        </div>
+                      )}
+                      {opportunity.funding_amount && (
+                        <div>
+                          <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                            Funding
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium">
+                            {opportunity.funding_amount}
+                          </dd>
+                        </div>
+                      )}
+                      {opportunity.country && (
+                        <div>
+                          <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                            Country
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium">
+                            {opportunity.country}
+                          </dd>
+                        </div>
+                      )}
+                      {opportunity.eligible_education_levels &&
+                        opportunity.eligible_education_levels.length > 0 && (
+                          <div>
+                            <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                              Education
+                            </dt>
+                            <dd className="mt-1 text-sm font-medium">
+                              {opportunity.eligible_education_levels.join(", ")}
+                            </dd>
+                          </div>
+                        )}
+                      {opportunity.eligible_fields &&
+                        opportunity.eligible_fields.length > 0 && (
+                          <div>
+                            <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                              Fields
+                            </dt>
+                            <dd className="mt-1 text-sm font-medium">
+                              {opportunity.eligible_fields.join(", ")}
+                            </dd>
+                          </div>
+                        )}
+                      {(opportunity.effort_level || opportunity.reward_level) && (
+                        <div>
+                          <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                            Effort / Reward
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium capitalize">
+                            {opportunity.effort_level || "—"} /{" "}
+                            {opportunity.reward_level || "—"}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
                   </CardContent>
                 </Card>
+
+                {/* ── Source & verification ──────────────────────── */}
+                {trust && (
+                  <Card>
+                    <CardContent className="p-6">
+                      <h2 className="text-xl font-semibold">
+                        Source &amp; verification
+                      </h2>
+
+                      <dl className="mt-4 space-y-4 text-sm">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <dt className="w-28 shrink-0 text-muted-foreground">
+                            Source
+                          </dt>
+                          <dd className="flex flex-wrap items-center gap-2">
+                            <SourceTrustBadge
+                              category={opportunity.source_category || "unknown"}
+                            />
+                            {sourceDomain && <span>{sourceDomain}</span>}
+                          </dd>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                          <dt className="w-28 shrink-0 text-muted-foreground">
+                            Destination
+                          </dt>
+                          <dd className="flex flex-wrap items-center gap-2">
+                            <DestinationConfidenceBadge
+                              confidence={
+                                opportunity.destination_confidence || "none"
+                              }
+                            />
+                            <span>
+                              {destinationTypeLabel(
+                                opportunity.application_destination_type
+                              )}
+                            </span>
+                          </dd>
+                        </div>
+
+                        {opportunity.application_url_quality && (
+                          <div className="flex flex-wrap items-center gap-3">
+                            <dt className="w-28 shrink-0 text-muted-foreground">
+                              Link quality
+                            </dt>
+                            <dd className="capitalize">
+                              {opportunity.application_url_quality.replace(
+                                /_/g,
+                                " "
+                              )}
+                            </dd>
+                          </div>
+                        )}
+
+                        {applyUrl && (
+                          <div className="flex flex-wrap items-start gap-3">
+                            <dt className="w-28 shrink-0 text-muted-foreground">
+                              Application
+                            </dt>
+                            <dd className="min-w-0 break-all">
+                              <a
+                                href={applyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-indigo-600 hover:underline dark:text-indigo-400"
+                              >
+                                {applyUrl}
+                              </a>
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
+
+                      <div
+                        className={`mt-5 rounded-md border px-4 py-3 text-sm ${
+                          trustToneClass[trust.tone]
+                        }`}
+                      >
+                        {trust.text}
+                        {trust.officialSourceUrl && (
+                          <>
+                            {" "}
+                            <a
+                              href={trust.officialSourceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-medium underline"
+                            >
+                              Official source →
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {opportunity.ai_summary && (
                   <Card>
                     <CardContent className="p-6">
                       <h2 className="text-xl font-semibold">AI summary</h2>
-                      <p className="mt-3 leading-7 text-muted-foreground">
-                        {opportunity.ai_summary}
-                      </p>
+                      <div className="mt-3 rounded-md border-l-4 border-indigo-400 bg-indigo-50 p-4 dark:bg-indigo-950/40">
+                        <p className="leading-7 text-neutral-700 dark:text-neutral-200">
+                          {opportunity.ai_summary}
+                        </p>
+                      </div>
                     </CardContent>
                   </Card>
                 )}
@@ -240,7 +599,7 @@ export default function OpportunityDetailPage() {
                 <Card>
                   <CardContent className="p-6">
                     <h2 className="text-xl font-semibold">
-                      Eligibility & details
+                      Eligibility &amp; details
                     </h2>
 
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -271,7 +630,7 @@ export default function OpportunityDetailPage() {
                         <p className="text-sm text-muted-foreground">
                           Reward level
                         </p>
-                        <p className="font-medium">
+                        <p className="font-medium capitalize">
                           {opportunity.reward_level || "Not specified"}
                         </p>
                       </div>
@@ -305,10 +664,76 @@ export default function OpportunityDetailPage() {
                             "Not specified"}
                         </p>
                       </div>
+
+                      {opportunity.competitiveness_factors &&
+                        opportunity.competitiveness_factors.length > 0 && (
+                          <div>
+                            <p className="text-sm text-muted-foreground">
+                              Competitiveness factors
+                            </p>
+                            <p className="font-medium">
+                              {opportunity.competitiveness_factors.join(", ")}
+                            </p>
+                          </div>
+                        )}
                     </div>
                   </CardContent>
                 </Card>
 
+                {/* ── Apply CTA ──────────────────────────────────── */}
+                <Card className="border-indigo-200 bg-indigo-50/50 dark:border-indigo-900 dark:bg-indigo-950/30">
+                  <CardContent className="p-6">
+                    <h2 className="text-xl font-semibold">Ready to apply?</h2>
+                    {applyUrl ? (
+                      <>
+                        <Button asChild className="mt-4">
+                          <a
+                            href={applyUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {applyButtonLabel(opportunity)}
+                          </a>
+                        </Button>
+                        <dl className="mt-5 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                          <div>
+                            <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                              Application type
+                            </dt>
+                            <dd className="mt-1">
+                              {destinationTypeLabel(
+                                opportunity.application_destination_type
+                              )}
+                            </dd>
+                          </div>
+                          {sourceDomain && (
+                            <div>
+                              <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                                Source
+                              </dt>
+                              <dd className="mt-1">{sourceDomain}</dd>
+                            </div>
+                          )}
+                          {lastChecked && (
+                            <div>
+                              <dt className="text-xs uppercase tracking-wide text-neutral-400">
+                                Last checked
+                              </dt>
+                              <dd className="mt-1">{lastChecked}</dd>
+                            </div>
+                          )}
+                        </dl>
+                      </>
+                    ) : (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        No application link is available for this opportunity
+                        yet. Please check the provider&apos;s website directly.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* ── AI competitiveness report ──────────────────── */}
                 <Card>
                   <CardContent className="p-6">
                     <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
@@ -479,16 +904,32 @@ export default function OpportunityDetailPage() {
                   </Card>
                 )}
 
+                {/* Source snapshot in the sidebar */}
+                <Card>
+                  <CardContent className="p-6">
+                    <p className="text-sm font-medium">Source snapshot</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <SourceTrustBadge
+                        category={opportunity.source_category || "unknown"}
+                      />
+                      <DestinationConfidenceBadge
+                        confidence={opportunity.destination_confidence || "none"}
+                      />
+                    </div>
+                    {sourceDomain && (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {sourceDomain}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
                 <SaveOpportunityButton opportunityId={opportunity.id} />
 
-                {opportunity.application_url && (
+                {applyUrl && (
                   <Button asChild className="w-full">
-                    <a
-                      href={opportunity.application_url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Visit application page
+                    <a href={applyUrl} target="_blank" rel="noopener noreferrer">
+                      {applyButtonLabel(opportunity)}
                     </a>
                   </Button>
                 )}

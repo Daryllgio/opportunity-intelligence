@@ -67,6 +67,56 @@ function getCardSummary(opportunity: Opportunity) {
     : opportunity.description;
 }
 
+function daysUntil(deadline: string | null) {
+  if (!deadline) return null;
+  const due = new Date(deadline);
+  if (Number.isNaN(due.getTime())) return null;
+  return Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+// Deadline urgency pill: red <7 days, amber 7-14, green 30+, gray closed/none.
+function DeadlineUrgency({ deadline }: { deadline: string | null }) {
+  const days = daysUntil(deadline);
+
+  if (days === null) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800">
+        No deadline
+      </span>
+    );
+  }
+
+  if (days < 0) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800">
+        Closed
+      </span>
+    );
+  }
+
+  const cls =
+    days < 7
+      ? "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+      : days <= 14
+        ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+        : "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300";
+
+  const label =
+    days === 0
+      ? "Due today"
+      : days === 1
+        ? "Due in 1 day"
+        : `Due in ${days} days`;
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function SavedPage() {
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState<ScoredSavedOpportunity[]>([]);
@@ -283,11 +333,7 @@ export default function SavedPage() {
                             {formatOpportunityType(opportunity.type)}
                           </Badge>
 
-                          {opportunity.deadline && (
-                            <Badge variant="outline">
-                              Deadline: {opportunity.deadline}
-                            </Badge>
-                          )}
+                          <DeadlineUrgency deadline={opportunity.deadline} />
 
                           {opportunity.effort_level && (
                             <Badge variant="outline">

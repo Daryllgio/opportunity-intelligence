@@ -92,6 +92,15 @@ function getDeadlineLabel(deadline: string | null) {
   return `${days} days left`;
 }
 
+// Urgency color for an upcoming deadline: red <7 days, amber 7-14, green 30+.
+function getDeadlineColor(deadline: string | null) {
+  const days = daysUntil(deadline);
+  if (days === null || days < 0) return "text-muted-foreground";
+  if (days < 7) return "text-rose-600 dark:text-rose-400";
+  if (days <= 14) return "text-amber-600 dark:text-amber-400";
+  return "text-teal-600 dark:text-teal-400";
+}
+
 function getCurrentUsageMonth() {
   const now = new Date();
   const year = now.getUTCFullYear();
@@ -586,8 +595,14 @@ export default function DashboardPage() {
                           <div>
                             <h3 className="font-medium">{opportunity.title}</h3>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              {getDeadlineLabel(opportunity.deadline)} · Score{" "}
-                              {score.score}/100
+                              <span
+                                className={`font-medium ${getDeadlineColor(
+                                  opportunity.deadline
+                                )}`}
+                              >
+                                {getDeadlineLabel(opportunity.deadline)}
+                              </span>{" "}
+                              · Score {score.score}/100
                             </p>
                           </div>
 
