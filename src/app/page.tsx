@@ -1,197 +1,260 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import Link from "next/link";
+import { SourceTrustBadge } from "@/components/ui/source-trust-badge";
+import { opportunityTypeColors } from "@/styles/design-tokens";
 
-const features = [
-  {
-    title: "Eligible opportunities only",
-    description:
-      "See scholarships, research programs, funded conferences, fellowships, grants, and competitions that match your profile.",
-  },
-  {
-    title: "Competitiveness score",
-    description:
-      "Understand how strong your profile is for each opportunity before spending hours applying.",
-  },
-  {
-    title: "Ranked strategy board",
-    description:
-      "Prioritize the best opportunities first with recommendations like Apply Now, Save for Later, or Improve First.",
-  },
+const TYPE_CARDS: { type: string; name: string; description: string }[] = [
+  { type: "scholarship", name: "Scholarships", description: "Financial awards for education" },
+  { type: "research_program", name: "Research Programs", description: "Structured research placements and summer programs" },
+  { type: "fellowship", name: "Fellowships", description: "Selective programs with funding, training, and mentorship" },
+  { type: "grant", name: "Grants", description: "Funding for students, researchers, and projects" },
+  { type: "competition", name: "Competitions", description: "Contests, challenges, and innovation awards" },
+  { type: "leadership_program", name: "Leadership Programs", description: "Leadership training and civic engagement" },
+  { type: "career_development_program", name: "Career Development", description: "Professional readiness and industry exposure" },
+  { type: "pipeline_program", name: "Pipeline Programs", description: "Pathways to graduate school and professions" },
 ];
 
-const opportunityTypes = [
-  "Scholarships",
-  "Research programs",
-  "Funded conferences",
-  "Fellowships",
-  "Grants",
-  "Competitions",
+const DIFFERENTIATORS = [
+  { label: "Source verification", detail: "Official vs aggregator clearly labeled" },
+  { label: "Application link quality", detail: "Verified destinations, not login walls" },
+  { label: "Eligibility matching", detail: "Filtered to your education, field, country" },
+  { label: "Deadline tracking", detail: "Status: open, rolling, closed, upcoming" },
+  { label: "Effort vs reward", detail: "Know what's worth your time" },
+  { label: "All opportunity types", detail: "8 categories beyond just scholarships" },
 ];
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8">
-        <nav className="flex items-center justify-between">
-          <div className="text-xl font-semibold tracking-tight">OppScore</div>
-
-          <div className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <a href="#features" className="hover:text-foreground">
-              Features
-            </a>
-            <a href="#pricing" className="hover:text-foreground">
-              Pricing
-            </a>
-            <a href="#how-it-works" className="hover:text-foreground">
-              How it works
-            </a>
-          </div>
-
+    <main className="flex min-h-screen flex-col bg-white dark:bg-neutral-950">
+      {/* Top bar */}
+      <header className="border-b border-neutral-200 dark:border-neutral-800">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <span className="text-xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
+            OppScore
+          </span>
           <div className="flex items-center gap-3">
-            <Button asChild variant="outline">
-              <a href="/login">Log in</a>
-            </Button>
-            <Button asChild>
-              <a href="/signup">Get started</a>
-            </Button>
+            <Link
+              href="/login"
+              className="text-sm font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/signup"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
+            >
+              Get started
+            </Link>
           </div>
-        </nav>
+        </div>
+      </header>
 
-        <div className="grid flex-1 items-center gap-12 py-20 lg:grid-cols-[1.05fr_0.95fr]">
-          <div>
-            <Badge className="mb-6" variant="secondary">
-              Built for students
-            </Badge>
-
-            <h1 className="max-w-4xl text-5xl font-semibold tracking-tight md:text-7xl">
-              Find global opportunities you are actually competitive for.
-            </h1>
-
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-              OppScore helps students discover eligible
-              scholarships, research opportunities, funded conferences,
-              fellowships, grants, and competitions — ranked by how competitive
-              they are for each one.
-            </p>
-
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button size="lg" asChild><a href="/signup">Get started</a></Button>
-              <Button size="lg" variant="outline">
-                See how it works
-              </Button>
-            </div>
-
-            <div className="mt-8 flex flex-wrap gap-2">
-              {opportunityTypes.map((type) => (
-                <Badge key={type} variant="outline">
-                  {type}
-                </Badge>
-              ))}
-            </div>
+      {/* Section 1: Hero */}
+      <section className="bg-gradient-to-b from-indigo-50 to-white dark:from-neutral-900 dark:to-neutral-950">
+        <div className="mx-auto max-w-4xl px-4 py-20 text-center sm:px-6 sm:py-28 lg:py-32">
+          <p className="text-sm font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+            Opportunity Intelligence Platform
+          </p>
+          <h1 className="mt-4 text-4xl font-bold tracking-tight text-neutral-900 sm:text-5xl lg:text-6xl dark:text-white">
+            Find opportunities that actually fit you
+          </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-neutral-500 sm:text-xl dark:text-neutral-400">
+            Discover scholarships, research programs, fellowships, grants,
+            competitions, and more — verified, scored, and matched to your
+            profile.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              href="/opportunities"
+              className="w-full rounded-lg bg-indigo-600 px-6 py-3 text-center font-semibold text-white transition-colors hover:bg-indigo-700 sm:w-auto"
+            >
+              Browse opportunities
+            </Link>
+            <Link
+              href="/signup"
+              className="w-full rounded-lg border border-neutral-300 px-6 py-3 text-center font-semibold text-neutral-700 transition-colors hover:bg-neutral-50 sm:w-auto dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+            >
+              Create free account
+            </Link>
           </div>
-
-          <Card className="border-muted shadow-sm">
-            <CardContent className="p-6">
-              <div className="mb-6">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Your strategy board
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold">
-                  Top matches this month
-                </h2>
-              </div>
-
-              <div className="space-y-4">
-                {[
-                  {
-                    name: "Global Research Fellowship",
-                    type: "Research",
-                    score: "88/100",
-                    action: "Apply Now",
-                  },
-                  {
-                    name: "Student Innovation Grant",
-                    type: "Grant",
-                    score: "81/100",
-                    action: "Save for Later",
-                  },
-                  {
-                    name: "Youth Leadership Summit",
-                    type: "Funded Conference",
-                    score: "74/100",
-                    action: "Improve First",
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.name}
-                    className="rounded-2xl border bg-card p-4"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <Badge variant="secondary">{item.type}</Badge>
-                        <h3 className="mt-3 font-medium">{item.name}</h3>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Recommended action: {item.action}
-                        </p>
-                      </div>
-
-                      <div className="rounded-full border px-3 py-1 text-sm font-semibold">
-                        {item.score}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <p className="mt-6 text-sm text-neutral-400">
+            Trusted sources • Official verification • Personalized matching
+          </p>
         </div>
       </section>
 
-      <section id="features" className="border-t px-6 py-20">
-        <div className="mx-auto max-w-7xl">
-          <div className="max-w-2xl">
-            <Badge variant="secondary">Core platform</Badge>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight md:text-5xl">
-              Not another scholarship list.
-            </h2>
-            <p className="mt-4 text-muted-foreground">
-              OppScore turns opportunity discovery into a personalized strategy
-              system.
-            </p>
-          </div>
+      {/* Section 2: Opportunity types */}
+      <section className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        <div className="mx-auto max-w-xl text-center">
+          <h2 className="text-2xl font-bold text-neutral-900 sm:text-3xl dark:text-white">
+            Every opportunity type, one platform
+          </h2>
+          <p className="mt-3 text-base text-neutral-500 dark:text-neutral-400">
+            More than scholarships. We track 8 categories of opportunities across
+            education, research, funding, and career development.
+          </p>
+        </div>
 
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
-            {features.map((feature) => (
-              <Card key={feature.title}>
-                <CardContent className="p-6">
-                  <h3 className="text-lg font-semibold">{feature.title}</h3>
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                    {feature.description}
-                  </p>
-                </CardContent>
-              </Card>
+        <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {TYPE_CARDS.map((card) => {
+            const style =
+              opportunityTypeColors[card.type] || opportunityTypeColors.scholarship;
+            return (
+              <Link
+                key={card.type}
+                href={`/opportunities?type=${card.type}`}
+                className={`group rounded-xl border-t-4 ${style.border} bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:bg-neutral-900`}
+              >
+                <span className="text-2xl" aria-hidden="true">
+                  {style.icon}
+                </span>
+                <h3 className="mt-3 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                  {card.name}
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+                  {card.description}
+                </p>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Section 3: How it works */}
+      <section className="bg-neutral-50 dark:bg-neutral-900/50">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <h2 className="text-center text-2xl font-bold text-neutral-900 sm:text-3xl dark:text-white">
+            How Oppscores works
+          </h2>
+          <div className="mt-12 grid grid-cols-1 gap-8 md:grid-cols-3">
+            {[
+              {
+                step: "1",
+                title: "Discover",
+                body: "We scan thousands of official sources — universities, government agencies, foundations, and program providers — to find opportunities you'd never find on your own.",
+              },
+              {
+                step: "2",
+                title: "Verify",
+                body: "Every opportunity is classified by source quality, checked for valid application links, and validated before you see it. No dead links. No misleading aggregator pages.",
+              },
+              {
+                step: "3",
+                title: "Match",
+                body: "Set your profile — education level, field, location, goals — and we score every opportunity on how well it fits you. Focus your time on the ones worth applying to.",
+              },
+            ].map((item) => (
+              <div key={item.step} className="text-center md:text-left">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-indigo-600 text-lg font-bold text-white md:mx-0">
+                  {item.step}
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                  {item.title}
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-neutral-500 dark:text-neutral-400">
+                  {item.body}
+                </p>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section id="pricing" className="border-t px-6 py-20">
-        <div className="mx-auto max-w-7xl">
-          <Card className="max-w-xl">
-            <CardContent className="p-8">
-              <Badge variant="secondary">Premium</Badge>
-              <h2 className="mt-4 text-4xl font-semibold">$35/month</h2>
-              <p className="mt-4 text-muted-foreground">
-                Full access to competitiveness scores, ranked opportunities,
-                gap reports, saved opportunities, opportunity stacks, and
-                deadline alerts.
-              </p>
-              <Button className="mt-6 w-full" size="lg" asChild>
-                <a href="/signup">Start with free access</a>
-              </Button>
-            </CardContent>
-          </Card>
+      {/* Section 4: Why not just Google */}
+      <section className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20">
+        <h2 className="text-center text-2xl font-bold text-neutral-900 sm:text-3xl dark:text-white">
+          Built for opportunity decisions, not just search
+        </h2>
+        <div className="mt-10 grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-6 dark:border-neutral-800 dark:bg-neutral-900">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              Google / Aggregators
+            </h3>
+            <ul className="mt-4 space-y-3">
+              {DIFFERENTIATORS.map((item) => (
+                <li
+                  key={item.label}
+                  className="flex items-center gap-2 text-sm text-neutral-400"
+                >
+                  <span className="text-neutral-300" aria-hidden="true">
+                    ✕
+                  </span>
+                  {item.label}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-6 dark:border-teal-900 dark:bg-teal-950/30">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+              Oppscores
+            </h3>
+            <ul className="mt-4 space-y-3">
+              {DIFFERENTIATORS.map((item) => (
+                <li key={item.label} className="flex items-start gap-2 text-sm">
+                  <span
+                    className="mt-0.5 text-teal-600 dark:text-teal-400"
+                    aria-hidden="true"
+                  >
+                    ✓
+                  </span>
+                  <span className="text-neutral-700 dark:text-neutral-200">
+                    <span className="font-medium">{item.label}</span>
+                    <span className="text-neutral-500 dark:text-neutral-400">
+                      {" "}
+                      — {item.detail}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 5: Trust promise */}
+      <section className="bg-neutral-50 dark:bg-neutral-900/50">
+        <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6">
+          <h2 className="text-2xl font-bold text-neutral-900 sm:text-3xl dark:text-white">
+            Source quality you can see
+          </h2>
+          <p className="mt-3 text-base text-neutral-500 dark:text-neutral-400">
+            Every opportunity shows where it came from and how we verified it.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <SourceTrustBadge category="government" />
+            <SourceTrustBadge category="university" />
+            <SourceTrustBadge category="official_provider" />
+            <SourceTrustBadge category="foundation_or_nonprofit" />
+          </div>
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-6 text-neutral-500 dark:text-neutral-400">
+            We prefer official sources over aggregators. When an opportunity comes
+            from a secondary source, we tell you — and we look for the official
+            provider page.
+          </p>
+        </div>
+      </section>
+
+      {/* Section 6: CTA */}
+      <section className="bg-indigo-600 dark:bg-indigo-800">
+        <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:px-6">
+          <h2 className="text-2xl font-bold text-white sm:text-3xl">
+            Ready to find your next opportunity?
+          </h2>
+          <p className="mt-3 text-base text-indigo-200">
+            Create a free account to get personalized scores and save
+            opportunities.
+          </p>
+          <Link
+            href="/signup"
+            className="mt-8 inline-block rounded-lg bg-white px-8 py-3 font-semibold text-indigo-700 transition-colors hover:bg-indigo-50"
+          >
+            Get started free
+          </Link>
+          <p className="mt-4 text-sm text-indigo-200">
+            Already have an account?{" "}
+            <Link href="/login" className="font-semibold text-white underline">
+              Sign in
+            </Link>
+          </p>
         </div>
       </section>
     </main>
