@@ -155,7 +155,7 @@ export default function DashboardPage() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        setLoading(false);
+        window.location.href = "/login";
         return;
       }
 

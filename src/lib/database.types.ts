@@ -26,20 +26,32 @@ type WithDefaults<Row, Required extends keyof Row = never> = Partial<Row> &
 export type ProfileRow = {
   id: string;
   full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   is_admin: boolean | null;
   subscription_plan: string | null;
   nationality: string | null;
+  country: string | null;
   country_of_study: string | null;
   student_status: string | null;
   school: string | null;
   school_other: string | null;
   education_level: string | null;
+  education_entries: Json | null;
   field_of_study: string | null;
   field_of_study_other: string | null;
   gpa: number | null;
   languages: string[] | null;
+  interests: string[] | null;
+  goals: string | null;
+  opportunity_level: string | null;
+  preferred_regions: string[] | null;
   target_opportunity_types: string[] | null;
-  profile_completion: number | null;
+  financial_need: string | null;
+  has_awards: boolean | null;
+  has_leadership: boolean | null;
+  has_research: boolean | null;
+  has_volunteering: boolean | null;
   leadership_experiences: Json | null;
   research_experiences: Json | null;
   volunteer_experiences: Json | null;
@@ -282,6 +294,7 @@ export type SavedOpportunityRow = {
   id: string;
   user_id: string;
   opportunity_id: string;
+  status: string;
   created_at: string | null;
 };
 

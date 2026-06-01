@@ -60,7 +60,8 @@ export function SignupForm() {
     }
 
     setMessage("Account created. Check your email if confirmation is required.");
-    router.push("/profile");
+    // Send new users straight to profile setup so they get scored matches sooner.
+    router.push("/profile/edit");
   }
 
   async function handleGoogleSignup() {
@@ -70,7 +71,7 @@ export function SignupForm() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/profile`,
+        redirectTo: `${window.location.origin}/profile/edit`,
       },
     });
 
@@ -89,7 +90,8 @@ export function SignupForm() {
               Create your account
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Start building your opportunity strategy board.
+              Complete your profile after signing up to get personalized
+              opportunity scores.
             </p>
           </div>
 

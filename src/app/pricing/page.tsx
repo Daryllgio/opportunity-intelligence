@@ -5,11 +5,13 @@ import { AppNav } from "@/components/layout/app-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PLAN_LIMITS } from "@/lib/billing/plans";
 
+// Prices come from PLAN_LIMITS (single source of truth); marketing copy lives here.
 const plans = [
   {
-    name: "Free",
-    price: "$0",
+    name: PLAN_LIMITS.free.name,
+    price: `$${PLAN_LIMITS.free.price}`,
     cadence: "",
     badge: "Free",
     description:
@@ -24,8 +26,8 @@ const plans = [
     highlighted: false,
   },
   {
-    name: "Pro",
-    price: "$20",
+    name: PLAN_LIMITS.pro.name,
+    price: `$${PLAN_LIMITS.pro.price}`,
     cadence: "/month",
     badge: "Most popular",
     description:
@@ -42,8 +44,8 @@ const plans = [
     highlighted: true,
   },
   {
-    name: "Premium",
-    price: "$35",
+    name: PLAN_LIMITS.premium.name,
+    price: `$${PLAN_LIMITS.premium.price}`,
     cadence: "/month",
     badge: "Premium",
     description:
