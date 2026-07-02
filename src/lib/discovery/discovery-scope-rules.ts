@@ -1,3 +1,8 @@
+import {
+  SEARCH_AND_APP_STORE_DOMAINS,
+  SOCIAL_MEDIA_DOMAINS,
+} from "@/lib/discovery/domain-policy";
+
 export function normalizeDiscoveryText(value: unknown) {
   return String(value || "")
     .toLowerCase()
@@ -24,18 +29,11 @@ export function countSignals(text: string, signals: string[]) {
   return signals.filter((signal) => normalized.includes(signal)).length;
 }
 
+// Canonical lists live in domain-policy; link expansion blocks both groups.
 export const BLOCKED_EXPANSION_DOMAINS = [
-  "apps.apple.com",
-  "play.google.com",
-  "bbb.org",
-  "linkedin.com",
-  "facebook.com",
-  "instagram.com",
-  "twitter.com",
-  "x.com",
-  "youtube.com",
-  "tiktok.com",
-];
+  ...SOCIAL_MEDIA_DOMAINS,
+  ...SEARCH_AND_APP_STORE_DOMAINS,
+].filter((domain) => !["google.com", "bing.com", "duckduckgo.com", "search.yahoo.com"].includes(domain));
 
 export const BLOCKED_URL_SIGNALS = [
   "/privacy",

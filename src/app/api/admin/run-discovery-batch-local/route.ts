@@ -11,6 +11,7 @@ import { scorePageUsefulness } from "@/lib/discovery/page-usefulness";
 import { classifySourcePage } from "@/lib/discovery/source-classification";
 import { shouldRejectDiscoveredPageBeforeExtraction } from "@/lib/discovery/opportunity-scope";
 import { shouldRejectUrlBeforeQueue } from "@/lib/discovery/discovery-scope-rules";
+import { isBlockedDiscoveryUrl } from "@/lib/discovery/domain-policy";
 import { assessSourceQuality, getDomain } from "@/lib/discovery/source-quality";
 
 function createServiceSupabase() {
@@ -180,20 +181,8 @@ function shouldSaveExpandedCandidateLink(candidate: Record<string, any>) {
 
   if (!url) return false;
 
-  const blockedDomains = [
-    "apps.apple.com",
-    "play.google.com",
-    "bbb.org",
-    "linkedin.com",
-    "facebook.com",
-    "instagram.com",
-    "twitter.com",
-    "x.com",
-    "youtube.com",
-    "tiktok.com",
-  ];
-
-  if (blockedDomains.some((domain) => url.includes(domain))) {
+  // Canonical domain policy: never expand into social/informational/news/etc.
+  if (isBlockedDiscoveryUrl(url)) {
     return false;
   }
 
