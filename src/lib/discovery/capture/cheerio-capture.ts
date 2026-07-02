@@ -1,5 +1,7 @@
 import * as cheerio from "cheerio";
 import { createHash } from "crypto";
+import { withTimeout } from "@/lib/utils/timeout";
+import { isPubliclyFetchableUrl } from "@/lib/utils/url-safety";
 
 export type CapturedLink = {
   href: string;
@@ -238,21 +240,44 @@ export function evaluatePageQuality({
   };
 }
 
+// Never parse more than this much HTML; protects memory against huge pages.
+const MAX_HTML_BYTES = 2_000_000;
+
 export async function capturePageWithCheerio(url: string): Promise<CheerioCaptureResult> {
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; OppScoreBot/1.0; +https://oppscores.com)",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
-      },
-      redirect: "follow",
-      cache: "no-store",
-    });
+    // SSRF guard: capture URLs come from search results and crawled links.
+    if (!isPubliclyFetchableUrl(url)) {
+      throw new Error("URL is not publicly fetchable (blocked by SSRF guard).");
+    }
 
-    const html = await response.text();
+    const response = await withTimeout(
+      (signal) =>
+        fetch(url, {
+          method: "GET",
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (compatible; OppScoreBot/1.0; +https://oppscores.com)",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+          },
+          redirect: "follow",
+          cache: "no-store",
+          signal,
+        }),
+      15000,
+      "Cheerio capture fetch"
+    );
+
+    const contentLength = Number(response.headers.get("content-length") || 0);
+    if (contentLength > MAX_HTML_BYTES * 4) {
+      throw new Error(`Response too large (${contentLength} bytes).`);
+    }
+
+    const html = (await withTimeout(
+      () => response.text(),
+      15000,
+      "Cheerio capture body read"
+    )).slice(0, MAX_HTML_BYTES);
     const finalUrl = response.url || url;
     const $ = cheerio.load(html);
 

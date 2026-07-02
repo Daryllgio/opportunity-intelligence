@@ -51,13 +51,16 @@ export async function capturePageWithPlaywright(
         "Mozilla/5.0 (compatible; OppScoreBot/1.0; +https://oppscores.com)",
     });
 
+    // "domcontentloaded" + a settle delay is far more reliable than
+    // "networkidle": analytics-heavy pages never go network-idle and would
+    // burn the whole 30s timeout before capturing anything.
     const response = await page.goto(url, {
-      waitUntil: "networkidle",
-      timeout: 30000,
+      waitUntil: "domcontentloaded",
+      timeout: 20000,
     });
 
-    // Give client-rendered apps a small moment to finish late rendering.
-    await page.waitForTimeout(1500);
+    // Give client-rendered apps a moment to finish late rendering.
+    await page.waitForTimeout(2000);
 
     const status = response?.status() || 0;
     const finalUrl = page.url();
