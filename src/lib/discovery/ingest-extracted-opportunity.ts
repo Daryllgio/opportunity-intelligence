@@ -244,6 +244,39 @@ export async function ingestExtractedOpportunity({
     };
   }
 
+  // ---------------------------------------------------------------------
+  // Destination gate for auto-publish.
+  //
+  // Validation runs before the destination ranker, so it cannot know whether
+  // an applicant destination was actually verified. Nothing may go live
+  // automatically unless the ranker found a high/medium-confidence,
+  // non-aggregator destination — otherwise it drops to human review.
+  // ---------------------------------------------------------------------
+  const destinationOkForAutoPublish =
+    Boolean(trustMetadata.application_destination_url) &&
+    ["high", "medium"].includes(String(trustMetadata.destination_confidence)) &&
+    trustMetadata.application_destination_type !== "aggregator_or_database" &&
+    trustMetadata.application_destination_type !== "not_found";
+
+  if (validation.decision === "auto_publish" && !destinationOkForAutoPublish) {
+    validation.decision = "review";
+    validation.autoPublishEligible = false;
+    validation.reasons = [
+      ...validation.reasons,
+      "Auto-publish blocked: no verified applicant destination (high/medium confidence, non-aggregator) was found.",
+    ];
+
+    trustMetadata = {
+      ...trustMetadata,
+      validation_decision: "review",
+      validation_reasons: validation.reasons,
+      auto_publish_eligible: false,
+      review_flags: Array.from(
+        new Set([...trustMetadata.review_flags, "needs_official_source"])
+      ),
+    };
+  }
+
   const now = new Date().toISOString();
 
   if (validation.decision === "reject") {
@@ -410,12 +443,21 @@ export async function ingestExtractedOpportunity({
   }
 
   if (validation.decision === "auto_publish") {
-    const lifecycleFields = buildLifecycleFields(opportunityPayload);
+    // Users must land on the verified destination, not whatever URL the
+    // extractor happened to find on the source page.
+    const publishPayload = {
+      ...opportunityPayload,
+      application_url:
+        trustMetadata.application_destination_url ||
+        opportunityPayload.application_url,
+    };
+
+    const lifecycleFields = buildLifecycleFields(publishPayload);
 
     const { data: insertedOpportunity, error: insertError } = await supabase
       .from("opportunities")
       .insert({
-        ...opportunityPayload,
+        ...publishPayload,
         ...lifecycleFields,
         ...trustMetadata,
         is_active: true,
