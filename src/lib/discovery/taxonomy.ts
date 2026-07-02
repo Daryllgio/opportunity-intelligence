@@ -141,3 +141,33 @@ export const CATEGORY_FOLLOW_UPS = {
 export function isSupportedOpportunityType(value: string) {
   return OPPORTUNITY_TYPES.includes(value as OpportunityType);
 }
+
+/**
+ * Canonicalize any type-ish string ("Research Opportunity", "research",
+ * "leadership-program") to one of OPPORTUNITY_TYPES, or null if it cannot be
+ * mapped. This is the ONLY normalizer — the DB, extraction, and UI must all
+ * agree on these values (legacy rows used e.g. "research").
+ */
+export function normalizeOpportunityType(value: unknown): OpportunityType | null {
+  const raw = String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, "_");
+
+  if ((OPPORTUNITY_TYPES as readonly string[]).includes(raw)) {
+    return raw as OpportunityType;
+  }
+
+  if (raw.includes("scholar")) return "scholarship";
+  if (raw.includes("fellow")) return "fellowship";
+  if (raw.includes("research")) return "research_program";
+  if (raw.includes("grant")) return "grant";
+  if (raw.includes("competition") || raw.includes("challenge")) {
+    return "competition";
+  }
+  if (raw.includes("leadership")) return "leadership_program";
+  if (raw.includes("pipeline")) return "pipeline_program";
+  if (raw.includes("career")) return "career_development_program";
+
+  return null;
+}

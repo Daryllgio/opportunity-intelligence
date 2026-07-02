@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminRequest } from "@/lib/auth/admin";
+import { normalizeOpportunityType } from "@/lib/discovery/taxonomy";
 import { withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
@@ -14,13 +15,13 @@ type ExtractedOpportunity = {
   provider: string | null;
   type:
     | "scholarship"
-    | "research"
-    | "funded_conference"
     | "fellowship"
+    | "research_program"
     | "grant"
     | "competition"
     | "leadership_program"
-    | "professional_development";
+    | "career_development_program"
+    | "pipeline_program";
   description: string;
   ai_summary: string;
   country: string;
@@ -43,7 +44,7 @@ function validateExtractedOpportunity(data: Partial<ExtractedOpportunity>) {
   return {
     title: data.title || "Extracted Opportunity Draft",
     provider: data.provider || null,
-    type: data.type || "scholarship",
+    type: normalizeOpportunityType(data.type) || "scholarship",
     description: data.description || "",
     ai_summary: data.ai_summary || "",
     country: data.country || "Global",
@@ -120,7 +121,7 @@ Rules:
 - Funding amount should be exact when stated. Preserve important structures like "$10,000/year + $7,500/year living expenses" when available.
 - Deadline must be YYYY-MM-DD or null.
 - Type must be one of:
-  scholarship, research, funded_conference, fellowship, grant, competition, leadership_program, professional_development.
+  scholarship, fellowship, research_program, grant, competition, leadership_program, career_development_program, pipeline_program.
 - Effort level and reward level must be Low, Medium, or High.
 - Competitiveness factors should describe what the selection committee actually values, not generic traits.
 - Hard requirements should include strict eligibility requirements.

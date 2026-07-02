@@ -175,7 +175,7 @@ export default function DashboardPage() {
         .eq("lifecycle_status", "active")
         .in("type", [
           "scholarship",
-          "research",
+          "research_program",
           "fellowship",
           "competition",
           "leadership_program",

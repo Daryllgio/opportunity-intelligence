@@ -1,5 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
-import { OPPORTUNITY_TYPES } from "@/lib/discovery/taxonomy";
+import {
+  OPPORTUNITY_TYPES,
+  normalizeOpportunityType,
+} from "@/lib/discovery/taxonomy";
 import { withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
@@ -67,29 +70,8 @@ function normalizeDeadlineConfidence(value: unknown) {
   return "unknown";
 }
 
-export function normalizeOpportunityType(value: unknown) {
-  const raw = String(value || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[\s-]+/g, "_");
-
-  if ((OPPORTUNITY_TYPES as readonly string[]).includes(raw)) {
-    return raw;
-  }
-
-  if (raw.includes("scholar")) return "scholarship";
-  if (raw.includes("fellow")) return "fellowship";
-  if (raw.includes("research")) return "research_program";
-  if (raw.includes("grant")) return "grant";
-  if (raw.includes("competition") || raw.includes("challenge")) {
-    return "competition";
-  }
-  if (raw.includes("leadership")) return "leadership_program";
-  if (raw.includes("pipeline")) return "pipeline_program";
-  if (raw.includes("career")) return "career_development_program";
-
-  return null;
-}
+// Re-exported for existing importers; the implementation lives in taxonomy.
+export { normalizeOpportunityType };
 
 export async function extractDiscoveredOpportunity({
   pageText,

@@ -59,12 +59,15 @@ function findDeadline(text: string) {
 function detectType(text: string) {
   const lower = text.toLowerCase();
 
-  if (lower.includes("research")) return "research";
-  if (lower.includes("conference") || lower.includes("summit")) return "funded_conference";
+  if (lower.includes("research")) return "research_program";
   if (lower.includes("fellowship")) return "fellowship";
   if (lower.includes("grant")) return "grant";
   if (lower.includes("competition") || lower.includes("challenge")) return "competition";
   if (lower.includes("leadership")) return "leadership_program";
+  if (lower.includes("pipeline") || lower.includes("pathway")) return "pipeline_program";
+  if (lower.includes("career development") || lower.includes("professional development")) {
+    return "career_development_program";
+  }
 
   return "scholarship";
 }
@@ -227,7 +230,7 @@ export function extractOpportunityDraft({
     eligible_education_levels: educationLevels,
     eligible_fields: fields,
     funding_amount: fundingAmount,
-    funding_type: type === "research" ? "Research funding" : "",
+    funding_type: type === "research_program" ? "Research funding" : "",
     deadline,
     application_url: sourceUrl || "",
     effort_level: detectEffortLevel(cleanText),

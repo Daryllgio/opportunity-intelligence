@@ -1,4 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
+import {
+  OPPORTUNITY_TYPES,
+  normalizeOpportunityType,
+} from "@/lib/discovery/taxonomy";
 import { withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
@@ -63,7 +67,7 @@ Important:
 - Use the existing opportunity as context, but trust the current page text if it clearly changed.
 - Deadline should be ISO date format YYYY-MM-DD when possible.
 - type must be one of:
-  "scholarship", "research", "fellowship", "competition", "leadership_program"
+  ${OPPORTUNITY_TYPES.map((type) => `"${type}"`).join(", ")}
 
 Return this JSON shape:
 {
@@ -129,7 +133,7 @@ ${pageText.slice(0, 25000)}
   return {
     title: stringOrNull(parsed.title),
     provider: stringOrNull(parsed.provider),
-    type: stringOrNull(parsed.type),
+    type: normalizeOpportunityType(parsed.type),
     description: stringOrNull(parsed.description),
     ai_summary: stringOrNull(parsed.ai_summary),
     country: stringOrNull(parsed.country),

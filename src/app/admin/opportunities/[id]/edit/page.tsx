@@ -38,13 +38,13 @@ type OpportunityForm = {
 
 const opportunityTypes = [
   "scholarship",
-  "research",
-  "funded_conference",
   "fellowship",
+  "research_program",
   "grant",
   "competition",
   "leadership_program",
-  "professional_development",
+  "career_development_program",
+  "pipeline_program",
 ];
 
 const levels = ["Low", "Medium", "High"];

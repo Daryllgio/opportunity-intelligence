@@ -188,9 +188,10 @@ function normalizeOpportunityTypeForScoring(value: string) {
   const typeMap: Record<string, string> = {
     scholarship: "scholarship",
     scholarships: "scholarship",
-    research: "research",
-    "research opportunity": "research",
-    "research opportunities": "research",
+    research: "research_program",
+    research_program: "research_program",
+    "research opportunity": "research_program",
+    "research opportunities": "research_program",
     fellowship: "fellowship",
     fellowships: "fellowship",
     competition: "competition",
@@ -229,7 +230,7 @@ function opportunityTypeMatches(
 ) {
   const allowedMvpTypes = [
     "scholarship",
-    "research",
+    "research_program",
     "fellowship",
     "competition",
     "leadership_program",
