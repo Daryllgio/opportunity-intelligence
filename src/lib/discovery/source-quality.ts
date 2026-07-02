@@ -1,3 +1,24 @@
+import {
+  AGGREGATOR_DOMAINS,
+  APPLICATION_PORTAL_DOMAINS,
+  GENERIC_HOSTING_DOMAINS,
+  INFORMATIONAL_DOMAINS,
+  NEWS_DOMAINS,
+  OFFICIAL_PROVIDER_DOMAINS,
+  SEARCH_AND_APP_STORE_DOMAINS,
+  SOCIAL_MEDIA_DOMAINS,
+  TRUSTED_DATABASE_DOMAINS,
+  domainInSet,
+  getDomain as getPolicyDomain,
+  isGovernmentDomain,
+  isUniversityDomain,
+  providerMatchesDomain,
+} from "@/lib/discovery/domain-policy";
+import {
+  normalizeMatchText,
+  tokenOverlap,
+} from "@/lib/discovery/text-match";
+
 export type SourceTrust = "trusted" | "standard" | "experimental" | "blocked";
 
 export type SourceCategory =
@@ -58,218 +79,37 @@ export type ProviderSourceRelationship = {
   reasons: string[];
 };
 
-export function getDomain(url: string | null | undefined) {
-  if (!url) return null;
+export const getDomain = getPolicyDomain;
 
-  try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return null;
-  }
-}
+// Backwards-compatible re-exports. The canonical lists live in domain-policy.
+export const aggregatorDomains = AGGREGATOR_DOMAINS as Set<string>;
+export const trustedDatabaseDomains = TRUSTED_DATABASE_DOMAINS as Set<string>;
+export const officialProviderDomains = OFFICIAL_PROVIDER_DOMAINS as Set<string>;
+export const applicationPortalDomains = APPLICATION_PORTAL_DOMAINS as Set<string>;
+export const lowTrustDomains = GENERIC_HOSTING_DOMAINS as Set<string>;
 
-function normalizeText(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenSet(value: unknown) {
-  return new Set(
-    normalizeText(value)
-      .split(" ")
-      .filter((token) => token.length >= 3)
-  );
-}
-
-function tokenOverlap(left: unknown, right: unknown) {
-  const leftTokens = tokenSet(left);
-  const rightTokens = tokenSet(right);
-
-  if (!leftTokens.size || !rightTokens.size) return 0;
-
-  const intersection = Array.from(leftTokens).filter((token) =>
-    rightTokens.has(token)
-  );
-
-  return intersection.length / Math.min(leftTokens.size, rightTokens.size);
-}
-
-function domainMatches(domain: string, knownDomain: string) {
-  return domain === knownDomain || domain.endsWith(`.${knownDomain}`);
-}
-
-function domainInSet(domain: string, domains: Set<string>) {
-  return Array.from(domains).some((knownDomain) =>
-    domainMatches(domain, knownDomain)
-  );
-}
+/** Domains that are blocked everywhere (never sources, never destinations). */
+export const blockedDomains: Set<string> = new Set([
+  ...SOCIAL_MEDIA_DOMAINS,
+  ...INFORMATIONAL_DOMAINS,
+  ...NEWS_DOMAINS,
+  ...SEARCH_AND_APP_STORE_DOMAINS,
+]);
 
 function sameOrRelatedDomain(left: string | null, right: string | null) {
   if (!left || !right) return false;
 
   return (
-    left === right ||
-    left.endsWith(`.${right}`) ||
-    right.endsWith(`.${left}`)
+    left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`)
   );
 }
 
-export const blockedDomains = new Set([
-  "facebook.com",
-  "instagram.com",
-  "linkedin.com",
-  "twitter.com",
-  "x.com",
-  "tiktok.com",
-  "youtube.com",
-  "reddit.com",
-]);
-
-export const aggregatorDomains = new Set([
-  "scholarships.com",
-  "studentscholarships.org",
-  "scholarshiproar.com",
-  "accessscholarships.com",
-  "scholarships360.org",
-  "fastweb.com",
-  "bold.org",
-  "unigo.com",
-  "niche.com",
-  "cappex.com",
-  "goingmerry.com",
-  "scholarshipowl.com",
-  "collegegreenlight.com",
-  "appily.com",
-  "petersons.com",
-  "brokescholar.com",
-  "careerkarma.com",
-
-  // Scholarship/opportunity list, advice, and database sites discovered during campaign testing.
-  "wemakescholars.com",
-  "amberstudent.com",
-  "scholarsavenue.com",
-  "findamasters.com",
-  "uscaacademy.com",
-  "scholarshipca.com",
-  "bemoacademicconsulting.com",
-  "topuniversities.com",
-  "applykite.com",
-  "shemmassianconsulting.com",
-  "medschoolcoach.com",
-  "collegewhale.com",
-  "boardvitals.com",
-  "lumiere-education.com",
-  "ladderinternships.com",
-  "mehtaplustutoring.com",
-  "pioneeracademics.com",
-  "logolife.org",
-  "mswhelper.com",
-  "iefa.org",
-  "opportunitiescircle.com",
-  "scholarshipscorner.website",
-  "opportunitiesforyouth.org",
-  "scholarshipunion.com",
-  "theeducationstory.com",
-  "fdpzone.com",
-  "scholarsworld.ng",
-  "persmind.com",
-  "resultuniraj.co.in",
-  "oyaop.com",
-  "bridgeseduscholarships.com",
-  "immigrationnewscanada.ca",
-  "academiquirk.com",
-]);
-
-export const trustedDatabaseDomains = new Set([
-  "pathwaystoscience.org",
-  "profellow.com",
-]);
-
-export const officialProviderDomains = new Set([
-  "innovation.ca",
-  "bmifoundation.org",
-  "wdc.org",
-  "seafwa.org",
-  "nysra.org",
-  "napawash.org",
-]);
-
-export const applicationPortalDomains = new Set([
-  "smapply.io",
-  "awardspring.com",
-  "submittable.com",
-  "fluidreview.com",
-  "academicworks.com",
-  "applyists.net",
-  "surveyapply.com",
-]);
-
-export const lowTrustDomains = new Set([
-  "weebly.com",
-  "wixsite.com",
-  "blogspot.com",
-  "wordpress.com",
-  "medium.com",
-]);
-
 export function isKnownAggregatorDomain(urlOrDomain: string | null | undefined) {
-  const domain =
-    urlOrDomain && urlOrDomain.includes("://")
-      ? getDomain(urlOrDomain)
-      : String(urlOrDomain || "").replace(/^www\./, "").toLowerCase();
-
-  if (!domain) return false;
-
-  return domainInSet(domain, aggregatorDomains);
+  return domainInSet(getPolicyDomain(urlOrDomain), AGGREGATOR_DOMAINS);
 }
 
 export function isKnownBlockedDomain(urlOrDomain: string | null | undefined) {
-  const domain =
-    urlOrDomain && urlOrDomain.includes("://")
-      ? getDomain(urlOrDomain)
-      : String(urlOrDomain || "").replace(/^www\./, "").toLowerCase();
-
-  if (!domain) return false;
-
-  return domainInSet(domain, blockedDomains);
-}
-
-function isGovernmentDomain(domain: string) {
-  return (
-    domain.endsWith(".gov") ||
-    domain.endsWith(".gc.ca") ||
-    domain === "canada.ca" ||
-    domain.endsWith(".canada.ca") ||
-    domain.endsWith(".gov.bc.ca") ||
-    domain.endsWith(".gov.on.ca") ||
-    domain.endsWith(".gouv.qc.ca")
-  );
-}
-
-function isUniversityDomain(domain: string) {
-  return (
-    domain.endsWith(".edu") ||
-    domain.endsWith(".ac.uk") ||
-    domain.endsWith(".edu.au") ||
-    domain.endsWith(".edu.ng") ||
-    domain.includes("university") ||
-    domain.includes("college") ||
-    domain.includes("mcmaster") ||
-    domain.includes("ualberta") ||
-    domain.includes("carleton") ||
-    domain.includes("uottawa") ||
-    domain.includes("utoronto") ||
-    domain.includes("mcgill") ||
-    domain.includes("ubc") ||
-    domain.includes("waterloo") ||
-    domain.includes("queensu") ||
-    domain.includes("ualberta") ||
-    domain.includes("ucalgary") ||
-    domain.includes("yorku")
-  );
+  return domainInSet(getPolicyDomain(urlOrDomain), blockedDomains);
 }
 
 function isFoundationOrNonprofitDomain(domain: string) {
@@ -293,8 +133,8 @@ export function detectAggregatorBehavior({
   text?: string | null;
   provider?: string | null;
 }): AggregatorBehaviorResult {
-  const domain = getDomain(url);
-  const combined = normalizeText([title, text, url].filter(Boolean).join(" "));
+  const domain = getPolicyDomain(url);
+  const combined = normalizeMatchText([title, text, url].filter(Boolean).join(" "));
   const reasons: string[] = [];
   let score = 0;
 
@@ -326,13 +166,14 @@ export function detectAggregatorBehavior({
   ];
 
   for (const signal of generalOpportunityAggregatorSignals) {
-    if (combined.includes(normalizeText(signal))) {
+    if (combined.includes(normalizeMatchText(signal))) {
       score += 18;
       reasons.push(`Opportunity aggregator behavior signal: ${signal}.`);
     }
   }
 
-  const scholarshipAggregatorSignals = [
+  const typedAggregatorSignals = [
+    // Scholarships.
     "scholarship database",
     "scholarship directory",
     "search scholarships",
@@ -345,16 +186,7 @@ export function detectAggregatorBehavior({
     "top scholarships",
     "featured scholarships",
     "no essay scholarship",
-  ];
-
-  for (const signal of scholarshipAggregatorSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 14;
-      reasons.push(`Scholarship aggregator signal: ${signal}.`);
-    }
-  }
-
-  const researchProgramAggregatorSignals = [
+    // Research programs.
     "research opportunity database",
     "research opportunities database",
     "undergraduate research opportunities",
@@ -362,16 +194,7 @@ export function detectAggregatorBehavior({
     "research program list",
     "research program directory",
     "student research opportunities",
-  ];
-
-  for (const signal of researchProgramAggregatorSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 14;
-      reasons.push(`Research-program aggregator signal: ${signal}.`);
-    }
-  }
-
-  const fellowshipAggregatorSignals = [
+    // Fellowships.
     "fellowship database",
     "fellowship directory",
     "search fellowships",
@@ -379,16 +202,7 @@ export function detectAggregatorBehavior({
     "external fellowships",
     "national fellowship listings",
     "fellowship advising search",
-  ];
-
-  for (const signal of fellowshipAggregatorSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 14;
-      reasons.push(`Fellowship aggregator signal: ${signal}.`);
-    }
-  }
-
-  const grantAggregatorSignals = [
+    // Grants.
     "grant database",
     "grant directory",
     "grant search",
@@ -396,16 +210,7 @@ export function detectAggregatorBehavior({
     "funding directory",
     "funding opportunity database",
     "funding opportunity search",
-  ];
-
-  for (const signal of grantAggregatorSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 14;
-      reasons.push(`Grant/funding aggregator signal: ${signal}.`);
-    }
-  }
-
-  const competitionAggregatorSignals = [
+    // Competitions.
     "competition directory",
     "competition database",
     "student competitions",
@@ -413,16 +218,7 @@ export function detectAggregatorBehavior({
     "hackathon directory",
     "challenge database",
     "pitch competition list",
-  ];
-
-  for (const signal of competitionAggregatorSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 14;
-      reasons.push(`Competition aggregator signal: ${signal}.`);
-    }
-  }
-
-  const leadershipCareerPipelineAggregatorSignals = [
+    // Leadership / career / pipeline.
     "leadership program directory",
     "leadership program list",
     "career development program list",
@@ -433,10 +229,10 @@ export function detectAggregatorBehavior({
     "student programs directory",
   ];
 
-  for (const signal of leadershipCareerPipelineAggregatorSignals) {
-    if (combined.includes(normalizeText(signal))) {
+  for (const signal of typedAggregatorSignals) {
+    if (combined.includes(normalizeMatchText(signal))) {
       score += 14;
-      reasons.push(`Leadership/career/pipeline aggregator signal: ${signal}.`);
+      reasons.push(`Aggregator signal: ${signal}.`);
     }
   }
 
@@ -453,16 +249,16 @@ export function detectAggregatorBehavior({
   ];
 
   for (const signal of weakDirectorySignals) {
-    if (combined.includes(normalizeText(signal))) {
+    if (combined.includes(normalizeMatchText(signal))) {
       score += 5;
       reasons.push(`Weak directory/listing signal: ${signal}.`);
     }
   }
 
-  const sourceProviderOverlap = tokenOverlap(provider, domain || "");
+  const providerDomainMatch = providerMatchesDomain(provider, domain);
   const pageProviderOverlap = tokenOverlap(provider, combined);
 
-  if (provider && domain && sourceProviderOverlap < 0.15 && pageProviderOverlap < 0.25) {
+  if (provider && domain && !providerDomainMatch.matched && pageProviderOverlap < 0.25) {
     score += 10;
     reasons.push("Provider does not appear aligned with source domain/page.");
   }
@@ -474,6 +270,15 @@ export function detectAggregatorBehavior({
   };
 }
 
+/**
+ * Does this provider plausibly OWN this URL's domain?
+ *
+ * `isProviderAligned` is true only on real domain-level ownership evidence.
+ * A page merely MENTIONING the provider (Wikipedia articles, news stories,
+ * aggregator listings all do) contributes to `score` and `reasons` but can
+ * never set `isProviderAligned` by itself — that was the root cause of
+ * informational pages being treated as verified official destinations.
+ */
 export function assessProviderSourceRelationship({
   provider,
   url,
@@ -483,7 +288,7 @@ export function assessProviderSourceRelationship({
   url?: string | null;
   pageText?: string | null;
 }): ProviderSourceRelationship {
-  const domain = getDomain(url);
+  const domain = getPolicyDomain(url);
   const reasons: string[] = [];
   let score = 0;
 
@@ -495,22 +300,20 @@ export function assessProviderSourceRelationship({
     };
   }
 
-  const providerDomainOverlap = tokenOverlap(provider, domain);
+  const domainMatch = providerMatchesDomain(provider, domain);
   const providerPageOverlap = tokenOverlap(provider, pageText || "");
 
-  if (providerDomainOverlap >= 0.35) {
-    score += 50;
+  if (domainMatch.matched) {
+    score += 60;
     reasons.push("Provider name aligns with source domain.");
-  } else if (providerDomainOverlap >= 0.2) {
-    score += 25;
-    reasons.push("Provider name partially aligns with source domain.");
+    if (domainMatch.reason) reasons.push(domainMatch.reason);
   }
 
   if (providerPageOverlap >= 0.45) {
-    score += 35;
+    score += 20;
     reasons.push("Provider is clearly mentioned on the page.");
   } else if (providerPageOverlap >= 0.25) {
-    score += 15;
+    score += 10;
     reasons.push("Provider is partially mentioned on the page.");
   }
 
@@ -520,14 +323,14 @@ export function assessProviderSourceRelationship({
   }
 
   return {
-    isProviderAligned: score >= 35,
+    isProviderAligned: domainMatch.matched && !isKnownAggregatorDomain(domain),
     score,
     reasons,
   };
 }
 
 export function assessSourceQuality(url: string | null | undefined): SourceQuality {
-  const domain = getDomain(url);
+  const domain = getPolicyDomain(url);
 
   if (!domain) {
     return {
@@ -540,6 +343,9 @@ export function assessSourceQuality(url: string | null | undefined): SourceQuali
     };
   }
 
+  // Blocked-everywhere domains (social, informational, news, search/app
+  // stores). Checked before every heuristic so wikipedia.org can never fall
+  // through to "trusted foundation" via its .org TLD.
   if (domainInSet(domain, blockedDomains)) {
     return {
       domain,
@@ -547,11 +353,11 @@ export function assessSourceQuality(url: string | null | undefined): SourceQuali
       trust: "blocked",
       isAggregator: false,
       isOfficialLeaning: false,
-      reasons: ["Blocked source domain."],
+      reasons: ["Blocked domain (social/informational/news/search)."],
     };
   }
 
-  if (domainInSet(domain, aggregatorDomains)) {
+  if (domainInSet(domain, AGGREGATOR_DOMAINS)) {
     return {
       domain,
       category: "aggregator",
@@ -564,7 +370,7 @@ export function assessSourceQuality(url: string | null | undefined): SourceQuali
     };
   }
 
-  if (domainInSet(domain, trustedDatabaseDomains)) {
+  if (domainInSet(domain, TRUSTED_DATABASE_DOMAINS)) {
     return {
       domain,
       category: "trusted_database",
@@ -575,7 +381,7 @@ export function assessSourceQuality(url: string | null | undefined): SourceQuali
     };
   }
 
-  if (domainInSet(domain, officialProviderDomains)) {
+  if (domainInSet(domain, OFFICIAL_PROVIDER_DOMAINS)) {
     return {
       domain,
       category: "official_provider",
@@ -586,7 +392,7 @@ export function assessSourceQuality(url: string | null | undefined): SourceQuali
     };
   }
 
-  if (domainInSet(domain, applicationPortalDomains)) {
+  if (domainInSet(domain, APPLICATION_PORTAL_DOMAINS)) {
     return {
       domain,
       category: "application_portal",
@@ -597,14 +403,14 @@ export function assessSourceQuality(url: string | null | undefined): SourceQuali
     };
   }
 
-  if (domainInSet(domain, lowTrustDomains)) {
+  if (domainInSet(domain, GENERIC_HOSTING_DOMAINS)) {
     return {
       domain,
       category: "low_trust_blog",
       trust: "experimental",
       isAggregator: false,
       isOfficialLeaning: false,
-      reasons: ["Low-trust hosted site or blog domain."],
+      reasons: ["Hosted-site platform domain (Wix/WordPress/Blogspot/…)."],
     };
   }
 
@@ -660,9 +466,9 @@ export function assessApplicationUrlQuality({
   sourceUrl?: string | null;
   providerUrl?: string | null;
 }): ApplicationUrlQuality {
-  const applicationDomain = getDomain(applicationUrl);
-  const sourceDomain = getDomain(sourceUrl);
-  const providerDomain = getDomain(providerUrl);
+  const applicationDomain = getPolicyDomain(applicationUrl);
+  const sourceDomain = getPolicyDomain(sourceUrl);
+  const providerDomain = getPolicyDomain(providerUrl);
 
   if (!applicationUrl || !applicationDomain) {
     return "missing_application";
@@ -684,11 +490,11 @@ export function assessApplicationUrlQuality({
     return "same_as_source";
   }
 
-  if (domainInSet(applicationDomain, aggregatorDomains)) {
+  if (domainInSet(applicationDomain, AGGREGATOR_DOMAINS)) {
     return "aggregator_application";
   }
 
-  if (domainInSet(applicationDomain, applicationPortalDomains)) {
+  if (domainInSet(applicationDomain, APPLICATION_PORTAL_DOMAINS)) {
     return "third_party_application_portal";
   }
 
