@@ -353,6 +353,16 @@ function classifyActionLink(link: CapturedLink): ApplicationActionType | null {
     ]) ||
     label === "apply"
   ) {
+    // Institution-wide "Apply" nav links (→ /admissions, /admission/apply)
+    // are about enrolling at the school, not applying to this opportunity.
+    const pathTokens = getPathTokens(link.href);
+    if (
+      pathTokens.some((token) => token === "admission" || token === "admissions") &&
+      !hasAnySignal(label, ["scholarship", "award", "fellowship", "grant", "program"])
+    ) {
+      return null;
+    }
+
     return hasAnySignal(`${href} ${label}`, ["register", "registration"])
       ? "registration_page"
       : "internal_application_page";
@@ -605,6 +615,17 @@ async function evaluateCandidate({
   const isListing = looksLikeResourceListing(candidate.title || page.title, candidate.url, pageText);
 
   if (action) {
+    // Strip tracking params from action destinations.
+    try {
+      const cleaned = new URL(action.url);
+      for (const param of Array.from(cleaned.searchParams.keys())) {
+        if (param.toLowerCase().startsWith("utm_")) cleaned.searchParams.delete(param);
+      }
+      action.url = cleaned.toString().replace(/\?$/, "");
+    } catch {
+      // Keep the raw URL when parsing fails.
+    }
+
     reasons.push(`Page has an applicant action link: "${action.label.slice(0, 60)}" → ${action.url.slice(0, 100)}`);
 
     if (action.type === "application_document") {

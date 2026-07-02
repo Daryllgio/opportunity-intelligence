@@ -72,6 +72,9 @@ function uniqueReviewFlags(values: ReviewFlag[]) {
 }
 
 function isRollingOpportunity(opportunity: ExtractedOpportunityForValidation) {
+  // The extractor sets application_status explicitly — trust it first.
+  if (opportunity.application_status === "rolling") return true;
+
   const text = [
     opportunity.deadline,
     opportunity.description,

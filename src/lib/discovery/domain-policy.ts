@@ -80,6 +80,9 @@ export const INFORMATIONAL_DOMAINS: ReadonlySet<string> = new Set([
   "wikihow.com",
   "britannica.com",
   "fandom.com",
+  "pocketsense.com",
+  "sapling.com",
+  "ehow.com",
   "stackexchange.com",
   "stackoverflow.com",
 ]);
