@@ -1,13 +1,45 @@
-import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
+/**
+ * Application destination ranker.
+ *
+ * Given an extracted opportunity (title, provider, type, source URL,
+ * deadline), find the page an applicant should actually land on — the
+ * official application/program page, a recognized third-party portal, or an
+ * application document — and report an HONEST confidence level.
+ *
+ * Hard rules:
+ * - Domains on the blocked-destination policy (aggregators, social media,
+ *   Wikipedia/informational, news, generic hosting) are NEVER returned as
+ *   destinations, no matter how relevant their content looks.
+ * - "high" confidence requires domain-level ownership evidence (the provider
+ *   plausibly owns the destination domain, or it is a recognized application
+ *   portal, or it is the same non-aggregator domain the opportunity was
+ *   extracted from) — a page merely mentioning the provider is not ownership.
+ * - Every returned destination must have been fetched and look alive.
+ */
+
 import {
-  assessProviderSourceRelationship,
+  capturePageWithHybrid,
+  type HybridCaptureResult,
+} from "@/lib/discovery/capture/hybrid-capture";
+import type { CapturedLink } from "@/lib/discovery/capture/cheerio-capture";
+import {
+  getDomain,
+  isAggregatorDomain,
+  isBlockedDestinationUrl,
+  isRecognizedApplicationPortalUrl,
+  providerMatchesDomain,
+} from "@/lib/discovery/domain-policy";
+import {
   assessSourceQuality,
   detectAggregatorBehavior,
-  getDomain,
-  isKnownAggregatorDomain,
-  isKnownBlockedDomain,
 } from "@/lib/discovery/source-quality";
 import { searchDiscoveryWeb } from "@/lib/discovery/search/search-provider";
+import {
+  deadlineAppearsInText,
+  hasAnySignal,
+  normalizeMatchText,
+  tokenOverlap,
+} from "@/lib/discovery/text-match";
 
 export type DestinationConfidence = "high" | "medium" | "low" | "none";
 
@@ -40,25 +72,6 @@ export type DestinationCandidate = {
   domain: string | null;
 };
 
-type ApplicationActionType =
-  | "internal_application_page"
-  | "registration_page"
-  | "application_document"
-  | "third_party_portal"
-  | "login_portal"
-  | "email_submission"
-  | "nomination_instruction"
-  | "application_instructions"
-  | "unknown";
-
-type ApplicationAction = {
-  url: string | null;
-  label: string;
-  type: ApplicationActionType;
-  score: number;
-  reasons: string[];
-};
-
 export type RankedDestinationCandidate = DestinationCandidate & {
   purpose: CandidatePurpose;
   score: number;
@@ -88,154 +101,19 @@ export type ApplicationDestinationResult = {
   candidates: RankedDestinationCandidate[];
 };
 
-function normalizeText(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
 
-function tokenSet(value: unknown) {
-  return new Set(
-    normalizeText(value)
-      .split(" ")
-      .filter((token) => token.length >= 3)
-  );
-}
-
-function tokenOverlap(left: unknown, right: unknown) {
-  const leftTokens = tokenSet(left);
-  const rightTokens = tokenSet(right);
-
-  if (!leftTokens.size || !rightTokens.size) return 0;
-
-  const intersection = Array.from(leftTokens).filter((token) =>
-    rightTokens.has(token)
-  );
-
-  return intersection.length / Math.min(leftTokens.size, rightTokens.size);
-}
-
-function hasAnySignal(text: string, signals: string[]) {
-  const normalized = normalizeText(text);
-  return signals.some((signal) => normalized.includes(normalizeText(signal)));
-}
-
-function isWeakOrAggregatorProvider(provider: string | null | undefined) {
-  const normalized = normalizeText(provider);
-
-  if (!normalized) return true;
-
-  const weakProviders = [
-    "scholarships com",
-    "fastweb",
-    "bold org",
-    "unigo",
-    "niche",
-    "cappex",
-    "going merry",
-    "scholarship owl",
-    "studentscholarships",
-    "scholarshiproar",
-    "access scholarships",
-    "scholarships360",
-    "appily",
-    "petersons",
-  ];
-
-  return weakProviders.some((providerName) => normalized.includes(providerName));
-}
-
-function isLikelyResourceOrListingPage({
-  url,
-  title,
-  text,
-}: {
-  url?: string | null;
-  title?: string | null;
-  text?: string | null;
-}) {
-  const combined = normalizeText([url, title, text].filter(Boolean).join(" "));
-  const urlText = normalizeText(url);
-
-  const strongListingSignals = [
-    "list of",
-    "directory",
-    "database",
-    "search results",
-    "browse opportunities",
-    "browse scholarships",
-    "bay area scholarships",
-    "scholarships and grants",
-    "scholarship list",
-    "fellowship list",
-    "grant list",
-    "program list",
-    "opportunity list",
-    "external opportunities",
-    "resource guide",
-    "resources",
-    "student resources",
-  ];
-
-  const listingUrlSignals = [
-    "scholarships",
-    "fellowships",
-    "grants",
-    "opportunities",
-    "resources",
-    "database",
-    "directory",
-  ];
-
-  let score = 0;
-  const reasons: string[] = [];
-
-  for (const signal of strongListingSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 18;
-      reasons.push(`Resource/listing signal: ${signal}.`);
-    }
-  }
-
-  for (const signal of listingUrlSignals) {
-    if (urlText.includes(normalizeText(signal))) {
-      score += 6;
-      reasons.push(`Resource/listing URL signal: ${signal}.`);
-    }
-  }
-
-  return {
-    isResourceListing: score >= 24,
-    score,
-    reasons,
-  };
-}
-
-function isRecognizedApplicationPortalUrl(url: string | null | undefined) {
-  const lower = String(url || "").toLowerCase();
-
-  return (
-    lower.includes("smapply.io") ||
-    lower.includes("submittable.com") ||
-    lower.includes("awardspring.com") ||
-    lower.includes("academicworks.com") ||
-    lower.includes("surveyapply.com") ||
-    lower.includes("forms.office.com") ||
-    lower.includes("docs.google.com/forms") ||
-    lower.includes("form.jotform.com") ||
-    lower.includes("typeform.com") ||
-    lower.includes("my.reviewr.com")
-  );
-}
+const MAX_SEARCH_QUERIES = 3;
+const MAX_CANDIDATES_TO_EVALUATE = 6;
+const CANDIDATE_FETCH_CONCURRENCY = 3;
+const MAX_PAGE_TEXT_CHARS = 20000;
 
 function isDocumentUrl(url: string) {
   const lower = url.toLowerCase().split("?")[0];
   return (
-    lower.endsWith(".pdf") ||
-    lower.endsWith(".doc") ||
-    lower.endsWith(".docx")
+    lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")
   );
 }
 
@@ -249,787 +127,712 @@ function getDocumentType(url: string) {
   return null;
 }
 
-function deadlineAppearsInText(deadline: string | null | undefined, text: string) {
-  if (!deadline) return false;
+function isPressOrNewsUrl(url: string) {
+  const lower = url.toLowerCase();
 
-  const raw = String(deadline).trim();
-  if (!raw) return false;
-
-  const normalizedText = normalizeText(text);
-
-  if (normalizedText.includes(normalizeText(raw))) return true;
-
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return false;
-
-  const [, year, month, day] = match;
-  const monthIndex = Number(month) - 1;
-  const dayNumber = Number(day);
-
-  const monthNames = [
-    "january",
-    "february",
-    "march",
-    "april",
-    "may",
-    "june",
-    "july",
-    "august",
-    "september",
-    "october",
-    "november",
-    "december",
-  ];
-
-  const monthName = monthNames[monthIndex];
-  if (!monthName || !dayNumber || !year) return false;
-
-  const datePatterns = [
-    `${monthName} ${dayNumber} ${year}`,
-    `${monthName} ${dayNumber}`,
-    `${monthName} ${String(dayNumber).padStart(2, "0")} ${year}`,
-    `${monthName} ${String(dayNumber).padStart(2, "0")}`,
-  ];
-
-  return datePatterns.some((pattern) => normalizedText.includes(pattern));
+  return (
+    lower.includes("/news/") ||
+    lower.includes("/newsroom") ||
+    lower.includes("/press-release") ||
+    lower.includes("/press_release") ||
+    lower.includes("/press/") ||
+    lower.includes("/blog/") ||
+    lower.includes("/stories/") ||
+    lower.includes("/article/")
+  );
 }
 
-function classifyStaticPurpose(candidate: DestinationCandidate): CandidatePurpose | null {
-  const url = candidate.url.toLowerCase();
-  const domain = getDomain(candidate.url);
+/** Tokenized URL path segments: "/gwags-scholars-program/" → [gwags, scholars, program]. */
+function getPathTokens(url: string): string[] {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.split(/[/\-_.]+/).filter((token) => token.length >= 2);
+  } catch {
+    return [];
+  }
+}
 
-  if (!domain || isKnownBlockedDomain(domain)) return "unknown";
+function getPathDepth(url: string): number {
+  try {
+    return new URL(url).pathname.split("/").filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+}
 
-  if (isKnownAggregatorDomain(domain)) return "aggregator_or_database";
+const APPLY_PATH_TOKENS = new Set([
+  "apply",
+  "application",
+  "applications",
+  "register",
+  "registration",
+  "submit",
+  "submission",
+  "scholarshipdetails",
+]);
 
-  if (isDocumentUrl(candidate.url)) return "application_document";
+const PROGRAM_PATH_TOKENS = new Set([
+  "scholarship",
+  "scholarships",
+  "scholar",
+  "scholars",
+  "fellowship",
+  "fellowships",
+  "fellow",
+  "fellows",
+  "grant",
+  "grants",
+  "award",
+  "awards",
+  "bursary",
+  "bursaries",
+  "program",
+  "programs",
+  "funding",
+  "opportunity",
+  "opportunities",
+  "competition",
+  "competitions",
+  "challenge",
+  "research",
+]);
 
-  if (
-    url.includes("prnewswire.com") ||
-    url.includes("businesswire.com") ||
-    url.includes("accessnewswire.com") ||
-    url.includes("newswire.com") ||
-    url.includes("/news/") ||
-    url.includes("/press") ||
-    url.includes("press-release") ||
-    url.includes("press_release") ||
-    url.includes("newsroom")
-  ) {
-    return "press_or_news";
+function hasApplyPathSignal(url: string) {
+  return getPathTokens(url).some((token) => APPLY_PATH_TOKENS.has(token));
+}
+
+function hasProgramPathSignal(url: string) {
+  return getPathTokens(url).some((token) => PROGRAM_PATH_TOKENS.has(token));
+}
+
+const LOGIN_PATH_SIGNALS = ["login", "signin", "sign-in", "sign_in", "/account"];
+
+function hasLoginPathSignal(url: string) {
+  const lower = url.toLowerCase();
+  return LOGIN_PATH_SIGNALS.some((signal) => lower.includes(signal));
+}
+
+const NOT_FOUND_SIGNALS = [
+  "404 page not found",
+  "page not found",
+  "the page you re looking for doesn t exist",
+  "the page you are looking for does not exist",
+  "this page may have been moved",
+  "not found error",
+];
+
+function looksLikeNotFoundPage(title: string | null, text: string) {
+  return hasAnySignal(`${title || ""} ${text.slice(0, 4000)}`, NOT_FOUND_SIGNALS);
+}
+
+const RESOURCE_LISTING_SIGNALS = [
+  "list of scholarships",
+  "scholarship list",
+  "scholarship directory",
+  "scholarship database",
+  "browse scholarships",
+  "search scholarships",
+  "find scholarships",
+  "fellowship list",
+  "fellowship directory",
+  "external fellowships",
+  "grant directory",
+  "funding database",
+  "opportunity database",
+  "student resources",
+  "resource guide",
+  "filter results",
+  "sort by",
+  "results found",
+];
+
+function looksLikeResourceListing(title: string | null, url: string, text: string) {
+  return hasAnySignal(`${title || ""} ${url} ${text.slice(0, 8000)}`, RESOURCE_LISTING_SIGNALS);
+}
+
+const NOMINATION_SIGNALS = [
+  "self nominations are not accepted",
+  "must be nominated",
+  "institutional nomination",
+  "school must submit",
+  "nomination form",
+];
+
+const EMAIL_APPLICATION_SIGNALS = [
+  "email completed applications",
+  "applications must be emailed",
+  "submit by email",
+  "email your application",
+];
+
+// ---------------------------------------------------------------------------
+// Application actions: real links extracted from the captured page
+// ---------------------------------------------------------------------------
+
+type ApplicationActionType =
+  | "internal_application_page"
+  | "registration_page"
+  | "application_document"
+  | "third_party_portal"
+  | "login_portal"
+  | "nomination_instruction";
+
+type ApplicationAction = {
+  url: string;
+  label: string;
+  type: ApplicationActionType;
+  score: number;
+};
+
+const ACTION_LABEL_NOISE = new Set([
+  "privacy",
+  "privacy policy",
+  "terms",
+  "terms of use",
+  "contact",
+  "contact us",
+  "donate",
+  "about",
+  "about us",
+  "home",
+  "news",
+  "press",
+  "winners",
+  "past recipients",
+  "alumni",
+  "faq",
+]);
+
+function classifyActionLink(link: CapturedLink): ApplicationActionType | null {
+  const href = link.href.toLowerCase();
+  const label = normalizeMatchText(link.text);
+
+  if (ACTION_LABEL_NOISE.has(label)) return null;
+
+  // Same-page anchors and accessibility skip-links are navigation, not actions.
+  if (label.startsWith("skip to")) return null;
+  if (href.includes("#") && !href.split("#")[1]?.includes("/")) {
+    const withoutFragment = href.split("#")[0];
+    if (!hasApplyPathSignal(withoutFragment) && !isDocumentUrl(withoutFragment)) {
+      return null;
+    }
+  }
+
+  if (isDocumentUrl(link.href)) {
+    // Only application-ish documents, not annual reports etc.
+    if (
+      hasAnySignal(`${href} ${label}`, ["application", "apply", "nomination", "form"])
+    ) {
+      return "application_document";
+    }
+    return null;
+  }
+
+  if (isRecognizedApplicationPortalUrl(link.href)) return "third_party_portal";
+
+  if (hasLoginPathSignal(href) && hasAnySignal(label, ["apply", "application", "portal", "sign in", "log in"])) {
+    return "login_portal";
+  }
+
+  if (hasAnySignal(`${href} ${label}`, ["nominate", "nomination"])) {
+    return "nomination_instruction";
   }
 
   if (
-    url.includes("smapply.io") ||
-    url.includes("submittable.com") ||
-    url.includes("awardspring.com") ||
-    url.includes("academicworks.com") ||
-    url.includes("surveyapply.com")
+    hasApplyPathSignal(link.href) ||
+    hasAnySignal(label, [
+      "apply now",
+      "apply today",
+      "apply here",
+      "start application",
+      "start your application",
+      "submit application",
+      "application form",
+      "begin application",
+      "how to apply",
+    ]) ||
+    label === "apply"
   ) {
-    return "third_party_portal";
-  }
-
-  if (
-    url.includes("login") ||
-    url.includes("signin") ||
-    url.includes("sign_in") ||
-    url.includes("account") ||
-    url.includes("portal")
-  ) {
-    return "login_gated_portal";
+    return hasAnySignal(`${href} ${label}`, ["register", "registration"])
+      ? "registration_page"
+      : "internal_application_page";
   }
 
   return null;
 }
 
-function extractCandidateLinks({
-  pageText,
-  candidateUrl,
-}: {
-  pageText: string;
-  candidateUrl: string;
-}) {
-  const links: { url: string; label: string }[] = [];
-
-  const hrefRegex = /href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = hrefRegex.exec(pageText))) {
-    const rawUrl = match[1];
-    const rawLabel = match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-
-    if (!rawUrl) continue;
-
-    try {
-      const absoluteUrl = new URL(rawUrl, candidateUrl).toString();
-      links.push({
-        url: absoluteUrl,
-        label: rawLabel,
-      });
-    } catch {
-      continue;
-    }
-  }
-
-  return links;
-}
-
-function classifyApplicationActionUrl(url: string): ApplicationActionType {
-  const lower = url.toLowerCase();
-
-  if (isDocumentUrl(url)) return "application_document";
-
-  if (
-    lower.includes("smapply.io") ||
-    lower.includes("submittable.com") ||
-    lower.includes("awardspring.com") ||
-    lower.includes("academicworks.com") ||
-    lower.includes("surveyapply.com") ||
-    lower.includes("forms.office.com") ||
-    lower.includes("docs.google.com/forms") ||
-    lower.includes("form.jotform.com") ||
-    lower.includes("typeform.com")
-  ) {
-    return "third_party_portal";
-  }
-
-  if (
-    lower.includes("login") ||
-    lower.includes("signin") ||
-    lower.includes("sign_in") ||
-    lower.includes("account") ||
-    lower.includes("portal")
-  ) {
-    return "login_portal";
-  }
-
-  if (
-    lower.includes("register") ||
-    lower.includes("registration")
-  ) {
-    return "registration_page";
-  }
-
-  if (
-    lower.includes("nomination") ||
-    lower.includes("nominate")
-  ) {
-    return "nomination_instruction";
-  }
-
-  if (
-    lower.includes("apply") ||
-    lower.includes("application") ||
-    lower.includes("submit") ||
-    lower.includes("form")
-  ) {
-    return "internal_application_page";
-  }
-
-  if (
-    lower.includes("how-to-apply") ||
-    lower.includes("instructions") ||
-    lower.includes("requirements") ||
-    lower.includes("eligibility")
-  ) {
-    return "application_instructions";
-  }
-
-  return "unknown";
-}
-
-function scoreApplicationAction({
-  action,
-  candidateUrl,
-  opportunityTitle,
+/**
+ * Find the strongest applicant-facing action link on a captured page.
+ * Only actions pointing at safe targets (same/related domain, provider-owned
+ * domain, recognized portal, or an application document) are eligible.
+ */
+function findBestApplicationAction({
+  links,
+  pageUrl,
   provider,
 }: {
-  action: {
-    url: string | null;
-    label: string;
-    type: ApplicationActionType;
-  };
-  candidateUrl: string;
-  opportunityTitle?: string | null;
-  provider?: string | null;
-}): ApplicationAction {
-  const reasons: string[] = [];
-  const label = normalizeText(action.label);
-  const urlText = normalizeText(action.url || "");
-  const combined = `${label} ${urlText}`;
-  const candidateDomain = getDomain(candidateUrl);
-  const actionDomain = getDomain(action.url || "");
-
-  let score = 0;
-
-  const typeBaseScores: Record<ApplicationActionType, number> = {
-    internal_application_page: 55,
-    registration_page: 52,
-    application_document: 58,
-    third_party_portal: 50,
-    login_portal: 42,
-    email_submission: 48,
-    nomination_instruction: 46,
-    application_instructions: 38,
-    unknown: 0,
-  };
-
-  score += typeBaseScores[action.type];
-
-  if (action.type !== "unknown") {
-    reasons.push(`Detected ${action.type.replace(/_/g, " ")}.`);
-  }
-
-  const strongActionSignals = [
-    "apply",
-    "apply now",
-    "application",
-    "start application",
-    "submit application",
-    "application form",
-    "download application",
-    "register",
-    "registration",
-    "nomination form",
-    "nominate",
-    "application portal",
-  ];
-
-  for (const signal of strongActionSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 10;
-      reasons.push(`Strong application action signal: ${signal}.`);
-    }
-  }
-
-  const instructionSignals = [
-    "how to apply",
-    "application instructions",
-    "eligibility",
-    "requirements",
-    "deadline",
-    "guidelines",
-  ];
-
-  for (const signal of instructionSignals) {
-    if (combined.includes(normalizeText(signal))) {
-      score += 5;
-      reasons.push(`Application instruction signal: ${signal}.`);
-    }
-  }
-
-  if (action.url && isDocumentUrl(action.url)) {
-    score += 18;
-    reasons.push("Action URL is an application document.");
-  }
-
-  if (action.url && candidateDomain && actionDomain) {
-    if (candidateDomain === actionDomain || actionDomain.endsWith(`.${candidateDomain}`)) {
-      score += 8;
-      reasons.push("Action URL stays on the official/provider domain.");
-    } else if (
-      action.type === "third_party_portal" ||
-      action.url.includes("forms.office.com") ||
-      action.url.includes("docs.google.com/forms")
-    ) {
-      score += 5;
-      reasons.push("Action URL uses a recognized third-party form or portal.");
-    } else if (isKnownAggregatorDomain(actionDomain)) {
-      score -= 60;
-      reasons.push("Action URL points to an aggregator, not an application destination.");
-    } else {
-      score -= 5;
-      reasons.push("Action URL leaves the source domain.");
-    }
-  }
-
-  const weakOrBadSignals = [
-    "about",
-    "contact",
-    "donate",
-    "privacy",
-    "terms",
-    "news",
-    "press",
-    "winners",
-    "past recipients",
-    "recipient",
-    "sponsor",
-    "alumni",
-    "home",
-  ];
-
-  for (const signal of weakOrBadSignals) {
-    if (label === normalizeText(signal) || urlText.endsWith(` ${normalizeText(signal)}`)) {
-      score -= 22;
-      reasons.push(`Weak/non-application link signal: ${signal}.`);
-    }
-  }
-
-  const titleOverlap = tokenOverlap(opportunityTitle, `${label} ${urlText}`);
-  if (titleOverlap >= 0.35) {
-    score += 8;
-    reasons.push("Action link partially matches opportunity title.");
-  }
-
-  const providerOverlap = tokenOverlap(provider, `${label} ${urlText}`);
-  if (providerOverlap >= 0.35) {
-    score += 5;
-    reasons.push("Action link partially matches provider.");
-  }
-
-  return {
-    url: action.url,
-    label: action.label,
-    type: action.type,
-    score,
-    reasons: Array.from(new Set(reasons)),
-  };
-}
-
-function extractApplicationActionsFromPage({
-  pageText,
-  candidateUrl,
-  opportunityTitle,
-  provider,
-}: {
-  pageText: string;
-  candidateUrl: string;
-  opportunityTitle?: string | null;
-  provider?: string | null;
-}): ApplicationAction[] {
-  const links = extractCandidateLinks({ pageText, candidateUrl });
+  links: CapturedLink[];
+  pageUrl: string;
+  provider: string | null | undefined;
+}): ApplicationAction | null {
+  const pageDomain = getDomain(pageUrl);
+  const pageKey = pageUrl.split("#")[0].replace(/\/$/, "");
   const actions: ApplicationAction[] = [];
 
-  for (const link of links) {
-    const type = classifyApplicationActionUrl(link.url);
-    const labelType = classifyApplicationActionUrl(link.label);
+  for (const link of links.slice(0, 400)) {
+    if (!link.href || isBlockedDestinationUrl(link.href)) continue;
 
-    const chosenType = type !== "unknown" ? type : labelType;
+    // Links back to the page itself are not actions.
+    if (link.href.split("#")[0].replace(/\/$/, "") === pageKey) continue;
 
-    const scored = scoreApplicationAction({
-      action: {
-        url: link.url,
-        label: link.label,
-        type: chosenType,
-      },
-      candidateUrl,
-      opportunityTitle,
-      provider,
-    });
+    const type = classifyActionLink(link);
+    if (!type) continue;
 
-    if (scored.score >= 35) {
-      actions.push(scored);
+    const actionDomain = getDomain(link.href);
+    const sameDomain =
+      Boolean(pageDomain && actionDomain) &&
+      (pageDomain === actionDomain ||
+        actionDomain!.endsWith(`.${pageDomain}`) ||
+        pageDomain!.endsWith(`.${actionDomain}`));
+    const portal = type === "third_party_portal";
+    const providerOwned = providerMatchesDomain(provider, actionDomain).matched;
+    const document = type === "application_document";
+
+    // Off-domain, non-portal, non-owned, non-document targets are unsafe.
+    if (!sameDomain && !portal && !providerOwned && !document) continue;
+
+    const baseScores: Record<ApplicationActionType, number> = {
+      internal_application_page: 60,
+      registration_page: 55,
+      application_document: 55,
+      third_party_portal: 58,
+      login_portal: 40,
+      nomination_instruction: 42,
+    };
+
+    let score = baseScores[type];
+
+    const label = normalizeMatchText(link.text);
+    if (hasAnySignal(label, ["apply now", "start application", "submit application", "apply today"])) {
+      score += 15;
     }
+    if (sameDomain) score += 8;
+    if (providerOwned) score += 8;
+
+    actions.push({ url: link.href, label: link.text, type, score });
   }
 
-  const emailMatch = pageText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  if (emailMatch) {
-    actions.push({
-      url: `mailto:${emailMatch[0]}`,
-      label: "Email submission address detected.",
-      type: "email_submission",
-      score: 48,
-      reasons: ["Detected possible email-based application submission."],
-    });
-  }
-
-  const documentUrlMatch = pageText.match(/https?:\/\/[^\s"'<>]+?\.(pdf|doc|docx)(\?[^\s"'<>]*)?/i);
-  if (documentUrlMatch?.[0]) {
-    const documentUrl = documentUrlMatch[0];
-
-    actions.push(
-      scoreApplicationAction({
-        action: {
-          url: documentUrl,
-          label: "Detected application document URL.",
-          type: "application_document",
-        },
-        candidateUrl,
-        opportunityTitle,
-        provider,
-      })
-    );
-  }
-
-  return actions
-    .sort((left, right) => right.score - left.score)
-    .filter((action, index, array) => {
-      if (!action.url) return true;
-      return array.findIndex((item) => item.url === action.url) === index;
-    });
-}
-
-function getBestApplicationAction({
-  pageText,
-  candidateUrl,
-  opportunityTitle,
-  provider,
-}: {
-  pageText: string;
-  candidateUrl: string;
-  opportunityTitle?: string | null;
-  provider?: string | null;
-}) {
-  const actions = extractApplicationActionsFromPage({
-    pageText,
-    candidateUrl,
-    opportunityTitle,
-    provider,
-  });
+  actions.sort((left, right) => right.score - left.score);
 
   return actions[0] || null;
 }
 
-function classifyPagePurpose({
+// ---------------------------------------------------------------------------
+// Candidate evaluation
+// ---------------------------------------------------------------------------
+
+type OwnershipEvidence = {
+  strong: boolean;
+  providerOwned: boolean;
+  recognizedPortal: boolean;
+  sameTrustedSourceDomain: boolean;
+  reasons: string[];
+};
+
+function assessOwnership({
+  input,
+  destinationUrl,
+}: {
+  input: ApplicationDestinationInput;
+  destinationUrl: string;
+}): OwnershipEvidence {
+  const reasons: string[] = [];
+  const destinationDomain = getDomain(destinationUrl);
+  const sourceDomain = getDomain(input.sourceUrl || null);
+
+  const providerMatch = providerMatchesDomain(input.provider, destinationDomain);
+  const recognizedPortal = isRecognizedApplicationPortalUrl(destinationUrl);
+  const sameTrustedSourceDomain =
+    Boolean(sourceDomain && destinationDomain) &&
+    sourceDomain === destinationDomain &&
+    !isAggregatorDomain(sourceDomain);
+
+  if (providerMatch.matched) {
+    reasons.push(providerMatch.reason || "Provider owns the destination domain.");
+  }
+  if (recognizedPortal) {
+    reasons.push("Destination is a recognized application portal.");
+  }
+  if (sameTrustedSourceDomain) {
+    reasons.push("Destination is on the same non-aggregator domain as the source page.");
+  }
+
+  return {
+    strong: providerMatch.matched || recognizedPortal || sameTrustedSourceDomain,
+    providerOwned: providerMatch.matched,
+    recognizedPortal,
+    sameTrustedSourceDomain,
+    reasons,
+  };
+}
+
+function confidenceRank(confidence: DestinationConfidence) {
+  return { high: 3, medium: 2, low: 1, none: 0 }[confidence];
+}
+
+async function evaluateCandidate({
   input,
   candidate,
-  pageText,
 }: {
   input: ApplicationDestinationInput;
   candidate: DestinationCandidate;
-  pageText: string;
-}): {
-  purpose: CandidatePurpose;
-  reasons: string[];
-  applicationDocumentUrl: string | null;
-  applicationDocumentType: string | null;
-} {
-  const staticPurpose = classifyStaticPurpose(candidate);
-  const combined = [candidate.title, candidate.snippet, candidate.url, pageText]
+}): Promise<RankedDestinationCandidate> {
+  const reject = (purpose: CandidatePurpose, reason: string): RankedDestinationCandidate => ({
+    ...candidate,
+    purpose,
+    score: -100,
+    confidence: "none",
+    reasons: [reason],
+    applicationDocumentUrl: null,
+    applicationDocumentType: null,
+    applicationDestinationUrl: null,
+    applicationDestinationType: purpose,
+  });
+
+  // Hard destination blocklist — never fetch, never rank.
+  if (isBlockedDestinationUrl(candidate.url)) {
+    return reject(
+      "aggregator_or_database",
+      "Domain is on the blocked-destination policy (aggregator/social/informational/news/hosting)."
+    );
+  }
+
+  if (isPressOrNewsUrl(candidate.url)) {
+    return reject("press_or_news", "URL pattern indicates a press/news/blog page.");
+  }
+
+  // Documents are ranked without fetching.
+  if (isDocumentUrl(candidate.url)) {
+    const ownership = assessOwnership({ input, destinationUrl: candidate.url });
+    const titleMatch = tokenOverlap(
+      input.title,
+      `${candidate.title || ""} ${candidate.snippet || ""} ${candidate.url}`
+    );
+
+    if (!ownership.strong && titleMatch < 0.5) {
+      return reject(
+        "application_document",
+        "Unowned document with weak title match — not safe to use as a destination."
+      );
+    }
+
+    const confidence: DestinationConfidence = ownership.strong ? "medium" : "low";
+
+    return {
+      ...candidate,
+      purpose: "application_document",
+      score: ownership.strong ? 60 : 40,
+      confidence,
+      reasons: [
+        "Candidate URL is an application document.",
+        ...ownership.reasons,
+      ],
+      applicationDocumentUrl: candidate.url,
+      applicationDocumentType: getDocumentType(candidate.url),
+      applicationDestinationUrl: candidate.url,
+      applicationDestinationType: "application_document",
+    };
+  }
+
+  // Fetch the page once. Captured-and-parsed doubles as the availability check.
+  let capture: HybridCaptureResult;
+  try {
+    capture = await capturePageWithHybrid(candidate.url);
+  } catch (error) {
+    return reject(
+      "unknown",
+      `Capture failed: ${error instanceof Error ? error.message : "unknown error"}.`
+    );
+  }
+
+  const page = capture.finalResult;
+
+  if (!page.ok) {
+    return reject("unknown", `Destination not available (${page.error || "fetch failed"}).`);
+  }
+
+  const pageText = page.cleanText.slice(0, MAX_PAGE_TEXT_CHARS);
+
+  if (looksLikeNotFoundPage(page.title, pageText)) {
+    return reject("unknown", "Destination renders a page-not-found message.");
+  }
+
+  const combinedText = [candidate.title, candidate.snippet, page.title, pageText]
     .filter(Boolean)
     .join(" ");
 
-  const reasons: string[] = [];
-
-  if (staticPurpose === "aggregator_or_database") {
-    return {
-      purpose: "aggregator_or_database",
-      reasons: ["Candidate is a known aggregator/database source."],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
-  if (staticPurpose === "press_or_news") {
-    return {
-      purpose: "press_or_news",
-      reasons: ["Candidate appears to be a press/news page."],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
-  if (staticPurpose === "application_document") {
-    return {
-      purpose: "application_document",
-      reasons: ["Candidate URL is an application document."],
-      applicationDocumentUrl: candidate.url,
-      applicationDocumentType: getDocumentType(candidate.url),
-    };
-  }
-
-  if (staticPurpose === "third_party_portal") {
-    return {
-      purpose: "third_party_portal",
-      reasons: ["Candidate is a recognized third-party application portal."],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
+  // Behavioral aggregator screen (unknown domains acting like databases).
   const aggregatorBehavior = detectAggregatorBehavior({
     url: candidate.url,
-    title: candidate.title,
-    text: combined,
+    title: candidate.title || page.title,
+    text: combinedText,
     provider: input.provider,
   });
 
   if (aggregatorBehavior.isAggregatorLike) {
-    return {
-      purpose: "aggregator_or_database",
-      reasons: [
-        "Candidate behaves like an opportunity aggregator/database.",
-        ...aggregatorBehavior.reasons,
-      ],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
+    return reject(
+      "aggregator_or_database",
+      "Page behaves like an opportunity aggregator/database."
+    );
   }
 
-  const resourceListing = isLikelyResourceOrListingPage({
-    url: candidate.url,
-    title: candidate.title,
-    text: combined,
-  });
+  const reasons: string[] = [];
+  const finalUrl = page.finalUrl || candidate.url;
 
-  if (resourceListing.isResourceListing) {
-    return {
-      purpose: "resource_listing",
-      reasons: [
-        "Candidate appears to be a resource/listing page, not a direct applicant destination.",
-        ...resourceListing.reasons,
-      ],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
-  const bestApplicationAction = getBestApplicationAction({
-    pageText,
-    candidateUrl: candidate.url,
-    opportunityTitle: input.title,
+  // Real apply links from the captured page (structured links, not regex).
+  const action = findBestApplicationAction({
+    links: page.links,
+    pageUrl: finalUrl,
     provider: input.provider,
   });
 
-  const applicationDocument =
-    bestApplicationAction?.type === "application_document"
-      ? {
-          url: bestApplicationAction.url || "",
-          type: getDocumentType(bestApplicationAction.url || ""),
-          label: bestApplicationAction.label,
-        }
-      : null;
+  // Destination = the apply link when we found one, else the page itself.
+  let destinationUrl = finalUrl;
+  let purpose: CandidatePurpose = "unknown";
+  let documentUrl: string | null = null;
+  let documentType: string | null = null;
 
-  const hasApplicationAction = hasAnySignal(combined, [
-    "apply",
-    "application",
-    "start application",
-    "submit application",
-    "application deadline",
-    "eligibility",
-    "requirements",
-    "nomination form",
-    "download application",
-  ]);
+  const isListing = looksLikeResourceListing(candidate.title || page.title, candidate.url, pageText);
 
-  const hasNominationSignal = hasAnySignal(combined, [
-    "nomination",
-    "nominated",
-    "self nominations are not accepted",
-    "school must submit",
-    "institutional nomination",
-  ]);
+  if (action) {
+    reasons.push(`Page has an applicant action link: "${action.label.slice(0, 60)}" → ${action.url.slice(0, 100)}`);
 
-  const hasEmailApplicationSignal =
-    hasAnySignal(combined, [
-      "email completed applications",
-      "applications must be emailed",
-      "submit by email",
-      "emailed to",
-    ]) || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(combined);
-
-  const hasLoginSignal = hasAnySignal(combined, [
-    "sign in to apply",
-    "login to apply",
-    "create an account",
-    "applicant portal",
-    "application portal",
-  ]);
-
-  const hasProgramSignal = hasAnySignal(combined, [
-    "program",
-    "scholarship",
-    "fellowship",
-    "grant",
-    "competition",
-    "leadership",
-    "career development",
-    "pipeline program",
-    "research program",
-  ]);
-
-  if (bestApplicationAction) {
-    reasons.push(...bestApplicationAction.reasons);
+    if (action.type === "application_document") {
+      documentUrl = action.url;
+      documentType = getDocumentType(action.url);
+      purpose = "official_application_page";
+      // Keep the page as the destination; the document is supplementary.
+    } else if (action.type === "third_party_portal") {
+      destinationUrl = action.url;
+      purpose = "third_party_portal";
+    } else if (action.type === "login_portal") {
+      destinationUrl = action.url;
+      purpose = "login_gated_portal";
+    } else if (action.type === "nomination_instruction") {
+      purpose = "nomination_based";
+    } else {
+      destinationUrl = action.url;
+      purpose = "official_application_page";
+    }
+  } else if (isListing) {
+    return reject(
+      "resource_listing",
+      "Page is a resource/listing page with no direct applicant action."
+    );
+  } else if (isRecognizedApplicationPortalUrl(candidate.url)) {
+    purpose = "third_party_portal";
+  } else if (hasAnySignal(combinedText, NOMINATION_SIGNALS)) {
+    purpose = "nomination_based";
+  } else if (hasAnySignal(combinedText, EMAIL_APPLICATION_SIGNALS)) {
+    purpose = "email_based_application";
+  } else if (hasApplyPathSignal(candidate.url)) {
+    purpose = "official_application_page";
+  } else if (
+    hasProgramPathSignal(candidate.url) &&
+    hasAnySignal(combinedText, ["apply", "application", "deadline", "eligibility"])
+  ) {
+    purpose = "official_program_page";
+  } else if (getPathDepth(candidate.url) === 0) {
+    purpose = "generic_provider_page";
   }
 
-  if (applicationDocument) {
-    reasons.push("Candidate page links to an application document.");
+  if (purpose === "unknown") {
+    return reject("unknown", "No applicant-facing purpose could be established for this page.");
   }
 
-  if (bestApplicationAction?.type === "registration_page") {
+  const ownership = assessOwnership({ input, destinationUrl });
+  reasons.push(...ownership.reasons);
+
+  const slugText = getPathTokens(candidate.url).join(" ");
+  const titleMatch = Math.max(
+    tokenOverlap(input.title, `${candidate.title || ""} ${page.title || ""} ${slugText}`),
+    tokenOverlap(input.title, combinedText.slice(0, 4000)) * 0.9
+  );
+  const deadlineMatch = deadlineAppearsInText(input.deadline, combinedText);
+  const destinationQuality = assessSourceQuality(destinationUrl);
+  const officialLeaningDomain = destinationQuality.isOfficialLeaning;
+
+  if (titleMatch >= 0.6) reasons.push("Strong opportunity title match.");
+  else if (titleMatch >= 0.35) reasons.push("Partial opportunity title match.");
+  if (deadlineMatch) reasons.push("Page contains the opportunity deadline.");
+
+  // Generic homepage without an apply action can never be a good destination.
+  if (purpose === "generic_provider_page") {
+    const confidence: DestinationConfidence = ownership.providerOwned ? "low" : "none";
     return {
-      purpose: "official_application_page",
-      reasons: ["Candidate page links to a registration/application page.", ...reasons],
+      ...candidate,
+      purpose,
+      score: ownership.providerOwned ? 25 : -50,
+      confidence,
+      reasons: [
+        ...reasons,
+        "Provider homepage without a specific application path — needs human review.",
+      ],
       applicationDocumentUrl: null,
       applicationDocumentType: null,
+      applicationDestinationUrl: ownership.providerOwned ? destinationUrl : null,
+      applicationDestinationType: purpose,
     };
   }
 
-  if (bestApplicationAction?.type === "internal_application_page") {
-    return {
-      purpose: "official_application_page",
-      reasons: ["Candidate page links to an internal application page.", ...reasons],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
+  // -------------------------------------------------------------------------
+  // Honest confidence gates.
+  // -------------------------------------------------------------------------
+  const applicantFacing =
+    purpose === "official_application_page" ||
+    purpose === "third_party_portal" ||
+    purpose === "login_gated_portal";
+
+  let confidence: DestinationConfidence = "none";
+
+  if (
+    ownership.strong &&
+    applicantFacing &&
+    (titleMatch >= 0.5 || deadlineMatch)
+  ) {
+    confidence = "high";
+  } else if (
+    (ownership.strong &&
+      (applicantFacing ||
+        purpose === "official_program_page" ||
+        purpose === "nomination_based" ||
+        purpose === "email_based_application")) ||
+    (officialLeaningDomain && applicantFacing && titleMatch >= 0.6)
+  ) {
+    confidence = "medium";
+  } else if (
+    titleMatch >= 0.35 &&
+    (applicantFacing || purpose === "official_program_page")
+  ) {
+    confidence = "low";
   }
 
-  if (bestApplicationAction?.type === "third_party_portal") {
-    return {
-      purpose: "third_party_portal",
-      reasons: ["Candidate page links to a third-party application portal.", ...reasons],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
+  if (confidence === "none") {
+    return reject(purpose, "Candidate did not pass ownership/title confidence gates.");
   }
 
-  if (bestApplicationAction?.type === "login_portal") {
-    return {
-      purpose: "login_gated_portal",
-      reasons: ["Candidate page links to a login-gated application portal.", ...reasons],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
-  if (bestApplicationAction?.type === "nomination_instruction") {
-    return {
-      purpose: "nomination_based",
-      reasons: ["Candidate page links to nomination/application instructions.", ...reasons],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
-  if (bestApplicationAction?.type === "application_instructions") {
-    return {
-      purpose: "official_application_page",
-      reasons: ["Candidate page links to application instructions.", ...reasons],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
-  if (hasNominationSignal) {
-    return {
-      purpose: "nomination_based",
-      reasons: ["Candidate indicates nomination-based application process.", ...reasons],
-      applicationDocumentUrl: applicationDocument?.url || null,
-      applicationDocumentType: applicationDocument?.type || null,
-    };
-  }
-
-  if (hasEmailApplicationSignal) {
-    return {
-      purpose: "email_based_application",
-      reasons: ["Candidate indicates email-based application process.", ...reasons],
-      applicationDocumentUrl: applicationDocument?.url || null,
-      applicationDocumentType: applicationDocument?.type || null,
-    };
-  }
-
-  if (hasLoginSignal || staticPurpose === "login_gated_portal") {
-    return {
-      purpose: "login_gated_portal",
-      reasons: ["Candidate appears to require login/account access.", ...reasons],
-      applicationDocumentUrl: applicationDocument?.url || null,
-      applicationDocumentType: applicationDocument?.type || null,
-    };
-  }
-
-  if (hasApplicationAction && applicationDocument) {
-    return {
-      purpose: "official_application_page",
-      reasons: ["Candidate has application actions and links to an application document.", ...reasons],
-      applicationDocumentUrl: applicationDocument.url,
-      applicationDocumentType: applicationDocument.type,
-    };
-  }
-
-  if (hasApplicationAction) {
-    return {
-      purpose: "official_application_page",
-      reasons: ["Candidate contains applicant-facing application signals.", ...reasons],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-    };
-  }
-
-  if (hasProgramSignal) {
-    return {
-      purpose: "official_program_page",
-      reasons: ["Candidate appears to be an official program/opportunity page.", ...reasons],
-      applicationDocumentUrl: applicationDocument?.url || null,
-      applicationDocumentType: applicationDocument?.type || null,
-    };
-  }
+  const score =
+    confidenceRank(confidence) * 30 +
+    Math.round(titleMatch * 20) +
+    (deadlineMatch ? 8 : 0) +
+    (action ? 10 : 0) +
+    (ownership.providerOwned ? 10 : 0);
 
   return {
-    purpose: "unknown",
-    reasons: ["Candidate purpose is unclear."],
-    applicationDocumentUrl: applicationDocument?.url || null,
-    applicationDocumentType: applicationDocument?.type || null,
+    ...candidate,
+    purpose,
+    score,
+    confidence,
+    reasons: Array.from(new Set(reasons)),
+    applicationDocumentUrl: documentUrl,
+    applicationDocumentType: documentType,
+    applicationDestinationUrl: destinationUrl,
+    applicationDestinationType: purpose,
   };
 }
 
-function purposeScore(purpose: CandidatePurpose) {
-  const scores: Record<CandidatePurpose, number> = {
-    official_application_page: 70,
-    official_program_page: 58,
-    application_document: 62,
-    third_party_portal: 56,
-    login_gated_portal: 50,
-    email_based_application: 54,
-    nomination_based: 54,
-    press_or_news: -80,
-    aggregator_or_database: -100,
-    resource_listing: -20,
-    generic_provider_page: 10,
-    unknown: 0,
+// ---------------------------------------------------------------------------
+// Source-URL fast path
+// ---------------------------------------------------------------------------
+
+/**
+ * If the page the opportunity was extracted from is itself official/owned,
+ * it is usually the right destination — no web search needed. The page is
+ * captured (availability + apply-link detection) before we trust it.
+ */
+async function evaluateSourceUrlAsDestination(
+  input: ApplicationDestinationInput
+): Promise<RankedDestinationCandidate | null> {
+  const sourceUrl = input.sourceUrl;
+
+  if (!sourceUrl) return null;
+  if (isBlockedDestinationUrl(sourceUrl)) return null;
+
+  const quality = assessSourceQuality(sourceUrl);
+  const providerMatch = providerMatchesDomain(input.provider, getDomain(sourceUrl));
+
+  const trustedCategory = [
+    "government",
+    "university",
+    "official_provider",
+    "foundation_or_nonprofit",
+    "application_portal",
+  ].includes(quality.category);
+
+  // Unknown, unowned domains go through the full search path instead.
+  if (!trustedCategory && !providerMatch.matched) return null;
+
+  const candidate: DestinationCandidate = {
+    url: sourceUrl,
+    title: input.title || null,
+    snippet: null,
+    domain: getDomain(sourceUrl),
   };
 
-  return scores[purpose];
+  const evaluated = await evaluateCandidate({ input, candidate });
+
+  if (evaluated.confidence === "none") return null;
+
+  evaluated.reasons.unshift(
+    "Source page itself qualifies as the applicant destination."
+  );
+
+  return evaluated;
 }
 
-function confidenceFromScore(score: number): DestinationConfidence {
-  if (score >= 90) return "high";
-  if (score >= 65) return "medium";
-  if (score >= 40) return "low";
-  return "none";
-}
+// ---------------------------------------------------------------------------
+// Search phase
+// ---------------------------------------------------------------------------
 
-function buildApplicationDestinationQueries(input: ApplicationDestinationInput) {
+function buildSearchQueries(input: ApplicationDestinationInput) {
   const title = String(input.title || "").trim();
   const provider = String(input.provider || "").trim();
-  const type = String(input.type || "").replace(/_/g, " ").trim();
 
   const queries: string[] = [];
 
   if (title && provider) {
-    queries.push(`"${title}" "${provider}" application`);
     queries.push(`"${title}" "${provider}" apply`);
-    queries.push(`"${title}" "${provider}"`);
-  }
-
-  if (title) {
     queries.push(`"${title}" application`);
+    queries.push(`${title} ${provider} official application`);
+  } else if (title) {
     queries.push(`"${title}" apply`);
-    queries.push(`"${title}" official`);
+    queries.push(`"${title}" application`);
+    queries.push(`${title} official application`);
   }
 
-  if (title && type) {
-    queries.push(`"${title}" "${type}" application`);
-  }
-
-  return Array.from(new Set(queries)).slice(0, 6);
+  return Array.from(new Set(queries)).slice(0, MAX_SEARCH_QUERIES);
 }
 
-async function collectDestinationCandidates(
+async function collectSearchCandidates(
   input: ApplicationDestinationInput
 ): Promise<DestinationCandidate[]> {
-  const queries = buildApplicationDestinationQueries(input);
+  const queries = buildSearchQueries(input);
   const candidatesByUrl = new Map<string, DestinationCandidate>();
 
   for (const query of queries) {
-    const results = await searchDiscoveryWeb({
-      query,
-      maxResults: 8,
-    });
+    let results;
+    try {
+      results = await searchDiscoveryWeb({ query, maxResults: 8 });
+    } catch {
+      continue; // One failed query must not kill the lookup.
+    }
 
     for (const result of results) {
       const domain = getDomain(result.url);
 
-      if (!domain || isKnownBlockedDomain(domain)) continue;
+      if (!domain) continue;
+      if (isBlockedDestinationUrl(result.url)) continue;
+      if (isPressOrNewsUrl(result.url)) continue;
 
       const key = result.url.replace(/#.*$/, "").replace(/\/$/, "");
 
@@ -1044,607 +847,54 @@ async function collectDestinationCandidates(
     }
   }
 
-  return Array.from(candidatesByUrl.values()).slice(0, 20);
+  return Array.from(candidatesByUrl.values());
 }
 
-async function rankDestinationCandidate({
-  input,
-  candidate,
-}: {
-  input: ApplicationDestinationInput;
-  candidate: DestinationCandidate;
-}): Promise<RankedDestinationCandidate> {
-  let pageText = "";
+/** Cheap pre-ranking so the fetch budget goes to the most promising URLs. */
+function preRankCandidate(
+  input: ApplicationDestinationInput,
+  candidate: DestinationCandidate
+) {
+  let score = 0;
 
-  try {
-    if (!isDocumentUrl(candidate.url)) {
-      const capture = await capturePageWithHybrid(candidate.url);
-      pageText = String(capture.finalResult.cleanText || "");
+  if (providerMatchesDomain(input.provider, candidate.domain).matched) score += 40;
+  if (isRecognizedApplicationPortalUrl(candidate.url)) score += 30;
+  if (hasApplyPathSignal(candidate.url)) score += 20;
+  if (hasProgramPathSignal(candidate.url)) score += 10;
+  score += Math.round(
+    tokenOverlap(input.title, `${candidate.title || ""} ${candidate.snippet || ""}`) * 20
+  );
+  if (assessSourceQuality(candidate.url).isOfficialLeaning) score += 10;
+
+  return score;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const current = index;
+      index += 1;
+      results[current] = await fn(items[current]);
     }
-  } catch {
-    pageText = "";
   }
 
-  const combined = [candidate.title, candidate.snippet, candidate.url, pageText]
-    .filter(Boolean)
-    .join(" ");
-
-  const bestApplicationAction = getBestApplicationAction({
-    pageText: combined,
-    candidateUrl: candidate.url,
-    opportunityTitle: input.title,
-    provider: input.provider,
-  });
-
-  const purposeResult = classifyPagePurpose({
-    input,
-    candidate,
-    pageText: combined,
-  });
-
-  const providerForRelationship = isWeakOrAggregatorProvider(input.provider)
-    ? null
-    : input.provider;
-
-  const providerRelationship = assessProviderSourceRelationship({
-    provider: providerForRelationship,
-    url: candidate.url,
-    pageText: combined,
-  });
-
-  const titleOverlap = tokenOverlap(input.title, combined);
-  const providerOverlap = isWeakOrAggregatorProvider(input.provider)
-    ? 0
-    : tokenOverlap(input.provider, combined);
-  const deadlineMatched = deadlineAppearsInText(input.deadline, combined);
-  const resourceListing = isLikelyResourceOrListingPage({
-    url: candidate.url,
-    title: candidate.title,
-    text: combined,
-  });
-  const recognizedPortal = isRecognizedApplicationPortalUrl(
-    bestApplicationAction?.url || candidate.url
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, worker)
   );
 
-  let score = purposeScore(purposeResult.purpose);
-  const reasons = [...purposeResult.reasons];
-
-  if (titleOverlap >= 0.65) {
-    score += 18;
-    reasons.push("Strong title match.");
-  } else if (titleOverlap >= 0.35) {
-    score += 9;
-    reasons.push("Partial title match.");
-  }
-
-  if (providerRelationship.isProviderAligned) {
-    score += 18;
-    reasons.push("Provider/source relationship is aligned.");
-    reasons.push(...providerRelationship.reasons);
-  } else if (providerOverlap >= 0.35) {
-    score += 8;
-    reasons.push("Provider appears in candidate content.");
-  }
-
-  if (deadlineMatched) {
-    score += 8;
-    reasons.push("Candidate contains matching deadline.");
-  }
-
-  if (purposeResult.applicationDocumentUrl) {
-    score += 10;
-    reasons.push("Application document detected.");
-
-    const documentText = [
-      purposeResult.applicationDocumentUrl,
-      candidate.title,
-      candidate.snippet,
-      pageText,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    const documentTitleOverlap = tokenOverlap(input.title, documentText);
-    const documentProviderOverlap = isWeakOrAggregatorProvider(input.provider)
-      ? 0
-      : tokenOverlap(input.provider, documentText);
-
-    if (
-      documentTitleOverlap < 0.35 &&
-      documentProviderOverlap < 0.3 &&
-      !providerRelationship.isProviderAligned
-    ) {
-      score -= 35;
-      reasons.push("Application document is weakly matched to the opportunity/provider.");
-    }
-  }
-
-  if (resourceListing.isResourceListing && !bestApplicationAction) {
-    score = Math.min(score, 35);
-    reasons.push("Resource/listing page capped because no stronger application action was found.");
-  }
-
-  if (purposeResult.purpose === "resource_listing") {
-    score = Math.min(score, 35);
-    reasons.push("Resource/listing pages cannot be high-confidence destinations.");
-  }
-
-  if (
-    purposeResult.purpose === "aggregator_or_database" ||
-    purposeResult.purpose === "press_or_news"
-  ) {
-    score = Math.min(score, 10);
-  }
-
-  const hasStrongOwnershipSignal =
-    providerRelationship.isProviderAligned ||
-    recognizedPortal ||
-    (
-      purposeResult.purpose !== "resource_listing" &&
-      purposeResult.purpose !== "aggregator_or_database" &&
-      purposeResult.purpose !== "press_or_news" &&
-      !isWeakOrAggregatorProvider(input.provider) &&
-      providerOverlap >= 0.45
-    );
-
-  if (!hasStrongOwnershipSignal && score >= 90) {
-    score = 78;
-    reasons.push("High confidence capped because provider/source ownership is not strong enough.");
-  }
-
-  if (purposeResult.purpose === "application_document" && !hasStrongOwnershipSignal && score >= 65) {
-    score = 55;
-    reasons.push("Document confidence capped because source/provider ownership is unclear.");
-  }
-
-  const confidence = confidenceFromScore(score);
-
-  const rankedCandidate: RankedDestinationCandidate = {
-    ...candidate,
-    purpose: purposeResult.purpose,
-    score,
-    confidence,
-    reasons: Array.from(new Set(reasons)),
-    applicationDocumentUrl: purposeResult.applicationDocumentUrl,
-    applicationDocumentType: purposeResult.applicationDocumentType,
-    applicationDestinationUrl:
-      purposeResult.applicationDocumentUrl ||
-      bestApplicationAction?.url ||
-      (confidence !== "none" ? candidate.url : null),
-    applicationDestinationType:
-      bestApplicationAction?.type === "application_document"
-        ? "application_document"
-        : bestApplicationAction?.type === "third_party_portal"
-          ? "third_party_portal"
-          : bestApplicationAction?.type === "login_portal"
-            ? "login_gated_portal"
-            : bestApplicationAction?.type === "email_submission"
-              ? "email_based_application"
-              : bestApplicationAction?.type === "nomination_instruction"
-                ? "nomination_based"
-                : purposeResult.purpose,
-  };
-
-  return applyDestinationAlignmentGuard({
-    input,
-    candidate: rankedCandidate,
-  });
+  return results;
 }
 
-
-function sourceUrlDestinationResult(
-  input: ApplicationDestinationInput
-): ApplicationDestinationResult | null {
-  const sourceUrl = input.sourceUrl;
-
-  if (!sourceUrl) return null;
-
-  const domain = getDomain(sourceUrl);
-  const sourceQuality = assessSourceQuality(sourceUrl);
-  const urlLower = sourceUrl.toLowerCase();
-  const combined = normalizeText(
-    [input.title, input.provider, input.type, input.sourceUrl].filter(Boolean).join(" ")
-  );
-
-  if (!domain) return null;
-
-  if (isKnownBlockedDomain(sourceUrl) || isKnownAggregatorDomain(sourceUrl)) {
-    return null;
-  }
-
-  const strongApplicationSignals = [
-    "/apply",
-    "/application",
-    "/applications",
-    "/register",
-    "/registration",
-    "/submit",
-    "/submission",
-    "/scholarshipdetails",
-    "/scholarship-details",
-    "/home/scholarshipdetails",
-    "apply now",
-    "start application",
-    "submit application",
-    "application portal",
-    "scholarship details",
-    "sign in to apply",
-    "login to apply",
-    "create account",
-  ];
-
-  const programPageSignals = [
-    "/scholarship",
-    "/scholarships",
-    "/fellowship",
-    "/fellowships",
-    "/grant",
-    "/grants",
-    "/program",
-    "/programs",
-    "/funding",
-    "/awards",
-    "/opportunities",
-  ];
-
-  const hasStrongApplicationSignal =
-    strongApplicationSignals.some((signal) =>
-      urlLower.includes(normalizeText(signal).replaceAll(" ", ""))
-    ) || hasAnySignal(combined, strongApplicationSignals);
-
-  const hasProgramPageSignal = programPageSignals.some((signal) =>
-    urlLower.includes(signal)
-  );
-
-  const isTrustedOfficialSource = [
-    "government",
-    "university",
-    "official_provider",
-    "foundation_or_nonprofit",
-  ].includes(sourceQuality.category);
-
-  if (sourceQuality.category === "application_portal") {
-    const confidence: DestinationConfidence = hasStrongApplicationSignal
-      ? "high"
-      : "medium";
-
-    return {
-      officialSourceUrl: null,
-      applicationDestinationUrl: sourceUrl,
-      applicationDestinationType: "third_party_portal",
-      officialSourceStatus: "candidate_found",
-      destinationConfidence: confidence,
-      destinationReasons: [
-        `Source URL is a known application portal (${domain}) and was used as the applicant destination.`,
-        ...sourceQuality.reasons,
-      ],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-      candidates: [],
-    };
-  }
-
-  if (isTrustedOfficialSource && hasStrongApplicationSignal) {
-    return {
-      officialSourceUrl: sourceUrl,
-      applicationDestinationUrl: sourceUrl,
-      applicationDestinationType: "official_application_page",
-      officialSourceStatus: "verified_destination",
-      destinationConfidence: "high",
-      destinationReasons: [
-        "Source URL is an official or institution-hosted applicant-facing page with strong application signals.",
-        ...sourceQuality.reasons,
-      ],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-      candidates: [],
-    };
-  }
-
-  if (isTrustedOfficialSource && hasProgramPageSignal) {
-    return {
-      officialSourceUrl: sourceUrl,
-      applicationDestinationUrl: sourceUrl,
-      applicationDestinationType: "official_program_page",
-      officialSourceStatus: "verified_destination",
-      destinationConfidence: "medium",
-      destinationReasons: [
-        "Source URL is an official or institution-hosted program/funding page and was used as the applicant destination candidate.",
-        ...sourceQuality.reasons,
-      ],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-      candidates: [],
-    };
-  }
-
-  if (
-    sourceQuality.category === "unknown" &&
-    hasStrongApplicationSignal &&
-    !isKnownAggregatorDomain(sourceUrl)
-  ) {
-    return {
-      officialSourceUrl: null,
-      applicationDestinationUrl: sourceUrl,
-      applicationDestinationType: "unknown",
-      officialSourceStatus: "needs_human_review",
-      destinationConfidence: "low",
-      destinationReasons: [
-        "Unknown source has strong application behavior signals, but needs human review before publishing.",
-        ...sourceQuality.reasons,
-      ],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-      candidates: [],
-    };
-  }
-
-  return null;
-}
-
-
-
-function downgradeDestinationConfidence(
-  confidence: DestinationConfidence
-): DestinationConfidence {
-  if (confidence === "high") return "low";
-  if (confidence === "medium") return "low";
-  return confidence;
-}
-
-function applyDestinationAlignmentGuard({
-  input,
-  candidate,
-}: {
-  input: ApplicationDestinationInput;
-  candidate: RankedDestinationCandidate;
-}): RankedDestinationCandidate {
-  if (candidate.confidence === "none") return candidate;
-
-  const destinationUrl = candidate.applicationDestinationUrl || candidate.url;
-  const destinationDomain = getDomain(destinationUrl);
-  const sourceDomain = getDomain(input.sourceUrl || null);
-  const destinationQuality = assessSourceQuality(destinationUrl);
-  const sourceQuality = input.sourceUrl ? assessSourceQuality(input.sourceUrl) : null;
-
-  const destinationText = [
-    candidate.title,
-    candidate.snippet,
-    candidate.url,
-    candidate.applicationDestinationUrl,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const destinationAggregatorBehavior = detectAggregatorBehavior({
-    url: destinationUrl,
-    title: candidate.title || input.title,
-    text: destinationText,
-    provider: input.provider,
-  });
-
-  const hardAggregatorDestinationDomains = new Set([
-    "scholarshipbuddy.com",
-    "scholarshipguidance.com",
-    "scholarshipinstitute.org",
-    "scholarshipscanada.com",
-    "collegescholarships.org",
-    "collegevine.com",
-    "collegewhale.com",
-    "sallie.com",
-    "biglawinvestor.com",
-    "mastersportal.com",
-    "findamasters.com",
-    "findaphd.com",
-    "hotcoursesabroad.com",
-    "applykite.com",
-    "gyandhan.com",
-    "yocket.com",
-    "leverageedu.com",
-    "upgrad.com",
-  ]);
-
-  const isHardAggregatorDestination =
-    destinationDomain !== null &&
-    Array.from(hardAggregatorDestinationDomains).some(
-      (knownDomain) =>
-        destinationDomain === knownDomain ||
-        destinationDomain.endsWith(`.${knownDomain}`)
-    );
-
-  if (
-    destinationQuality.isAggregator ||
-    destinationAggregatorBehavior.isAggregatorLike ||
-    isHardAggregatorDestination
-  ) {
-    return {
-      ...candidate,
-      purpose: "aggregator_or_database",
-      confidence: "none",
-      score: -100,
-      applicationDestinationUrl: null,
-      applicationDestinationType: "aggregator_or_database",
-      reasons: Array.from(
-        new Set([
-          ...candidate.reasons,
-          "Destination rejected because it is an aggregator/listing/database page, not an applicant destination.",
-          ...destinationQuality.reasons,
-          ...destinationAggregatorBehavior.reasons,
-        ])
-      ),
-    };
-  }
-
-  const providerRelationship = assessProviderSourceRelationship({
-    provider: input.provider,
-    url: destinationUrl,
-    pageText: destinationText,
-  });
-
-  const titleOverlap = tokenOverlap(input.title, destinationText);
-  const providerDomainOverlap = tokenOverlap(input.provider, destinationDomain || "");
-
-  const sameTrustedSourceDomain =
-    Boolean(sourceDomain && destinationDomain) &&
-    sourceDomain === destinationDomain &&
-    sourceQuality !== null &&
-    !sourceQuality.isAggregator;
-
-  const isKnownPortalDestination =
-    destinationQuality.category === "application_portal";
-
-  const isTrustedOfficialDestination = [
-    "government",
-    "university",
-    "official_provider",
-    "foundation_or_nonprofit",
-  ].includes(destinationQuality.category);
-
-  const providerDomainAligned =
-    providerDomainOverlap >= 0.15 ||
-    providerRelationship.reasons.some((reason) =>
-      reason.toLowerCase().includes("provider appears aligned with source domain")
-    );
-
-  const isApplicationDocument =
-    candidate.applicationDestinationType === "application_document";
-
-  const isSafeDocument =
-    isApplicationDocument &&
-    (providerDomainAligned ||
-      sameTrustedSourceDomain ||
-      isKnownPortalDestination ||
-      isTrustedOfficialDestination);
-
-  const isSafeNonDocument =
-    !isApplicationDocument &&
-    (providerRelationship.isProviderAligned ||
-      sameTrustedSourceDomain ||
-      isKnownPortalDestination ||
-      (isTrustedOfficialDestination && titleOverlap >= 0.35));
-
-  const isSafe = isSafeDocument || isSafeNonDocument;
-
-  if (isSafe) {
-    return candidate;
-  }
-
-  return {
-    ...candidate,
-    confidence: downgradeDestinationConfidence(candidate.confidence),
-    score: Math.min(candidate.score, 25),
-    reasons: Array.from(
-      new Set([
-        ...candidate.reasons,
-        "Destination confidence downgraded because provider/domain alignment was weak.",
-        ...providerRelationship.reasons,
-      ])
-    ),
-  };
-}
-
-
-
-type DestinationAvailabilityResult = {
-  isAvailable: boolean;
-  reason: string | null;
-};
-
-async function verifyDestinationAvailability(
-  url: string | null | undefined
-): Promise<DestinationAvailabilityResult> {
-  if (!url) {
-    return {
-      isAvailable: false,
-      reason: "Missing destination URL.",
-    };
-  }
-
-  const lower = url.toLowerCase();
-
-  if (
-    lower.startsWith("mailto:") ||
-    lower.startsWith("tel:") ||
-    lower.endsWith(".pdf") ||
-    lower.endsWith(".doc") ||
-    lower.endsWith(".docx") ||
-    lower.endsWith(".xls") ||
-    lower.endsWith(".xlsx")
-  ) {
-    return {
-      isAvailable: true,
-      reason: null,
-    };
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (compatible; OppscoresBot/1.0; +https://oppscores.com)",
-        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
-
-    if (response.status === 404 || response.status === 410) {
-      return {
-        isAvailable: false,
-        reason: `Destination returned HTTP ${response.status}.`,
-      };
-    }
-
-    if (response.status >= 500) {
-      return {
-        isAvailable: false,
-        reason: `Destination returned server error HTTP ${response.status}.`,
-      };
-    }
-
-    const contentType = response.headers.get("content-type") || "";
-
-    if (contentType.includes("text/html")) {
-      const html = (await response.text()).slice(0, 12000);
-      const normalizedHtml = normalizeText(html);
-
-      const pageNotFoundSignals = [
-        "404 page not found",
-        "page not found",
-        "the page you re looking for doesn t exist",
-        "the page you are looking for does not exist",
-        "may have been moved",
-        "not found error",
-      ];
-
-      if (hasAnySignal(normalizedHtml, pageNotFoundSignals)) {
-        return {
-          isAvailable: false,
-          reason: "Destination page content indicates a 404/page-not-found page.",
-        };
-      }
-    }
-
-    return {
-      isAvailable: true,
-      reason: null,
-    };
-  } catch (error) {
-    return {
-      isAvailable: false,
-      reason: `Destination availability check failed: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
 
 export function emptyApplicationDestinationResult(
   reason: string
@@ -1662,113 +912,21 @@ export function emptyApplicationDestinationResult(
   };
 }
 
-export async function rankApplicationDestination(
-  input: ApplicationDestinationInput
-): Promise<ApplicationDestinationResult> {
-  if (!input.title || !input.provider) {
-    return emptyApplicationDestinationResult(
-      "Missing title or provider; cannot rank application destination safely."
-    );
-  }
+function buildResultFromCandidate(
+  best: RankedDestinationCandidate,
+  allCandidates: RankedDestinationCandidate[]
+): ApplicationDestinationResult {
+  const isDocument = best.applicationDestinationType === "application_document";
 
-  const sourceUrlResult = sourceUrlDestinationResult(input);
-
-  if (sourceUrlResult) {
-    return sourceUrlResult;
-  }
-
-  const candidates = await collectDestinationCandidates(input);
-  const ranked: RankedDestinationCandidate[] = [];
-
-  for (const candidate of candidates.slice(0, 8)) {
-    const rankedCandidate = await rankDestinationCandidate({
-      input,
-      candidate,
-    });
-
-    ranked.push(rankedCandidate);
-  }
-
-  const sorted = ranked.sort((left, right) => right.score - left.score);
-  let best: RankedDestinationCandidate | null = null;
-
-  for (const candidate of sorted) {
-    if (candidate.confidence === "none") continue;
-
-    const destinationUrl = candidate.applicationDestinationUrl || candidate.url;
-    const availability = await verifyDestinationAvailability(destinationUrl);
-
-    if (availability.isAvailable) {
-      best = candidate;
-      break;
-    }
-
-    candidate.confidence = "none";
-    candidate.score = -100;
-    candidate.applicationDestinationUrl = null;
-    candidate.applicationDestinationType = "unknown";
-    candidate.reasons = Array.from(
-      new Set([
-        ...candidate.reasons,
-        availability.reason || "Destination failed availability check.",
-      ])
-    );
-  }
-
-  if (!best) {
-    return {
-      officialSourceUrl: null,
-      applicationDestinationUrl: null,
-      applicationDestinationType: "not_found",
-      officialSourceStatus: candidates.length ? "needs_human_review" : "aggregator_only",
-      destinationConfidence: "none",
-      destinationReasons: candidates.length
-        ? [
-            "No strong applicant-facing destination found among candidates.",
-            "Candidate destinations were either weak, aggregator-like, unavailable, or failed availability checks.",
-          ]
-        : ["No destination candidates found."],
-      applicationDocumentUrl: null,
-      applicationDocumentType: null,
-      candidates: sorted,
-    };
-  }
-
-  // `best` here came from web search (the sourceUrl self-check path returns
-  // earlier). A searched candidate may only be marked "verified_destination"
-  // when it is high confidence AND has strong provider/domain ownership.
-  const bestDestinationUrl = best.applicationDestinationUrl || best.url;
-  const bestDestinationDomain = getDomain(bestDestinationUrl);
-  const bestSourceDomain = getDomain(input.sourceUrl || null);
-  const bestDestinationQuality = assessSourceQuality(bestDestinationUrl);
-  const bestProviderRelationship = assessProviderSourceRelationship({
-    provider: input.provider,
-    url: bestDestinationUrl,
-    pageText: [best.title, best.snippet].filter(Boolean).join(" "),
-  });
-  const bestSameTrustedSourceDomain =
-    Boolean(bestSourceDomain && bestDestinationDomain) &&
-    bestSourceDomain === bestDestinationDomain &&
-    !assessSourceQuality(input.sourceUrl || "").isAggregator;
-
-  const hasStrongOwnership =
-    bestProviderRelationship.isProviderAligned ||
-    bestDestinationQuality.category === "application_portal" ||
-    isRecognizedApplicationPortalUrl(bestDestinationUrl) ||
-    bestSameTrustedSourceDomain;
-
-  let officialSourceStatus: ApplicationDestinationResult["officialSourceStatus"];
-  if (best.confidence === "high" && hasStrongOwnership) {
-    officialSourceStatus = "verified_destination";
-  } else if (best.confidence === "low") {
-    officialSourceStatus = "needs_human_review";
-  } else {
-    officialSourceStatus = "candidate_found";
-  }
+  const officialSourceStatus: ApplicationDestinationResult["officialSourceStatus"] =
+    best.confidence === "high"
+      ? "verified_destination"
+      : best.confidence === "medium"
+        ? "candidate_found"
+        : "needs_human_review";
 
   return {
-    officialSourceUrl:
-      best.purpose === "application_document" ? null : best.url,
+    officialSourceUrl: isDocument ? null : best.url,
     applicationDestinationUrl: best.applicationDestinationUrl,
     applicationDestinationType: best.applicationDestinationType,
     officialSourceStatus,
@@ -1779,6 +937,79 @@ export async function rankApplicationDestination(
     ],
     applicationDocumentUrl: best.applicationDocumentUrl,
     applicationDocumentType: best.applicationDocumentType,
+    candidates: allCandidates,
+  };
+}
+
+export async function rankApplicationDestination(
+  input: ApplicationDestinationInput
+): Promise<ApplicationDestinationResult> {
+  if (!input.title || !input.provider) {
+    return emptyApplicationDestinationResult(
+      "Missing title or provider; cannot rank application destination safely."
+    );
+  }
+
+  // Phase 1: the source page itself (cheap — one capture, no search).
+  const sourceEvaluation = await evaluateSourceUrlAsDestination(input);
+
+  if (
+    sourceEvaluation &&
+    (sourceEvaluation.confidence === "high" ||
+      sourceEvaluation.confidence === "medium")
+  ) {
+    return buildResultFromCandidate(sourceEvaluation, [sourceEvaluation]);
+  }
+
+  // Phase 2: web search for the official destination.
+  const collected = await collectSearchCandidates(input);
+
+  const toEvaluate = collected
+    .map((candidate) => ({
+      candidate,
+      preScore: preRankCandidate(input, candidate),
+    }))
+    .sort((left, right) => right.preScore - left.preScore)
+    .slice(0, MAX_CANDIDATES_TO_EVALUATE)
+    .map((entry) => entry.candidate);
+
+  const evaluated = await mapWithConcurrency(
+    toEvaluate,
+    CANDIDATE_FETCH_CONCURRENCY,
+    (candidate) => evaluateCandidate({ input, candidate })
+  );
+
+  if (sourceEvaluation) evaluated.push(sourceEvaluation);
+
+  const sorted = evaluated.sort((left, right) => {
+    const confidenceDelta =
+      confidenceRank(right.confidence) - confidenceRank(left.confidence);
+    if (confidenceDelta !== 0) return confidenceDelta;
+    return right.score - left.score;
+  });
+
+  const best = sorted.find((candidate) => candidate.confidence !== "none");
+
+  if (best) {
+    return buildResultFromCandidate(best, sorted);
+  }
+
+  const sourceWasAggregator = isAggregatorDomain(getDomain(input.sourceUrl || null));
+
+  return {
+    officialSourceUrl: null,
+    applicationDestinationUrl: null,
+    applicationDestinationType: "not_found",
+    officialSourceStatus: sourceWasAggregator ? "aggregator_only" : "failed_lookup",
+    destinationConfidence: "none",
+    destinationReasons: collected.length
+      ? [
+          "No candidate passed the ownership/availability confidence gates.",
+          "Candidates were aggregator-like, unavailable, unowned, or not applicant-facing.",
+        ]
+      : ["No destination candidates found in web search."],
+    applicationDocumentUrl: null,
+    applicationDocumentType: null,
     candidates: sorted,
   };
 }
