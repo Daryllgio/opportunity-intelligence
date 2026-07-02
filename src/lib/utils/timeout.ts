@@ -11,20 +11,21 @@ export async function withTimeout<T>(
   label: string = "Operation"
 ): Promise<T> {
   const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
-    const timeoutId = setTimeout(() => {
+    timeoutId = setTimeout(() => {
       controller.abort();
       reject(new Error(`${label} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-
-    // Ensure the timer is cleared if fn settles first.
-    controller.signal.addEventListener("abort", () => clearTimeout(timeoutId));
   });
 
   try {
     return await Promise.race([fn(controller.signal), timeoutPromise]);
   } finally {
-    controller.abort();
+    // Only clear the timer. Do NOT abort on success: callers that return a
+    // Response read its body after this resolves, and aborting here would
+    // cancel the still-unread body stream (surfacing as an AbortError).
+    clearTimeout(timeoutId);
   }
 }
