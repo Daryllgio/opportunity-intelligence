@@ -231,3 +231,8 @@ async function scheduleFreshContentJobs(supabase: SupabaseClient) {
 
   return scheduled;
 }
+
+// Vercel cron invokes routes with GET.
+export async function GET(request: NextRequest) {
+  return POST(request);
+}

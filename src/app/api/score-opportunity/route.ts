@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
 import { withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
@@ -6,7 +7,13 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUsageMonth, getPlanLimits } from "@/lib/billing/plans";
 
-const ai = new GoogleGenAI({
+// Gap reports are the premium feature: Claude Sonnet gives the most nuanced,
+// actionable positioning advice. Gemini remains as an automatic fallback so
+// the feature keeps working until ANTHROPIC_API_KEY is provisioned.
+const CLAUDE_GAP_REPORT_MODEL = "claude-sonnet-5";
+const GEMINI_FALLBACK_MODEL = "gemini-2.5-pro";
+
+const gemini = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
@@ -38,11 +45,69 @@ function arrayOrEmpty(value: unknown) {
     : [];
 }
 
+async function generateWithClaude(prompt: string): Promise<string> {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const response = await anthropic.messages.create({
+    model: CLAUDE_GAP_REPORT_MODEL,
+    max_tokens: 2048,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const textBlock = response.content.find(
+    (block): block is Anthropic.TextBlock => block.type === "text"
+  );
+
+  return textBlock?.text || "";
+}
+
+async function generateWithGemini(prompt: string): Promise<string> {
+  const response = await gemini.models.generateContent({
+    model: GEMINI_FALLBACK_MODEL,
+    contents: prompt,
+    config: {
+      temperature: 0,
+      topP: 0.8,
+      topK: 20,
+      maxOutputTokens: 2048,
+    },
+  });
+
+  return response.text || "";
+}
+
+async function generateGapReport(prompt: string) {
+  const useClaude = Boolean(process.env.ANTHROPIC_API_KEY);
+  const modelUsed = useClaude ? CLAUDE_GAP_REPORT_MODEL : GEMINI_FALLBACK_MODEL;
+
+  const text = await withRetry(
+    () =>
+      withTimeout(
+        () => (useClaude ? generateWithClaude(prompt) : generateWithGemini(prompt)),
+        60000,
+        "Gap report generation"
+      ),
+    {
+      maxRetries: 2,
+      retryableErrors: (error) =>
+        error instanceof Error &&
+        (error.message.includes("429") ||
+          error.message.includes("500") ||
+          error.message.includes("503") ||
+          error.message.includes("529") ||
+          error.message.includes("overloaded") ||
+          error.message.includes("timed out")),
+    }
+  );
+
+  return { text, modelUsed };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.ANTHROPIC_API_KEY && !process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: "Missing GEMINI_API_KEY." },
+        { error: "Gap report generation is not configured." },
         { status: 500 }
       );
     }
@@ -92,7 +157,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "AI gap reports are available on Pro and Premium plans. Upgrade to generate this report.",
+            "AI gap reports are available on paid plans. Upgrade to generate this report.",
         },
         { status: 403 }
       );
@@ -251,43 +316,23 @@ Opportunity:
 ${JSON.stringify(opportunity, null, 2)}
 `;
 
-    const response = await withRetry(
-      () =>
-        withTimeout(
-          () =>
-            ai.models.generateContent({
-              model: "gemini-2.5-pro",
-              contents: prompt,
-              config: {
-                temperature: 0,
-                topP: 0.8,
-                topK: 20,
-                maxOutputTokens: 2048,
-              },
-            }),
-          30000,
-          "Gemini gap report"
-        ),
-      { maxRetries: 2 }
-    );
-
-    const responseText = response.text;
+    const { text: responseText, modelUsed } = await generateGapReport(prompt);
 
     if (!responseText) {
       return NextResponse.json(
-        { error: "Gemini did not return readable text." },
-        { status: 500 }
+        { error: "The report generator did not return readable text." },
+        { status: 502 }
       );
     }
 
     const parsedResult = safeParseJson<Record<string, unknown>>(
       responseText,
-      "Gemini gap report"
+      "Gap report"
     );
 
     if (!parsedResult.success) {
       return NextResponse.json(
-        { error: "Gemini returned malformed output." },
+        { error: "The report generator returned malformed output. Please try again." },
         { status: 502 }
       );
     }
@@ -304,7 +349,7 @@ ${JSON.stringify(opportunity, null, 2)}
       gaps: arrayOrEmpty(parsed.gaps),
       recommended_actions: arrayOrEmpty(parsed.recommended_actions),
       ai_explanation: parsed.ai_explanation || "",
-      model_used: "gemini-2.5-pro",
+      model_used: modelUsed,
       profile_snapshot: profileContext,
       opportunity_snapshot: opportunity,
       updated_at: new Date().toISOString(),
@@ -319,7 +364,11 @@ ${JSON.stringify(opportunity, null, 2)}
       .single();
 
     if (saveError) {
-      return NextResponse.json({ error: saveError.message }, { status: 500 });
+      console.error("gap report save error:", saveError.message);
+      return NextResponse.json(
+        { error: "Could not save the report. Please try again." },
+        { status: 500 }
+      );
     }
 
     if (existingUsage?.id) {
@@ -332,7 +381,7 @@ ${JSON.stringify(opportunity, null, 2)}
         .eq("id", existingUsage.id);
 
       if (usageError) {
-        return NextResponse.json({ error: usageError.message }, { status: 500 });
+        console.error("gap report usage update error:", usageError.message);
       }
     } else {
       const { error: usageError } = await supabase
@@ -345,7 +394,7 @@ ${JSON.stringify(opportunity, null, 2)}
         });
 
       if (usageError) {
-        return NextResponse.json({ error: usageError.message }, { status: 500 });
+        console.error("gap report usage insert error:", usageError.message);
       }
     }
 
@@ -361,13 +410,12 @@ ${JSON.stringify(opportunity, null, 2)}
       },
     });
   } catch (error) {
+    console.error(
+      "score-opportunity error:",
+      error instanceof Error ? error.message : error
+    );
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Score report generation failed.",
-      },
+      { error: "Score report generation failed. Please try again." },
       { status: 500 }
     );
   }
