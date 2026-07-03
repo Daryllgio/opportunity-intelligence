@@ -8,7 +8,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
-import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 import { updateOpportunityWithLifecycle } from "@/lib/opportunities/update-opportunity";
 
 type DraftOpportunity = {
@@ -166,83 +165,53 @@ export default function AdminReviewPage() {
   }
 
   async function approveDraft(draft: DraftOpportunity) {
-    setMessage("");
+    setMessage(
+      "Publishing: finding and verifying the application destination. This reads the live page and can take a minute."
+    );
 
-    const draftUrl = draft.source_url || draft.application_url || "";
-    const normalizedUrl = draft.normalized_url || normalizeUrl(draftUrl);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-    if (normalizedUrl) {
-      const { data: existingOpportunity } = await supabase
-        .from("opportunities")
-        .select("id, title")
-        .eq("normalized_url", normalizedUrl)
-        .maybeSingle();
+    try {
+      const response = await fetch("/api/admin/publish-draft", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: session?.access_token
+            ? `Bearer ${session.access_token}`
+            : "",
+        },
+        body: JSON.stringify({ draftId: draft.id }),
+      });
 
-      if (existingOpportunity) {
+      const result = await response.json();
+
+      if (response.status === 409 && result.duplicateId) {
         setDuplicateMatches((current) => ({
           ...current,
-          [draft.id]: {
-            id: existingOpportunity.id,
-            title: existingOpportunity.title ?? "",
-          },
+          [draft.id]: { id: result.duplicateId, title: draft.title ?? "" },
         }));
-
-        setMessage(
-          `Duplicate detected. Already published: ${existingOpportunity.title}. You can update the existing opportunity from this draft.`
-        );
+        setMessage(result.error);
         return;
       }
+
+      if (!response.ok) {
+        setMessage(
+          result.reasons
+            ? `${result.error} ${result.reasons[0] || ""}`
+            : result.error || "Publish failed."
+        );
+        await loadDrafts();
+        return;
+      }
+
+      setMessage(
+        `Published with verified destination: ${result.applicationUrl}`
+      );
+    } catch {
+      setMessage("Publish failed. Please try again.");
     }
-
-const opportunityPayload = {
-      normalized_url: normalizedUrl || null,
-      title: draft.title,
-      provider: draft.provider,
-      type: draft.type,
-      description: draft.description,
-      ai_summary: draft.ai_summary,
-      country: draft.country || "Global",
-      eligible_countries: draft.eligible_countries || [],
-      eligible_education_levels: draft.eligible_education_levels || [],
-      eligible_fields: draft.eligible_fields || [],
-      funding_amount: draft.funding_amount,
-      funding_type: draft.funding_type,
-      deadline: draft.deadline,
-      application_url: draft.application_url,
-      effort_level: draft.effort_level,
-      reward_level: draft.reward_level,
-      competitiveness_factors: draft.competitiveness_factors || [],
-      source_url: draft.source_url || draft.application_url,
-      is_active: true,
-      is_approved: true,
-    };
-
-    const { error: insertError } = await supabase.from("opportunities").insert({
-      ...opportunityPayload,
-      ...buildLifecycleFields(opportunityPayload),
-      updated_at: new Date().toISOString(),
-    });
-
-    if (insertError) {
-      setMessage(insertError.message);
-      return;
-    }
-
-    const { error: updateError } = await supabase
-      .from("opportunity_drafts")
-      .update({
-        extraction_status: "approved",
-        review_notes: notes[draft.id] || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", draft.id);
-
-    if (updateError) {
-      setMessage(updateError.message);
-      return;
-    }
-
-    setMessage("Draft approved and published to opportunities.");
     await loadDrafts();
   }
 
@@ -262,6 +231,9 @@ const opportunityPayload = {
     let updateError: Error | null = null;
 
     try {
+      // Content fields only. The live row's application_url stays as-is —
+      // it was AI-verified at publish time and is re-verified on rotation;
+      // a draft's stored URL must never overwrite a verified destination.
       await updateOpportunityWithLifecycle({
         supabase,
         opportunityId: duplicate.id,
@@ -279,11 +251,9 @@ const opportunityPayload = {
           funding_amount: draft.funding_amount,
           funding_type: draft.funding_type,
           deadline: draft.deadline,
-          application_url: draft.application_url,
           effort_level: draft.effort_level,
           reward_level: draft.reward_level,
           competitiveness_factors: draft.competitiveness_factors || [],
-          source_url: draft.source_url || draft.application_url,
           is_active: true,
           is_approved: true,
         },
