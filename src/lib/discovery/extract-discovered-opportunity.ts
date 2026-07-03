@@ -115,6 +115,21 @@ Important rules:
 - Keep type to one of the supported opportunity types.
 - Do not classify general internships as opportunities unless they are structured pipeline/career development programs.
 - Do not classify ordinary conferences as opportunities unless there is a clear student funding, presentation, leadership, selective, or career-development opportunity.
+- DEGREE PROGRAMS ARE NOT OPPORTUNITIES. If the page is about admission to or
+  enrollment in a degree (bachelor's, master's, MD, JD, MBA, PhD, honors
+  college), course registration, or applying to a university itself, set
+  title and type to null. We only list things students apply to ON TOP of
+  their education (a scholarship FOR admitted students is fine; the admission
+  itself is not).
+- career_development_program means a selective, cohort-based professional
+  development program with its own application and defined start/end (e.g.
+  MLT Career Prep, Forte MBALaunch). It is NOT a job posting, a paid course
+  or bootcamp, a degree, an advising service, or generic career resources.
+- For competitions, fill eligible_fields with the fields the competition is
+  actually about (hackathon -> Computer Science; case competition ->
+  Business Administration; essay contest on policy -> Political Science).
+  Only leave eligible_fields empty when the competition is truly open to all
+  fields.
 
 Discovery context:
 ${JSON.stringify(discoveryContext || {}, null, 2)}

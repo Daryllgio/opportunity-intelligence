@@ -81,6 +81,107 @@ function hasAny(text: string, signals: string[]) {
   return signals.some((signal) => text.includes(signal));
 }
 
+// ---------------------------------------------------------------------------
+// Degree-program / admissions detection.
+//
+// We list opportunities students apply to ON TOP of their education —
+// scholarships, fellowships, research programs. We never list the education
+// itself: degree admissions (BA/MD/JD/MBA/PhD enrollment), course
+// registration, or general university applications.
+//
+// Funding words in the record's own title override degree signals, because
+// "Admission Bursary" and "Entrance Scholarship" are real opportunities that
+// legitimately live on admissions pages.
+// ---------------------------------------------------------------------------
+
+const FUNDING_TITLE_SIGNALS = [
+  "scholarship",
+  "fellowship",
+  "bursary",
+  "grant",
+  "award",
+  "stipend",
+  "prize",
+];
+
+const DEGREE_TITLE_PATTERNS: RegExp[] = [
+  /\b(ba|bs|bsc|bfa|bba|beng|md|jd|mba|llb|ma|ms|msc|meng|mfa|phd|dds|dvm|pharmd)\b.{0,4}\b(in|at|program|degree)\b/,
+  /\b(bachelor|master|doctor)s? (of|degree)\b/,
+  /\bjuris doctor\b/,
+  /\b(honors|honours) (program|college|degree)\b/,
+  /\b(md|jd|mba|phd|dds|dvm) program\b/,
+  /\bdegree program\b/,
+  /\b(undergraduate|graduate|freshman|transfer) (admission|admissions|application to)\b/,
+  /\bprogram admission\b/,
+  /\badmission requirements\b/,
+];
+
+const DEGREE_TEXT_SIGNALS = [
+  "freshman application",
+  "transfer application",
+  "undergraduate admissions",
+  "graduate admissions",
+  "admission requirements",
+  "apply for admission",
+  "application for admission",
+  "common app",
+  "coalition application",
+  "course registration",
+  "register in courses",
+  "register for classes",
+  "enroll in classes",
+  "add or drop courses",
+  "amcas",
+  "aadsas",
+  "lsac",
+  "ouac",
+  "degree requirements",
+  "declare a major",
+];
+
+/**
+ * True when the record IS a degree program / admissions / course-registration
+ * page rather than an opportunity layered on top of one.
+ */
+export function looksLikeDegreeProgramRecord({
+  title,
+  text,
+}: {
+  title?: unknown;
+  text?: unknown;
+}): { isDegree: boolean; reason: string | null } {
+  const normalizedTitle = normalize(title);
+  const combined = normalize(`${title || ""} ${text || ""}`);
+
+  // Funding-named records are opportunities even when they live on
+  // admissions pages ("Entrance Scholarship", "Admission Bursary").
+  if (hasAny(normalizedTitle, FUNDING_TITLE_SIGNALS)) {
+    return { isDegree: false, reason: null };
+  }
+
+  const titlePattern = DEGREE_TITLE_PATTERNS.find((pattern) =>
+    pattern.test(normalizedTitle)
+  );
+  if (titlePattern) {
+    return {
+      isDegree: true,
+      reason: `Title reads as a degree/admissions record ("${normalizedTitle.slice(0, 70)}").`,
+    };
+  }
+
+  const textHits = DEGREE_TEXT_SIGNALS.filter((signal) =>
+    combined.includes(signal)
+  );
+  if (textHits.length >= 2) {
+    return {
+      isDegree: true,
+      reason: `Content is dominated by degree/admissions signals (${textHits.slice(0, 3).join(", ")}).`,
+    };
+  }
+
+  return { isDegree: false, reason: null };
+}
+
 export function shouldRejectExtractedOpportunity({
   type,
   title,
@@ -96,6 +197,17 @@ export function shouldRejectExtractedOpportunity({
 }) {
   const normalizedType = normalize(type);
   const combined = normalize(`${title || ""} ${url || ""} ${description || ""} ${ai_summary || ""}`);
+
+  const degreeCheck = looksLikeDegreeProgramRecord({
+    title,
+    text: `${description || ""} ${ai_summary || ""}`,
+  });
+  if (degreeCheck.isDegree) {
+    return {
+      reject: true,
+      reason: `Outside target scope: ${degreeCheck.reason}`,
+    };
+  }
 
   const hasAllowedType = ALLOWED_CORE_TYPES.some(
     (allowed) =>
@@ -226,6 +338,15 @@ export function shouldRejectDiscoveredPageBeforeExtraction({
   const hasStrongAllowedSignal = hasAny(combined, STRONG_ALLOWED_PAGE_SIGNALS);
   const hasStandaloneInternshipSignal = hasAny(combined, STANDALONE_INTERNSHIP_SIGNALS);
   const hasStrongDisallowedSignal = hasAny(combined, STRONG_DISALLOWED_PAGE_SIGNALS);
+
+  // Degree/admissions pages with no funding language never reach extraction.
+  const degreeCheck = looksLikeDegreeProgramRecord({ title, text });
+  if (degreeCheck.isDegree && !hasStrongAllowedSignal) {
+    return {
+      reject: true,
+      reason: `Pre-extraction scope reject: ${degreeCheck.reason}`,
+    };
+  }
 
   if (hasDisallowedStandaloneType && !hasAllowedType) {
     return {
