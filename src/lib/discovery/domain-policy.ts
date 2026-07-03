@@ -545,16 +545,22 @@ export function providerMatchesDomain(
   const concatenatedMeaningful = tokens.join("");
   const acronym = rawTokens.map((token) => token[0]).join("");
 
+  // Raw tokens still contain generic org words ("society", "fund"), so they
+  // may only drive matching when the provider is stopword-only ("The Fund").
+  // Otherwise "…Honor Medical Society" would own camsociety.org.
+  const exactTokens = tokens.length ? tokens : rawTokens;
+
   for (const label of labels) {
     // Exact token match ("td" === "td").
-    if (rawTokens.some((token) => token === label)) {
+    if (exactTokens.some((token) => token === label)) {
       return { matched: true, reason: `Provider token matches domain label "${label}".` };
     }
 
     // Provider token embedded in label ("gwags" ⊂ "gwagsfoundation").
     if (
       tokens.some((token) => token.length >= 4 && label.includes(token)) ||
-      rawTokens.some((token) => token.length >= 5 && label.includes(token))
+      (tokens.length === 0 &&
+        rawTokens.some((token) => token.length >= 5 && label.includes(token)))
     ) {
       return {
         matched: true,

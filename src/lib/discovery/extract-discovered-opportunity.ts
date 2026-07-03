@@ -3,7 +3,7 @@ import {
   OPPORTUNITY_TYPES,
   normalizeOpportunityType,
 } from "@/lib/discovery/taxonomy";
-import { withRetry } from "@/lib/utils/retry";
+import { isRetryableError, withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
 
@@ -150,9 +150,11 @@ Page text:
 ${pageText.slice(0, 30000)}
 `;
 
-  const response = await withRetry(
-    () =>
-      withTimeout(
+  // Generate + parse together inside the retry loop: Gemini occasionally
+  // returns malformed/truncated JSON, and resampling usually fixes it.
+  const parsed = await withRetry(
+    async () => {
+      const response = await withTimeout(
         () =>
           ai.models.generateContent({
             model: "gemini-2.5-flash",
@@ -163,26 +165,34 @@ ${pageText.slice(0, 30000)}
           }),
         60000,
         "Gemini discovery extraction"
-      ),
-    { maxRetries: 2 }
+      );
+
+      const rawText = response.text;
+
+      if (!rawText) {
+        throw new Error("Gemini did not return extraction text.");
+      }
+
+      const parsedResult = safeParseJson<Record<string, unknown>>(
+        rawText,
+        "Gemini discovery extraction"
+      );
+
+      if (!parsedResult.success) {
+        throw new Error(parsedResult.error);
+      }
+
+      return parsedResult.data;
+    },
+    {
+      maxRetries: 2,
+      retryableErrors: (error) =>
+        isRetryableError(error) ||
+        (error instanceof Error &&
+          (error.message.includes("Failed to parse Gemini discovery extraction") ||
+            error.message.includes("Gemini did not return extraction text"))),
+    }
   );
-
-  const rawText = response.text;
-
-  if (!rawText) {
-    throw new Error("Gemini did not return extraction text.");
-  }
-
-  const parsedResult = safeParseJson<Record<string, unknown>>(
-    rawText,
-    "Gemini discovery extraction"
-  );
-
-  if (!parsedResult.success) {
-    throw new Error(parsedResult.error);
-  }
-
-  const parsed = parsedResult.data;
 
   return {
     title: stringOrNull(parsed.title),

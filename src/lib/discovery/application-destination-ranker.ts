@@ -39,7 +39,60 @@ import {
   hasAnySignal,
   normalizeMatchText,
   tokenOverlap,
+  tokenSet,
 } from "@/lib/discovery/text-match";
+
+// Tokens too common across opportunity titles to prove a page is about THIS
+// opportunity. Used by the distinctive-title guard in evaluateCandidate.
+const GENERIC_OPPORTUNITY_TITLE_TOKENS = new Set([
+  "the",
+  "and",
+  "for",
+  "student",
+  "students",
+  "research",
+  "fellowship",
+  "fellowships",
+  "scholarship",
+  "scholarships",
+  "program",
+  "programs",
+  "award",
+  "awards",
+  "grant",
+  "grants",
+  "summer",
+  "annual",
+  "memorial",
+  "medical",
+  "health",
+  "science",
+  "sciences",
+  "school",
+  "university",
+  "college",
+  "undergraduate",
+  "graduate",
+  "doctoral",
+  "postdoctoral",
+  "national",
+  "international",
+  "foundation",
+  "society",
+  "association",
+  "institute",
+  "competition",
+  "leadership",
+  "development",
+  "career",
+  "pipeline",
+  "training",
+  "education",
+  "studentship",
+  "studentships",
+  "opportunity",
+  "opportunities",
+]);
 
 export type DestinationConfidence = "high" | "medium" | "low" | "none";
 
@@ -138,7 +191,13 @@ function isPressOrNewsUrl(url: string) {
     lower.includes("/press/") ||
     lower.includes("/blog/") ||
     lower.includes("/stories/") ||
-    lower.includes("/article/")
+    lower.includes("/article/") ||
+    lower.includes("news-release") ||
+    lower.includes("news_release") ||
+    lower.includes("newsrelease") ||
+    lower.includes("media-release") ||
+    lower.includes("news-story") ||
+    lower.includes("news_story")
   );
 }
 
@@ -371,6 +430,27 @@ function classifyActionLink(link: CapturedLink): ApplicationActionType | null {
   return null;
 }
 
+// Site-chrome actions that read as "register"/"sign up" but have nothing to
+// do with applying to an opportunity (voter registration, newsletters, events).
+const UNRELATED_ACTION_SIGNALS = [
+  "register to vote",
+  "voter registration",
+  "vote",
+  "voting",
+  "election",
+  "newsletter",
+  "subscribe",
+  "mailing list",
+  "donate",
+  "donation",
+  "volunteer",
+  "membership",
+  "become a member",
+  "rsvp",
+  "event registration",
+  "sign up for updates",
+];
+
 /**
  * Find the strongest applicant-facing action link on a captured page.
  * Only actions pointing at safe targets (same/related domain, provider-owned
@@ -380,13 +460,18 @@ function findBestApplicationAction({
   links,
   pageUrl,
   provider,
+  title,
+  opportunityType,
 }: {
   links: CapturedLink[];
   pageUrl: string;
   provider: string | null | undefined;
+  title?: string | null;
+  opportunityType?: string | null;
 }): ApplicationAction | null {
   const pageDomain = getDomain(pageUrl);
   const pageKey = pageUrl.split("#")[0].replace(/\/$/, "");
+  const pagePathTokens = getPathTokens(pageUrl);
   const actions: ApplicationAction[] = [];
 
   for (const link of links.slice(0, 400)) {
@@ -397,6 +482,46 @@ function findBestApplicationAction({
 
     const type = classifyActionLink(link);
     if (!type) continue;
+
+    const actionContext = normalizeMatchText(
+      `${link.text} ${getPathTokens(link.href).join(" ")}`
+    );
+
+    if (hasAnySignal(actionContext, UNRELATED_ACTION_SIGNALS)) continue;
+
+    const typeText = String(opportunityType || "").replace(/_/g, " ");
+    const topical =
+      tokenOverlap(`${title || ""} ${typeText}`, actionContext) > 0 ||
+      getPathTokens(link.href).some(
+        (token) => token.length >= 4 && pagePathTokens.includes(token)
+      );
+
+    // Registration links are the most boilerplate-prone class (member signup,
+    // account creation): they must stay on topic — no root-level exemption.
+    if (type === "registration_page" && !topical) continue;
+
+    // Apply links must be either an unambiguous apply CTA or on topic.
+    // This keeps "Apply Now" buttons while dropping links that apply to
+    // something else entirely ("Apply for New Residential Water Service").
+    if (type === "internal_application_page" && !topical) {
+      const label = normalizeMatchText(link.text);
+      const strongApplyCta =
+        label === "apply" ||
+        label === "apply online" ||
+        hasAnySignal(label, [
+          "apply now",
+          "apply today",
+          "apply here",
+          "start application",
+          "start your application",
+          "begin application",
+          "submit application",
+          "application form",
+          "how to apply",
+        ]);
+
+      if (!strongApplyCta) continue;
+    }
 
     const actionDomain = getDomain(link.href);
     const sameDomain =
@@ -577,6 +702,24 @@ async function evaluateCandidate({
     return reject("unknown", "Destination renders a page-not-found message.");
   }
 
+  // Republished announcements don't always have news-ish URLs — catch them by
+  // their opening text/title instead. A news release is never an application
+  // destination, even when it links to one.
+  const newsProbe = normalizeMatchText(
+    `${page.title || ""} ${pageText.slice(0, 600)}`
+  );
+  if (
+    hasAnySignal(newsProbe, [
+      "news release",
+      "press release",
+      "for immediate release",
+      "media release",
+    ]) ||
+    normalizeMatchText(page.title || "").includes("announces")
+  ) {
+    return reject("press_or_news", "Page reads as a news/press release.");
+  }
+
   const combinedText = [candidate.title, candidate.snippet, page.title, pageText]
     .filter(Boolean)
     .join(" ");
@@ -604,6 +747,8 @@ async function evaluateCandidate({
     links: page.links,
     pageUrl: finalUrl,
     provider: input.provider,
+    title: input.title,
+    opportunityType: input.type,
   });
 
   // Destination = the apply link when we found one, else the page itself.
@@ -675,10 +820,32 @@ async function evaluateCandidate({
   reasons.push(...ownership.reasons);
 
   const slugText = getPathTokens(candidate.url).join(" ");
-  const titleMatch = Math.max(
+  let titleMatch = Math.max(
     tokenOverlap(input.title, `${candidate.title || ""} ${page.title || ""} ${slugText}`),
     tokenOverlap(input.title, combinedText.slice(0, 4000)) * 0.9
   );
+
+  // Generic tokens ("student research fellowship") can produce a high overlap
+  // on a page about a DIFFERENT opportunity. When the title has distinctive
+  // tokens (names like "Kuckein"), at least one must appear somewhere on the
+  // page — otherwise the match is capped below every confidence gate.
+  const distinctiveTokens = Array.from(tokenSet(input.title)).filter(
+    (token) => !GENERIC_OPPORTUNITY_TITLE_TOKENS.has(token)
+  );
+  if (distinctiveTokens.length) {
+    const haystack = normalizeMatchText(
+      `${candidate.title || ""} ${page.title || ""} ${slugText} ${combinedText.slice(0, 8000)}`
+    );
+    const hasDistinctiveMatch = distinctiveTokens.some((token) =>
+      haystack.includes(token)
+    );
+    if (!hasDistinctiveMatch) {
+      titleMatch = Math.min(titleMatch, 0.3);
+      reasons.push(
+        "No distinctive title token found on the page — title match capped."
+      );
+    }
+  }
   const deadlineMatch = deadlineAppearsInText(input.deadline, combinedText);
   const destinationQuality = assessSourceQuality(destinationUrl);
   const officialLeaningDomain = destinationQuality.isOfficialLeaning;
