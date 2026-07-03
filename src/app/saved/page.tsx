@@ -189,15 +189,57 @@ export default function SavedPage() {
     (row) => activeTab === "all" || row.status === activeTab
   );
 
+  function exportCsv() {
+    const header = ["Title", "Provider", "Type", "Deadline", "Status", "Match", "Application URL"];
+    const escape = (value: unknown) =>
+      `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const lines = [
+      header.join(","),
+      ...rows.map((row) =>
+        [
+          row.opportunity.title,
+          row.opportunity.provider,
+          row.opportunity.type,
+          row.opportunity.deadline,
+          STATUS_META[row.status].label,
+          row.score,
+          row.opportunity.application_url,
+        ]
+          .map(escape)
+          .join(",")
+      ),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "oppscore-saved-opportunities.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="min-h-screen bg-white dark:bg-neutral-950">
       <AppNav />
 
       <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Saved</h1>
-        <p className="mt-1 text-[15px] text-neutral-500 dark:text-neutral-400">
-          Track where each application stands.
-        </p>
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Saved</h1>
+            <p className="mt-1 text-[15px] text-neutral-500 dark:text-neutral-400">
+              Track where each application stands.
+            </p>
+          </div>
+          {rows.length > 0 && (
+            <button
+              type="button"
+              onClick={exportCsv}
+              className="shrink-0 text-sm text-neutral-400 underline underline-offset-2 hover:text-neutral-600 dark:hover:text-neutral-300"
+            >
+              Export CSV
+            </button>
+          )}
+        </div>
 
         {loading ? (
           <div className="mt-8 space-y-3">
