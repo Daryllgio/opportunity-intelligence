@@ -1,28 +1,24 @@
 import { AppNav } from "@/components/layout/app-nav";
-import { Badge } from "@/components/ui/badge";
 import { ProfileForm } from "@/components/profile/profile-form";
+
+export const metadata = {
+  title: "Edit profile",
+};
 
 export default function EditProfilePage() {
   return (
-    <main className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white dark:bg-neutral-950">
       <AppNav />
 
-      <section className="px-6 py-8">
-        <div className="mx-auto max-w-4xl">
-          <Badge variant="secondary">Profile Builder</Badge>
+      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Edit profile</h1>
+        <p className="mt-1 max-w-xl text-[15px] text-neutral-500 dark:text-neutral-400">
+          Everything here feeds your match scores — the more complete it is,
+          the sharper the results.
+        </p>
 
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-            Edit your opportunity profile
-          </h1>
-
-          <p className="mt-3 text-muted-foreground">
-            Add the academic background and experience details OppScore uses to
-            evaluate your competitiveness.
-          </p>
-
-          <ProfileForm />
-        </div>
-      </section>
-    </main>
+        <ProfileForm />
+      </main>
+    </div>
   );
 }

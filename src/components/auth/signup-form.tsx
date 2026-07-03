@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -15,8 +14,6 @@ export function SignupForm() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -26,14 +23,8 @@ export function SignupForm() {
     setLoading(true);
     setMessage("");
 
-    if (password.length < 6) {
-      setMessage("Password must be at least 6 characters.");
-      setLoading(false);
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setMessage("Passwords do not match.");
+    if (password.length < 8) {
+      setMessage("Password must be at least 8 characters.");
       setLoading(false);
       return;
     }
@@ -59,9 +50,8 @@ export function SignupForm() {
       return;
     }
 
-    setMessage("Account created. Check your email if confirmation is required.");
-    // Send new users straight to profile setup so they get scored matches sooner.
-    router.push("/profile/edit");
+    // Straight into guided profile setup — scored matches need a profile.
+    router.push("/onboarding");
   }
 
   async function handleGoogleSignup() {
@@ -71,7 +61,7 @@ export function SignupForm() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/profile/edit`,
+        redirectTo: `${window.location.origin}/onboarding`,
       },
     });
 
@@ -82,113 +72,94 @@ export function SignupForm() {
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardContent className="p-6">
-        <div className="space-y-5">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Create your account
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Complete your profile after signing up to get personalized
-              opportunity scores.
-            </p>
-          </div>
+    <div className="w-full">
+      <h1 className="text-2xl font-semibold tracking-tight">
+        Create your account
+      </h1>
+      <p className="mt-2 text-sm text-neutral-500">
+        Free to start — set up your profile and see your matches.
+      </p>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={handleGoogleSignup}
-            disabled={googleLoading}
-          >
-            {googleLoading ? "Connecting..." : "Continue with Google"}
-          </Button>
+      <Button
+        type="button"
+        variant="outline"
+        className="mt-8 h-10 w-full"
+        onClick={handleGoogleSignup}
+        disabled={googleLoading}
+      >
+        {googleLoading ? "Connecting…" : "Continue with Google"}
+      </Button>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-background px-2 text-muted-foreground">
-                Continue with email
-              </span>
-            </div>
-          </div>
-
-          <form onSubmit={handleSignup} className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="firstName">First name</Label>
-                <Input
-                  id="firstName"
-                  value={firstName}
-                  onChange={(event) => setFirstName(event.target.value)}
-                  placeholder="First name"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="lastName">Last name</Label>
-                <Input
-                  id="lastName"
-                  value={lastName}
-                  onChange={(event) => setLastName(event.target.value)}
-                  placeholder="Last name"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="signupEmail">Email</Label>
-              <Input
-                id="signupEmail"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="signupPassword">Password</Label>
-              <Input
-                id="signupPassword"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Create a password"
-                minLength={6}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Repeat your password"
-                minLength={6}
-                required
-              />
-            </div>
-
-            {message && (
-              <p className="text-sm text-muted-foreground">{message}</p>
-            )}
-
-            <Button className="w-full" type="submit" disabled={loading}>
-              {loading ? "Creating account..." : "Create account"}
-            </Button>
-          </form>
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-neutral-200 dark:border-neutral-800" />
         </div>
-      </CardContent>
-    </Card>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-white px-3 text-neutral-400 dark:bg-neutral-950">
+            or with email
+          </span>
+        </div>
+      </div>
+
+      <form onSubmit={handleSignup} className="space-y-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="firstName">First name</Label>
+            <Input
+              id="firstName"
+              value={firstName}
+              onChange={(event) => setFirstName(event.target.value)}
+              placeholder="First name"
+              className="h-10"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="lastName">Last name</Label>
+            <Input
+              id="lastName"
+              value={lastName}
+              onChange={(event) => setLastName(event.target.value)}
+              placeholder="Last name"
+              className="h-10"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="signupEmail">Email</Label>
+          <Input
+            id="signupEmail"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            className="h-10"
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="signupPassword">Password</Label>
+          <Input
+            id="signupPassword"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="At least 8 characters"
+            minLength={8}
+            className="h-10"
+            required
+          />
+        </div>
+
+        {message && <p className="text-sm text-red-600">{message}</p>}
+
+        <Button className="h-10 w-full" type="submit" disabled={loading}>
+          {loading ? "Creating account…" : "Create account"}
+        </Button>
+      </form>
+    </div>
   );
 }

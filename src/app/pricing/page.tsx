@@ -1,139 +1,168 @@
-"use client";
-
 import Link from "next/link";
-import { AppNav } from "@/components/layout/app-nav";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import type { Metadata } from "next";
 import { PLAN_LIMITS } from "@/lib/billing/plans";
 
-// Prices come from PLAN_LIMITS (single source of truth); marketing copy lives here.
-const plans = [
+export const metadata: Metadata = {
+  title: "Pricing",
+  description:
+    "OppScore plans: browse free, or unlock profile-based matching, competitiveness reports, saving, and deadline reminders.",
+};
+
+const TIERS = [
   {
-    name: PLAN_LIMITS.free.name,
-    price: `$${PLAN_LIMITS.free.price}`,
-    cadence: "",
-    badge: "Free",
-    description:
-      "Explore the opportunity database before choosing a paid plan.",
+    plan: PLAN_LIMITS.free,
+    tagline: "See what's out there.",
     features: [
-      "Opportunity database access",
-      "Basic opportunity browsing",
-      "Save up to 10 opportunities",
+      "Browse all opportunity types",
+      "Basic opportunity info",
+      "Verified application links",
     ],
     cta: "Start free",
-    href: "/signup",
     highlighted: false,
   },
   {
-    name: PLAN_LIMITS.pro.name,
-    price: `$${PLAN_LIMITS.pro.price}`,
-    cadence: "/month",
-    badge: "Most popular",
-    description:
-      "For students actively comparing opportunities and deciding where to focus their applications.",
+    plan: PLAN_LIMITS.basic,
+    tagline: "For a focused search.",
     features: [
-      "Profile-based matching across up to 3 opportunity categories",
-      "Deadline tracking",
-      "Effort-to-reward insight",
-      "40 gap reports per month",
+      "Full opportunity details",
+      "Matching in 1 category",
+      "20 competitiveness reports / month",
+      "Save opportunities + deadline reminders",
     ],
-    cta: "Upgrade to Pro",
-    href: "/signup",
+    cta: "Get Basic",
+    highlighted: false,
+  },
+  {
+    plan: PLAN_LIMITS.pro,
+    tagline: "For an active application season.",
+    features: [
+      "Full opportunity details",
+      "Matching in 2 categories",
+      "40 competitiveness reports / month",
+      "Save opportunities + deadline reminders",
+    ],
+    cta: "Get Pro",
     highlighted: true,
   },
   {
-    name: PLAN_LIMITS.premium.name,
-    price: `$${PLAN_LIMITS.premium.price}`,
-    cadence: "/month",
-    badge: "Premium",
-    description:
-      "For students running a broader search across multiple opportunity types and application cycles.",
+    plan: PLAN_LIMITS.premium,
+    tagline: "For a search across everything.",
     features: [
-      "Profile-based matching across all opportunity categories",
-      "Faster updates for new and renewed opportunities",
-      "Deadline tracking",
-      "Effort-to-reward insight",
-      "80 gap reports per month",
+      "Full opportunity details",
+      "Matching in 4 categories",
+      "80 competitiveness reports / month",
+      "Save opportunities + deadline reminders",
+      "Priority score refreshes",
     ],
-    cta: "Upgrade to Premium",
-    href: "/signup",
+    cta: "Get Premium",
     highlighted: false,
   },
 ];
 
 export default function PricingPage() {
   return (
-    <main className="min-h-screen bg-background">
-      <AppNav />
+    <main className="min-h-screen bg-white dark:bg-neutral-950">
+      <header className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+        <Link
+          href="/"
+          className="text-[15px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-100"
+        >
+          OppScore
+        </Link>
+        <nav className="flex items-center gap-6">
+          <Link
+            href="/login"
+            className="text-sm text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/signup"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Get started
+          </Link>
+        </nav>
+      </header>
 
-      <section className="px-6 py-12">
-        <div className="mx-auto max-w-7xl">
-          <div className="mx-auto max-w-3xl text-center">
-            <Badge variant="secondary">Pricing</Badge>
+      <section className="mx-auto max-w-6xl px-6 pb-24 pt-16">
+        <div className="max-w-xl">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            Simple plans, honest limits
+          </h1>
+          <p className="mt-3 text-[15px] leading-7 text-neutral-500 dark:text-neutral-400">
+            Every plan browses the same verified opportunities. Paid plans add
+            profile-based matching, competitiveness reports, saving, and
+            deadline reminders.
+          </p>
+        </div>
 
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">
-              Choose your plan
-            </h1>
-          </div>
-
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            {plans.map((plan) => (
-              <Card
-                key={plan.name}
-                className={plan.highlighted ? "border-primary shadow-sm" : ""}
-              >
-                <CardContent className="flex h-full flex-col p-6">
-                  <Badge
-                    className="w-fit"
-                    variant={plan.highlighted ? "default" : "outline"}
-                  >
-                    {plan.badge}
-                  </Badge>
-
-                  <h2 className="mt-6 text-2xl font-semibold">{plan.name}</h2>
-
-                  <div className="mt-4 flex items-end gap-1">
-                    <span className="text-4xl font-semibold">{plan.price}</span>
-                    {plan.cadence && (
-                      <span className="pb-1 text-muted-foreground">
-                        {plan.cadence}
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="mt-4 min-h-12 text-sm leading-6 text-muted-foreground">
-                    {plan.description}
-                  </p>
-
-                  <ul className="mt-4 flex-1 space-y-3 text-sm text-muted-foreground">
-                    {plan.features.map((feature) => (
-                      <li key={feature}>• {feature}</li>
-                    ))}
-                  </ul>
-
-                  <Button
-                    asChild
-                    className="mt-8 w-full"
-                    variant={plan.highlighted ? "default" : "outline"}
-                  >
-                    <Link href={plan.href}>{plan.cta}</Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          <Card className="mt-8">
-            <CardContent className="p-6">
-              <h2 className="text-xl font-semibold">
-                How ranking and reports work
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                OppScore compares eligible opportunities against your profile and ranks the ones where you appear most competitive. Gap reports provide a deeper breakdown of your strengths, gaps, and positioning for a specific opportunity. Rankings and reports are saved so you can return to them later while the opportunity remains active.
+        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {TIERS.map(({ plan, tagline, features, cta, highlighted }) => (
+            <div
+              key={plan.name}
+              className={`flex flex-col rounded-xl border p-6 ${
+                highlighted
+                  ? "border-neutral-900 dark:border-neutral-100"
+                  : "border-neutral-200 dark:border-neutral-800"
+              }`}
+            >
+              <div className="flex items-baseline justify-between">
+                <h2 className="text-base font-semibold">{plan.name}</h2>
+                {highlighted && (
+                  <span className="text-xs font-medium text-neutral-400">
+                    Most popular
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-sm text-neutral-400">{tagline}</p>
+              <p className="mt-5">
+                <span className="text-3xl font-semibold">${plan.price}</span>
+                {plan.price > 0 && (
+                  <span className="text-sm text-neutral-400"> / month</span>
+                )}
               </p>
-            </CardContent>
-          </Card>
+              <ul className="mt-6 flex-1 space-y-2.5">
+                {features.map((feature) => (
+                  <li
+                    key={feature}
+                    className="flex gap-2.5 text-sm leading-5 text-neutral-600 dark:text-neutral-300"
+                  >
+                    <span
+                      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-300 dark:bg-neutral-600"
+                      aria-hidden="true"
+                    />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className={`mt-8 rounded-lg px-4 py-2 text-center text-sm font-medium transition-colors ${
+                  highlighted
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "border border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                }`}
+              >
+                {cta}
+              </Link>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-16 max-w-2xl">
+          <h2 className="text-base font-semibold">
+            How matching and reports work
+          </h2>
+          <p className="mt-3 text-sm leading-7 text-neutral-500 dark:text-neutral-400">
+            Pick the opportunity categories you care about and OppScore
+            automatically scores every eligible opportunity in them against
+            your profile — your browse page is always sorted with your
+            strongest matches first. Competitiveness reports go deeper on a
+            single opportunity: your specific strengths, gaps, and how to
+            position your application. You can run a report on any
+            opportunity, including ones outside your matched categories.
+          </p>
         </div>
       </section>
     </main>

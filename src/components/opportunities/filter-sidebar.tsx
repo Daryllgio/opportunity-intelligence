@@ -20,13 +20,6 @@ export const APPLICATION_STATUSES = [
   { value: "closed", label: "Closed" },
 ];
 
-export const SORT_OPTIONS = [
-  { value: "deadline_asc", label: "Deadline (soonest)" },
-  { value: "newest", label: "Newest first" },
-  { value: "reward_high", label: "Highest reward" },
-  { value: "effort_low", label: "Lowest effort" },
-];
-
 export const DEADLINE_PRESETS = [
   { value: "30", label: "Next 30 days" },
   { value: "90", label: "Next 90 days" },
@@ -98,9 +91,7 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
 
   const activeTypes = csvValues("type");
   const activeStatus = searchParams.get("status") || "";
-  const activeSort = searchParams.get("sort") || "deadline_asc";
   const activeCountry = searchParams.get("country") || "";
-  const activeField = searchParams.get("field") || "";
   const activeDeadlineTo = searchParams.get("deadline_to") || "";
 
   const checkbox =
@@ -108,20 +99,6 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
 
   return (
     <div className="text-sm">
-      <FilterGroup title="Sort by">
-        <select
-          value={activeSort}
-          onChange={(event) => setParam("sort", event.target.value)}
-          className="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          {SORT_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </FilterGroup>
-
       <FilterGroup title="Opportunity type">
         <div className="space-y-0.5">
           {OPPORTUNITY_TYPES.map((option) => (
@@ -176,21 +153,6 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
             }
           }}
           onBlur={(event) => setParam("country", event.target.value.trim() || null)}
-          className="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-        />
-      </FilterGroup>
-
-      <FilterGroup title="Field of study">
-        <input
-          type="text"
-          defaultValue={activeField}
-          placeholder="e.g. Engineering"
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              setParam("field", (event.target as HTMLInputElement).value.trim() || null);
-            }
-          }}
-          onBlur={(event) => setParam("field", event.target.value.trim() || null)}
           className="h-9 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
         />
       </FilterGroup>

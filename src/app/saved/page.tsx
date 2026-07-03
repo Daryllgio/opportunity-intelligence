@@ -3,10 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AppNav } from "@/components/layout/app-nav";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { AddToCalendarButton } from "@/components/opportunities/add-to-calendar-button";
 import { supabase } from "@/lib/supabase";
 
 type Opportunity = {
@@ -14,113 +11,53 @@ type Opportunity = {
   title: string;
   provider: string | null;
   type: string;
-  description: string | null;
-  ai_summary: string | null;
-  country: string | null;
-  eligible_countries: string[] | null;
-  eligible_education_levels: string[] | null;
-  eligible_fields: string[] | null;
-  funding_amount: string | null;
-  funding_type: string | null;
   deadline: string | null;
-  effort_level: string | null;
-  reward_level: string | null;
+  funding_amount: string | null;
   application_url: string | null;
-  competitiveness_factors: string[] | null;
   lifecycle_status: string | null;
 };
 
-type SavedOpportunity = {
-  id: string;
-  created_at: string;
-  opportunity_id: string;
-  status: string | null;
-  opportunities: Opportunity | null;
-};
-
-type ScoredSavedOpportunity = {
+type SavedRow = {
   savedId: string;
   status: string;
   opportunity: Opportunity;
-  score: { score: number | null; recommendation: string };
+  score: number | null;
 };
 
-// Status workflow values, labels, and indicator dot colors.
-const STATUS_META: Record<
-  string,
-  { label: string; dot: string }
-> = {
+const STATUS_META: Record<string, { label: string; dot: string }> = {
   saved: { label: "Saved", dot: "bg-neutral-300" },
   planning: { label: "Planning", dot: "bg-sky-400" },
   applying: { label: "Applying", dot: "bg-amber-400" },
   submitted: { label: "Submitted", dot: "bg-neutral-500" },
   won: { label: "Won", dot: "bg-green-500" },
   rejected: { label: "Rejected", dot: "bg-red-400" },
-  not_applying: {
-    label: "Not applying",
-    dot: "bg-neutral-300",
-  },
+  not_applying: { label: "Not applying", dot: "bg-neutral-300" },
 };
 
-const STATUS_OPTIONS = [
-  "saved",
-  "planning",
-  "applying",
-  "submitted",
-  "won",
-  "rejected",
-  "not_applying",
-];
+const STATUS_OPTIONS = Object.keys(STATUS_META);
 
-// Tabs shown in the filter bar (not_applying is reachable via the dropdown).
-const TABS: Array<{ key: string; label: string }> = [
+const TABS = [
   { key: "all", label: "All" },
   { key: "saved", label: "Saved" },
   { key: "planning", label: "Planning" },
   { key: "applying", label: "Applying" },
   { key: "submitted", label: "Submitted" },
   { key: "won", label: "Won" },
-  { key: "rejected", label: "Rejected" },
 ];
 
 function normalizeStatus(status: string | null): string {
   return status && STATUS_META[status] ? status : "saved";
 }
 
-function formatOpportunityType(type: string) {
-  return type
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function formatRecommendation(recommendation: string) {
-  if (recommendation === "apply_now") return "Apply Now";
-  if (recommendation === "save_for_later") return "Save for Later";
-  return "Improve First";
-}
-
-function getCardSummary(opportunity: Opportunity) {
-  if (opportunity.ai_summary) return opportunity.ai_summary;
-
-  if (!opportunity.description) return "No summary available yet.";
-
-  return opportunity.description.length > 180
-    ? `${opportunity.description.slice(0, 180)}...`
-    : opportunity.description;
-}
-
 function daysUntil(deadline: string | null) {
   if (!deadline) return null;
   const due = new Date(deadline);
   if (Number.isNaN(due.getTime())) return null;
-  return Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  return Math.ceil((due.getTime() - Date.now()) / 86400000);
 }
 
-// Deadline urgency as a small dot + text: red <7 days, amber 7-14, green after.
-function DeadlineUrgency({ deadline }: { deadline: string | null }) {
+function DeadlineText({ deadline }: { deadline: string | null }) {
   const days = daysUntil(deadline);
-
   const dot =
     days === null || days < 0
       ? "bg-neutral-300"
@@ -129,7 +66,6 @@ function DeadlineUrgency({ deadline }: { deadline: string | null }) {
         : days <= 14
           ? "bg-amber-400"
           : "bg-green-500";
-
   const label =
     days === null
       ? "No deadline"
@@ -138,11 +74,11 @@ function DeadlineUrgency({ deadline }: { deadline: string | null }) {
         : days === 0
           ? "Due today"
           : days === 1
-            ? "Due in 1 day"
+            ? "Due tomorrow"
             : `Due in ${days} days`;
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+    <span className="inline-flex items-center gap-1.5 text-sm text-neutral-500">
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
       {label}
     </span>
@@ -152,19 +88,12 @@ function DeadlineUrgency({ deadline }: { deadline: string | null }) {
 export default function SavedPage() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
-  const [saved, setSaved] = useState<ScoredSavedOpportunity[]>([]);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  // Initialize the active tab from ?status= (SSR-safe: defaults to "all").
-  const [activeStatus, setActiveStatus] = useState(() => {
-    if (typeof window === "undefined") return "all";
-    const param = new URLSearchParams(window.location.search).get("status");
-    return param && (param === "all" || STATUS_META[param]) ? param : "all";
-  });
+  const [rows, setRows] = useState<SavedRow[]>([]);
+  const [activeTab, setActiveTab] = useState("all");
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    async function loadSaved() {
+    async function load() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -176,120 +105,60 @@ export default function SavedPage() {
 
       setUserId(user.id);
 
-      const { data, error } = await supabase
-        .from("saved_opportunities")
-        .select(
-          `
-          id,
-          created_at,
-          opportunity_id,
-          status,
-          opportunities (
-            id,
-            title,
-            provider,
-            type,
-            description,
-            ai_summary,
-            country,
-            eligible_countries,
-            eligible_education_levels,
-            eligible_fields,
-            deadline,
-            funding_amount,
-            funding_type,
-            effort_level,
-            reward_level,
-            application_url,
-            competitiveness_factors,
-            lifecycle_status
+      const [{ data }, { data: scoreRows }] = await Promise.all([
+        supabase
+          .from("saved_opportunities")
+          .select(
+            `id, status,
+             opportunities (id, title, provider, type, deadline, funding_amount, application_url, lifecycle_status)`
           )
-        `
-        )
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("opportunity_competitiveness_scores")
+          .select("opportunity_id, score")
+          .eq("user_id", user.id)
+          .eq("score_status", "current"),
+      ]);
 
-      // Read scores from the single source of truth (server-computed scores).
-      const { data: scoreRows } = await supabase
-        .from("opportunity_competitiveness_scores")
-        .select("opportunity_id, score, fit_label, score_status")
-        .eq("user_id", user.id)
-        .eq("score_status", "current");
+      const scoreMap = new Map(
+        (scoreRows || []).map((row) => [row.opportunity_id, row.score])
+      );
 
-      const scoreMap = new Map<
-        string,
-        { score: number | null; fit_label: string | null }
-      >();
-      for (const row of (scoreRows as Array<{
-        opportunity_id: string;
-        score: number | null;
-        fit_label: string | null;
-      }>) || []) {
-        scoreMap.set(row.opportunity_id, {
-          score: typeof row.score === "number" ? row.score : null,
-          fit_label: row.fit_label ?? null,
-        });
-      }
+      const normalized = ((data || []) as Array<Record<string, unknown>>)
+        .map((item) => {
+          const opportunity = (
+            Array.isArray(item.opportunities)
+              ? item.opportunities[0]
+              : item.opportunities
+          ) as Opportunity | null;
+          if (!opportunity || opportunity.lifecycle_status !== "active") {
+            return null;
+          }
+          return {
+            savedId: String(item.id),
+            status: normalizeStatus(item.status as string | null),
+            opportunity,
+            score:
+              typeof scoreMap.get(opportunity.id) === "number"
+                ? (scoreMap.get(opportunity.id) as number)
+                : null,
+          };
+        })
+        .filter(Boolean) as SavedRow[];
 
-      if (!error) {
-        const normalizedSaved = ((data ?? []) as unknown as Array<
-          Record<string, unknown>
-        >).map((item) => ({
-          ...item,
-          opportunities: Array.isArray(item.opportunities)
-            ? item.opportunities[0] || null
-            : item.opportunities,
-        })) as unknown as SavedOpportunity[];
-
-        const scored = normalizedSaved
-          .filter(
-            (item) =>
-              item.opportunities &&
-              item.opportunities.lifecycle_status === "active"
-          )
-          .map((item) => {
-            const opportunity = item.opportunities as Opportunity;
-            const entry = scoreMap.get(opportunity.id);
-
-            return {
-              savedId: item.id,
-              status: normalizeStatus(item.status),
-              opportunity,
-              score: {
-                score: entry?.score ?? null,
-                recommendation: entry?.fit_label ?? "",
-              },
-            };
-          });
-
-        setSaved(scored);
-      }
-
+      setRows(normalized);
       setLoading(false);
     }
 
-    loadSaved();
+    load();
   }, []);
 
-  function selectTab(key: string) {
-    setActiveStatus(key);
-    const url = new URL(window.location.href);
-    if (key === "all") {
-      url.searchParams.delete("status");
-    } else {
-      url.searchParams.set("status", key);
-    }
-    window.history.replaceState(null, "", url.toString());
-  }
-
-  // Optimistic status update: change UI immediately, revert if the DB fails.
   async function updateStatus(savedId: string, newStatus: string) {
     if (!userId) return;
-    const prev = saved.find((s) => s.savedId === savedId)?.status ?? "saved";
-    setSaved((rows) =>
-      rows.map((r) =>
-        r.savedId === savedId ? { ...r, status: newStatus } : r
-      )
+    const previous = rows.find((r) => r.savedId === savedId)?.status ?? "saved";
+    setRows((current) =>
+      current.map((r) => (r.savedId === savedId ? { ...r, status: newStatus } : r))
     );
     setPending((p) => ({ ...p, [savedId]: true }));
 
@@ -300,240 +169,155 @@ export default function SavedPage() {
       .eq("user_id", userId);
 
     if (error) {
-      // Revert on failure.
-      setSaved((rows) =>
-        rows.map((r) =>
-          r.savedId === savedId ? { ...r, status: prev } : r
-        )
+      setRows((current) =>
+        current.map((r) => (r.savedId === savedId ? { ...r, status: previous } : r))
       );
     }
-
     setPending((p) => ({ ...p, [savedId]: false }));
   }
 
-  const opportunityTypes = useMemo(() => {
-    const types = new Set(saved.map((item) => item.opportunity.type));
-    return Array.from(types);
-  }, [saved]);
-
-  // Counts per status tab.
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: saved.length };
+    const c: Record<string, number> = { all: rows.length };
     for (const tab of TABS) {
       if (tab.key === "all") continue;
-      c[tab.key] = saved.filter((s) => s.status === tab.key).length;
+      c[tab.key] = rows.filter((r) => r.status === tab.key).length;
     }
     return c;
-  }, [saved]);
+  }, [rows]);
 
-  const filteredSaved = saved.filter(({ opportunity, status }) => {
-    const query = search.toLowerCase();
-
-    const matchesSearch =
-      opportunity.title.toLowerCase().includes(query) ||
-      opportunity.provider?.toLowerCase().includes(query) ||
-      opportunity.description?.toLowerCase().includes(query) ||
-      opportunity.ai_summary?.toLowerCase().includes(query);
-
-    const matchesType = typeFilter === "all" || opportunity.type === typeFilter;
-    const matchesStatus = activeStatus === "all" || status === activeStatus;
-
-    return matchesSearch && matchesType && matchesStatus;
-  });
+  const visible = rows.filter(
+    (row) => activeTab === "all" || row.status === activeTab
+  );
 
   return (
-    <main className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white dark:bg-neutral-950">
       <AppNav />
 
-      <section className="px-6 py-8">
-        <div className="mx-auto max-w-7xl">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Saved opportunities
-          </h1>
+      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Saved</h1>
+        <p className="mt-1 text-[15px] text-neutral-500 dark:text-neutral-400">
+          Track where each application stands.
+        </p>
 
-          <p className="mt-3 max-w-2xl text-muted-foreground">
-            Track the opportunities you saved and where you are in the
-            application process.
-          </p>
+        {loading ? (
+          <div className="mt-8 space-y-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-20 animate-pulse rounded-lg bg-neutral-100 dark:bg-neutral-900"
+              />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="mt-10 rounded-lg border border-dashed border-neutral-200 p-10 text-center dark:border-neutral-800">
+            <h2 className="text-lg font-semibold">Nothing saved yet</h2>
+            <p className="mx-auto mt-2 max-w-sm text-sm text-neutral-500">
+              Save opportunities while browsing to track deadlines and
+              application progress here.
+            </p>
+            <Link
+              href="/opportunities"
+              className="mt-6 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Browse opportunities
+            </Link>
+          </div>
+        ) : (
+          <>
+            {/* Tabs */}
+            <div className="mt-8 flex flex-wrap gap-1 border-b border-neutral-200 dark:border-neutral-800">
+              {TABS.map((tab) => {
+                const active = tab.key === activeTab;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                      active
+                        ? "border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100"
+                        : "border-transparent text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                    }`}
+                  >
+                    {tab.label}
+                    <span className="ml-1.5 text-neutral-300 dark:text-neutral-600">
+                      {counts[tab.key] ?? 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
-          {loading ? (
-            <Card className="mt-8">
-              <CardContent className="p-6">
-                <p className="text-muted-foreground">
-                  Loading saved opportunities...
-                </p>
-              </CardContent>
-            </Card>
-          ) : saved.length === 0 ? (
-            <Card className="mt-8 border-dashed">
-              <CardContent className="flex flex-col gap-4 p-8 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">
-                    No saved opportunities yet
-                  </h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Browse opportunities to find ones that match your profile,
-                    then save them to track your applications here.
-                  </p>
-                </div>
-
-                <Button asChild>
-                  <Link href="/opportunities">Browse opportunities</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <>
-              {/* Status tabs */}
-              <div className="mt-8 flex flex-wrap gap-1 border-b">
-                {TABS.map((tab) => {
-                  const active = tab.key === activeStatus;
-                  return (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => selectTab(tab.key)}
-                      className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-                        active
-                          ? "border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100"
-                          : "border-transparent text-muted-foreground hover:text-neutral-700 dark:hover:text-neutral-300"
-                      }`}
-                    >
-                      {tab.label}
-                      <span className="ml-1.5 text-neutral-400">
-                        {counts[tab.key] ?? 0}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 grid gap-3 md:grid-cols-[1fr_260px]">
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search saved opportunities..."
-                />
-
-                <select
-                  value={typeFilter}
-                  onChange={(event) => setTypeFilter(event.target.value)}
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="all">All opportunity types</option>
-                  {opportunityTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {formatOpportunityType(type)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mt-6 grid gap-3">
-                {filteredSaved.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-6">
-                      <p className="text-muted-foreground">
-                        No saved opportunities match your current filters.
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  filteredSaved.map(({ savedId, status, opportunity, score }) => (
-                    <Card key={savedId}>
-                      <CardContent className="p-5">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <Badge variant="outline">
-                                {formatOpportunityType(opportunity.type)}
-                              </Badge>
-
-                              <DeadlineUrgency deadline={opportunity.deadline} />
-
-                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                                <span
-                                  className={`h-1.5 w-1.5 rounded-full ${STATUS_META[status].dot}`}
-                                  aria-hidden="true"
-                                />
-                                {STATUS_META[status].label}
-                              </span>
-                            </div>
-
-                            <Link
-                              href={`/opportunities/${opportunity.id}`}
-                              className="mt-3 block text-lg font-semibold hover:underline"
-                            >
-                              {opportunity.title}
-                            </Link>
-
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {opportunity.provider || "Provider not specified"}
-                              {opportunity.funding_amount &&
-                                ` · ${opportunity.funding_amount}`}
-                              {opportunity.reward_level &&
-                                ` · ${opportunity.reward_level} reward`}
-                            </p>
-
-                            <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                              {getCardSummary(opportunity)}
-                            </p>
-                          </div>
-
-                          <div className="flex flex-col gap-3 lg:w-[240px]">
-                            <div className="rounded-lg border px-4 py-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm text-muted-foreground">
-                                  Score
-                                </p>
-                                <p className="text-lg font-semibold">
-                                  {score.score !== null ? score.score : "—"}
-                                </p>
-                              </div>
-
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                {score.score !== null
-                                  ? formatRecommendation(score.recommendation)
-                                  : "Not scored yet"}
-                              </p>
-                            </div>
-
-                            <div>
-                              <label className="block text-xs uppercase tracking-wide text-neutral-400">
-                                Status
-                              </label>
-                              <select
-                                value={status}
-                                disabled={pending[savedId]}
-                                onChange={(e) =>
-                                  updateStatus(savedId, e.target.value)
-                                }
-                                className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
-                              >
-                                {STATUS_OPTIONS.map((s) => (
-                                  <option key={s} value={s}>
-                                    {STATUS_META[s].label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <Button asChild variant="outline">
-                              <Link href={`/opportunities/${opportunity.id}`}>
-                                Details
-                              </Link>
-                            </Button>
-                          </div>
+            {/* Rows */}
+            <ul className="mt-2 divide-y divide-neutral-100 dark:divide-neutral-900">
+              {visible.length === 0 ? (
+                <li className="py-10 text-center text-sm text-neutral-500">
+                  Nothing in this stage yet.
+                </li>
+              ) : (
+                visible.map((row) => (
+                  <li
+                    key={row.savedId}
+                    className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        href={`/opportunities/${row.opportunity.id}`}
+                        className="text-[15px] font-medium hover:underline"
+                      >
+                        {row.opportunity.title}
+                      </Link>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                        {row.opportunity.provider && (
+                          <span className="truncate text-sm text-neutral-400">
+                            {row.opportunity.provider}
+                          </span>
+                        )}
+                        <DeadlineText deadline={row.opportunity.deadline} />
+                        {row.score !== null && (
+                          <span className="text-sm text-neutral-500">
+                            Match {row.score}
+                          </span>
+                        )}
+                      </div>
+                      {row.opportunity.deadline && (
+                        <div className="mt-1.5">
+                          <AddToCalendarButton
+                            title={row.opportunity.title}
+                            deadline={row.opportunity.deadline}
+                            opportunityId={row.opportunity.id}
+                          />
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </section>
-    </main>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${STATUS_META[row.status].dot}`}
+                        aria-hidden="true"
+                      />
+                      <select
+                        value={row.status}
+                        disabled={pending[row.savedId]}
+                        onChange={(event) =>
+                          updateStatus(row.savedId, event.target.value)
+                        }
+                        className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-sm disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-900"
+                      >
+                        {STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>
+                            {STATUS_META[status].label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </>
+        )}
+      </main>
+    </div>
   );
 }

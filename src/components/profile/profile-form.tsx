@@ -24,6 +24,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  OPPORTUNITY_TYPES,
+  OPPORTUNITY_TYPE_LABELS,
+  normalizeOpportunityType,
+} from "@/lib/discovery/taxonomy";
+import { getPlanLimits } from "@/lib/billing/plans";
 
 type ExperienceEntry = {
   title: string;
@@ -257,16 +263,34 @@ const languageOptions = [
   "Other",
 ];
 
-const opportunityTypeOptions = [
-  "Scholarships",
-  "Research Opportunities",
-  "Funded Conferences",
-  "Fellowships",
-  "Grants",
-  "Competitions",
-  "Leadership Programs",
-  "Professional Development",
-];
+// Labels shown in the picker; the DB stores canonical taxonomy values so
+// scoring, filtering, and the pipeline all agree on the vocabulary.
+const opportunityTypeOptions = OPPORTUNITY_TYPES.map(
+  (type) => OPPORTUNITY_TYPE_LABELS[type]
+);
+
+function typeLabelsToCanonical(labels: string[]): string[] {
+  return Array.from(
+    new Set(
+      labels
+        .map((label) => normalizeOpportunityType(label))
+        .filter((value): value is NonNullable<typeof value> => Boolean(value))
+    )
+  );
+}
+
+function canonicalToTypeLabels(values: string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => {
+          const canonical = normalizeOpportunityType(value);
+          return canonical ? OPPORTUNITY_TYPE_LABELS[canonical] : null;
+        })
+        .filter((label): label is string => Boolean(label))
+    )
+  );
+}
 
 const emptyExperience: ExperienceEntry = {
   title: "",
@@ -521,7 +545,9 @@ export function ProfileForm() {
           field_of_study_other: data.field_of_study_other || "",
           gpa: data.gpa ? String(data.gpa) : "",
           languages: data.languages || [],
-          target_opportunity_types: data.target_opportunity_types || [],
+          target_opportunity_types: canonicalToTypeLabels(
+            data.target_opportunity_types || []
+          ),
           subscription_plan:
             (data.subscription_plan as "free" | "pro" | "premium" | null) ||
             "free",
@@ -682,7 +708,9 @@ export function ProfileForm() {
       field_of_study_other: form.field_of_study_other,
       gpa: gpaNumber,
       languages: form.languages,
-      target_opportunity_types: form.target_opportunity_types,
+      target_opportunity_types: typeLabelsToCanonical(
+        form.target_opportunity_types
+      ),
       leadership_experiences: form.leadership_experiences,
       research_experiences: form.research_experiences,
       volunteer_experiences: form.volunteer_experiences,
@@ -716,27 +744,22 @@ export function ProfileForm() {
     );
   }
 
+  const planLimits = getPlanLimits(form.subscription_plan);
   const maxRankedCategories =
-    form.subscription_plan === "premium"
+    planLimits.rankedCategoryLimit === "all"
       ? opportunityTypeOptions.length
-      : form.subscription_plan === "pro"
-        ? 2
-        : 0;
+      : planLimits.rankedCategoryLimit;
 
-  const opportunityPreferenceHelp =
-    form.subscription_plan === "premium"
-      ? "Premium includes profile-based matching across all opportunity categories."
-      : form.subscription_plan === "pro"
-        ? "Pro includes profile-based matching for up to 2 opportunity categories."
-        : "Free users can browse opportunities. Upgrade to unlock profile-based matching.";
+  const opportunityPreferenceHelp = planLimits.hasCompetitivenessRanking
+    ? `Your plan includes automatic matching in ${maxRankedCategories} categor${
+        maxRankedCategories === 1 ? "y" : "ies"
+      } — your top picks are matched first.`
+    : "Pick your preferred categories now — upgrade any time to unlock automatic matching.";
 
   function updateOpportunityPreferences(values: string[]) {
-    if (maxRankedCategories === 0) {
-      updateField("target_opportunity_types", []);
-      return;
-    }
-
-    updateField("target_opportunity_types", values.slice(0, maxRankedCategories));
+    // Everyone may record preferences; the plan only gates how many get
+    // automatic scoring (enforced server-side at scoring time).
+    updateField("target_opportunity_types", values);
   }
 
   function renderExperienceSection(

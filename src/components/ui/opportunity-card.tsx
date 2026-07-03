@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { OpportunityTypeBadge } from "./opportunity-type-badge";
-import { ApplicationStatusBadge } from "./application-status-badge";
-import { SourceTrustBadge } from "./source-trust-badge";
+import { MatchScore } from "./match-score";
+import { FreshnessLabel } from "./freshness-label";
 
 interface OpportunityCardProps {
   id: string;
@@ -11,11 +12,10 @@ interface OpportunityCardProps {
   applicationStatus: string | null;
   fundingAmount: string | null;
   country: string | null;
-  effortLevel: string | null;
-  rewardLevel: string | null;
-  sourceCategory: string | null;
-  eligibleEducationLevels: string[] | null;
+  createdAt?: string | null;
   score?: number | null;
+  /** True when this type isn't in the user's scored categories. */
+  unscored?: boolean;
 }
 
 function formatDeadline(deadline: string): string {
@@ -28,6 +28,17 @@ function formatDeadline(deadline: string): string {
   });
 }
 
+function deadlineDot(deadline: string | null) {
+  if (!deadline) return "bg-neutral-300";
+  const days = Math.ceil(
+    (new Date(deadline).getTime() - Date.now()) / 86400000
+  );
+  if (Number.isNaN(days) || days < 0) return "bg-neutral-300";
+  if (days < 7) return "bg-red-400";
+  if (days <= 14) return "bg-amber-400";
+  return "bg-green-500";
+}
+
 export function OpportunityCard({
   id,
   title,
@@ -36,118 +47,69 @@ export function OpportunityCard({
   deadline,
   applicationStatus,
   fundingAmount,
-  country,
-  effortLevel,
-  sourceCategory,
+  createdAt,
   score,
+  unscored,
 }: OpportunityCardProps) {
+  const dimmed = typeof score === "number" && score < 40;
+
   return (
-    <a
+    <Link
       href={`/opportunities/${id}`}
-      className="group block rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-5 transition-shadow hover:shadow-sm"
+      className={`group flex flex-col rounded-lg border border-neutral-200 bg-white p-5 transition-shadow hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900 ${
+        dimmed ? "opacity-70" : ""
+      }`}
     >
-      {/* Top row: type badge + status */}
-      <div className="flex items-center justify-between gap-2 mb-3">
+      <div className="flex items-start justify-between gap-3">
         <OpportunityTypeBadge type={type} />
-        {applicationStatus && (
-          <ApplicationStatusBadge status={applicationStatus} />
-        )}
+        {typeof score === "number" ? (
+          <MatchScore score={score} />
+        ) : unscored ? (
+          <span className="text-xs text-neutral-400">Not scored</span>
+        ) : null}
       </div>
 
-      {/* Title */}
-      <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 line-clamp-2 mb-1">
+      <h3 className="mt-3 text-[15px] font-semibold leading-snug text-neutral-900 line-clamp-2 dark:text-neutral-100">
         {title}
       </h3>
 
-      {/* Provider */}
       {provider && (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-3">
+        <p className="mt-1 truncate text-sm text-neutral-500 dark:text-neutral-400">
           {provider}
         </p>
       )}
 
-      {/* Meta row */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400">
-        {deadline && (
-          <span className="flex items-center gap-1">
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+      <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-neutral-500 dark:text-neutral-400">
+        <span className="inline-flex items-center gap-1.5">
+          {deadline ? (
+            <>
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${deadlineDot(deadline)}`}
+                aria-hidden="true"
               />
-            </svg>
-            {formatDeadline(deadline)}
-          </span>
-        )}
-        {fundingAmount && (
-          <span className="flex items-center gap-1">
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              Due {formatDeadline(deadline)}
+            </>
+          ) : applicationStatus === "rolling" ? (
+            <>
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-sky-400"
+                aria-hidden="true"
               />
-            </svg>
-            {fundingAmount}
-          </span>
-        )}
-        {country && (
-          <span className="flex items-center gap-1">
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-            {country}
-          </span>
-        )}
-      </div>
-
-      {/* Bottom row: source trust + effort + score */}
-      <div className="flex items-center justify-between mt-4 pt-3 border-t border-neutral-100 dark:border-neutral-700">
-        <div className="flex items-center gap-2">
-          {sourceCategory && <SourceTrustBadge category={sourceCategory} />}
-          {effortLevel && (
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              {effortLevel.charAt(0).toUpperCase() + effortLevel.slice(1)} effort
+              Rolling admissions
+            </>
+          ) : (
+            "No deadline listed"
+          )}
+        </span>
+        <span className="flex items-center gap-3">
+          {fundingAmount && (
+            <span className="truncate font-medium text-neutral-600 dark:text-neutral-300">
+              {fundingAmount}
             </span>
           )}
-        </div>
-        {score != null && (
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-neutral-400">Match</span>
-            <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-              {score}
-            </span>
-          </div>
-        )}
+          <FreshnessLabel createdAt={createdAt || null} />
+        </span>
       </div>
-    </a>
+    </Link>
   );
 }

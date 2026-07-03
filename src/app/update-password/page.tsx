@@ -46,7 +46,7 @@ export default function UpdatePasswordPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
+    <main className="flex min-h-screen items-start justify-center bg-white px-6 pt-24 dark:bg-neutral-950">
       <div className="w-full max-w-md">
         <Card className="w-full max-w-md">
           <CardContent className="p-6">

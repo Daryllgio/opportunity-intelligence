@@ -5,24 +5,47 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUserProfile } from "@/lib/auth/admin";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-const baseNavItems = [
+const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/saved", label: "Saved" },
-  { href: "/profile", label: "Profile" },
-  { href: "/pricing", label: "Pricing" },
 ];
+
+function initialsFrom(name: string | null, email: string | null) {
+  const source = (name || email || "").trim();
+  if (!source) return "U";
+  const parts = source.split(/\s+/);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
 
 export function AppNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!active || !user) return;
+      setEmail(user.email || null);
+      setDisplayName(
+        user.user_metadata?.full_name || user.user_metadata?.name || null
+      );
+    });
 
     getCurrentUserProfile()
       .then((result) => {
@@ -37,10 +60,6 @@ export function AppNav() {
     };
   }, []);
 
-  const navItems = isAdmin
-    ? [...baseNavItems, { href: "/admin", label: "Admin" }]
-    : baseNavItems;
-
   async function handleLogout() {
     await supabase.auth.signOut();
     router.push("/");
@@ -49,44 +68,80 @@ export function AppNav() {
 
   function isActive(href: string) {
     return (
-      pathname === href ||
-      (href !== "/dashboard" && pathname.startsWith(href))
+      pathname === href || (href !== "/dashboard" && pathname.startsWith(href))
     );
   }
 
   function linkClasses(href: string) {
     return isActive(href)
-      ? "rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
-      : "rounded-md px-3 py-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100";
+      ? "px-3 py-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100"
+      : "px-3 py-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100";
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/90">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-        <Link
-          href="/dashboard"
-          className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-neutral-100"
-        >
-          OppScore
-        </Link>
+    <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-8">
+          <Link
+            href="/dashboard"
+            className="text-[15px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-100"
+          >
+            OppScore
+          </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
-          {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className={linkClasses(item.href)}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+          <nav className="hidden items-center md:flex">
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={linkClasses(item.href)}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleLogout}
-            className="hidden md:inline-flex"
-          >
-            Log out
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Account menu"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600 transition-colors hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-700"
+              >
+                {initialsFrom(displayName, email)}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="font-normal">
+                <span className="block truncate text-sm font-medium">
+                  {displayName || "Account"}
+                </span>
+                {email && (
+                  <span className="block truncate text-xs text-neutral-400">
+                    {email}
+                  </span>
+                )}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/profile">Profile</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/settings">Settings</Link>
+              </DropdownMenuItem>
+              {isAdmin && (
+                <DropdownMenuItem asChild>
+                  <Link href="/admin">Admin</Link>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={handleLogout}>
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <button
             type="button"
@@ -103,9 +158,17 @@ export function AppNav() {
               strokeWidth={2}
             >
               {mobileOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
               )}
             </svg>
           </button>
@@ -125,14 +188,29 @@ export function AppNav() {
                 {item.label}
               </Link>
             ))}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              className="mt-2 w-full"
+            <Link
+              href="/profile"
+              onClick={() => setMobileOpen(false)}
+              className={linkClasses("/profile")}
             >
-              Log out
-            </Button>
+              Profile
+            </Link>
+            <Link
+              href="/settings"
+              onClick={() => setMobileOpen(false)}
+              className={linkClasses("/settings")}
+            >
+              Settings
+            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setMobileOpen(false)}
+                className={linkClasses("/admin")}
+              >
+                Admin
+              </Link>
+            )}
           </div>
         </nav>
       )}

@@ -13,10 +13,30 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://oppscore.app";
+
 export const metadata: Metadata = {
-  title: "Oppscores — Find opportunities you're competitive for",
+  metadataBase: new URL(APP_URL),
+  title: {
+    default: "OppScore — Opportunities you're actually competitive for",
+    template: "%s · OppScore",
+  },
   description:
-    "Oppscores helps students discover, evaluate, and prioritize scholarships, fellowships, research programs, grants, competitions, and leadership programs — ranked by how competitive they are for each one.",
+    "OppScore discovers scholarships, fellowships, research programs, grants, and competitions from official sources, verifies every application link, and ranks each one by how competitive you are.",
+  openGraph: {
+    type: "website",
+    siteName: "OppScore",
+    title: "OppScore — Opportunities you're actually competitive for",
+    description:
+      "Verified scholarships, fellowships, research programs, grants, and competitions — matched and scored against your profile.",
+    url: APP_URL,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "OppScore — Opportunities you're actually competitive for",
+    description:
+      "Verified scholarships, fellowships, research programs, grants, and competitions — matched and scored against your profile.",
+  },
 };
 
 export default function RootLayout({
@@ -29,7 +49,7 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
+      <body className="min-h-full flex flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
         {children}
       </body>
     </html>
