@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (jobError) {
-      return NextResponse.json({ error: jobError.message }, { status: 500 });
+      console.error("scoring-jobs/run:", jobError.message);
+      return NextResponse.json({ error: "Scoring job failed. Please try again." }, { status: 500 });
     }
 
     if (!job) {
@@ -77,7 +78,8 @@ export async function POST(request: NextRequest) {
       .eq("id", job.id);
 
     if (startError) {
-      return NextResponse.json({ error: startError.message }, { status: 500 });
+      console.error("scoring-jobs/run:", startError.message);
+      return NextResponse.json({ error: "Scoring job failed. Please try again." }, { status: 500 });
     }
 
     const authHeader = request.headers.get("authorization") || "";
@@ -134,7 +136,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (completeError) {
-      return NextResponse.json({ error: completeError.message }, { status: 500 });
+      console.error("scoring-jobs/run:", completeError.message);
+      return NextResponse.json({ error: "Scoring job failed. Please try again." }, { status: 500 });
     }
 
     return NextResponse.json({

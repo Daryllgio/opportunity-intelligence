@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
 import { detectCandidateOpportunityLinks } from "@/lib/discovery/candidate-detection";
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
+import { requireAdminRequest } from "@/lib/auth/admin";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAdminRequest(request);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     const body = await request.json();
     const url = String(body.url || "").trim();
 

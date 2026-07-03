@@ -549,7 +549,8 @@ export async function POST(request: NextRequest) {
       .select("*");
 
     if (saveError) {
-      return NextResponse.json({ error: saveError.message }, { status: 500 });
+      console.error("score-opportunities-batch:", saveError.message);
+      return NextResponse.json({ error: "Scoring failed. Please try again." }, { status: 500 });
     }
 
     const newScoresUsed = scoresUsed + scoreRows.length;
@@ -564,7 +565,8 @@ export async function POST(request: NextRequest) {
         .eq("id", existingUsage.id);
 
       if (usageError) {
-        return NextResponse.json({ error: usageError.message }, { status: 500 });
+        console.error("score-opportunities-batch:", usageError.message);
+      return NextResponse.json({ error: "Scoring failed. Please try again." }, { status: 500 });
       }
     } else {
       const { error: usageError } = await supabase.from("user_ai_usage").insert({
@@ -575,7 +577,8 @@ export async function POST(request: NextRequest) {
       });
 
       if (usageError) {
-        return NextResponse.json({ error: usageError.message }, { status: 500 });
+        console.error("score-opportunities-batch:", usageError.message);
+      return NextResponse.json({ error: "Scoring failed. Please try again." }, { status: 500 });
       }
     }
 

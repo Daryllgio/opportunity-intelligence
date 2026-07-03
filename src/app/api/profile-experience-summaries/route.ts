@@ -415,7 +415,8 @@ export async function POST(request: NextRequest) {
       .eq("user_id", user.id);
 
     if (existingError) {
-      return NextResponse.json({ error: existingError.message }, { status: 500 });
+      console.error("profile-experience-summaries:", existingError.message);
+      return NextResponse.json({ error: "Could not save experience summaries. Please try again." }, { status: 500 });
     }
 
     const existingMap = new Map<string, {
@@ -615,7 +616,8 @@ ${JSON.stringify(grouped, null, 2)}
       .select("*");
 
     if (saveError) {
-      return NextResponse.json({ error: saveError.message }, { status: 500 });
+      console.error("profile-experience-summaries:", saveError.message);
+      return NextResponse.json({ error: "Could not save experience summaries. Please try again." }, { status: 500 });
     }
 
     return NextResponse.json({
