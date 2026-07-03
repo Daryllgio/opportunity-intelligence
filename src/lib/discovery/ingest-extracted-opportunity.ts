@@ -277,6 +277,32 @@ export async function ingestExtractedOpportunity({
     };
   }
 
+  // ---------------------------------------------------------------------
+  // Aggregator hard line. Aggregator pages are discovery fuel only: if the
+  // ranker could not locate a verified official destination for an
+  // aggregator-sourced extraction, the opportunity is junk to us — reject it
+  // outright instead of parking it in review where it will never be usable.
+  // ---------------------------------------------------------------------
+  if (
+    validation.sourceCategory === "aggregator" &&
+    !destinationOkForAutoPublish &&
+    validation.decision !== "track_for_next_cycle"
+  ) {
+    validation.decision = "reject";
+    validation.autoPublishEligible = false;
+    validation.reasons = [
+      ...validation.reasons,
+      "Aggregator-sourced with no verified official destination. Aggregators are discovery fuel only — rejected.",
+    ];
+
+    trustMetadata = {
+      ...trustMetadata,
+      validation_decision: "reject",
+      validation_reasons: validation.reasons,
+      auto_publish_eligible: false,
+    };
+  }
+
   const now = new Date().toISOString();
 
   if (validation.decision === "reject") {

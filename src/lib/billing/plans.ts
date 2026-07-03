@@ -1,4 +1,4 @@
-export type SubscriptionPlan = "free" | "pro" | "premium";
+export type SubscriptionPlan = "free" | "basic" | "pro" | "premium";
 
 export type RankingRefreshLevel = "none" | "standard" | "priority";
 
@@ -6,8 +6,9 @@ export type PlanLimits = {
   name: string;
   price: number;
 
-  // Internal cost-control limits. Do not show these as dashboard usage meters.
+  // Internal cost-control limits. Never show these as dashboard usage meters.
   competitivenessScores: number;
+  competitivenessScoresPerCategory: number;
   gapReports: number;
 
   // Product rules.
@@ -15,6 +16,10 @@ export type PlanLimits = {
   rankingRefreshLevel: RankingRefreshLevel;
   hasCompetitivenessRanking: boolean;
   hasGapReports: boolean;
+  canSaveOpportunities: boolean;
+  hasDeadlineReminders: boolean;
+  hasFullDetails: boolean;
+  hasFullDashboard: boolean;
 };
 
 export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
@@ -22,36 +27,66 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     name: "Free",
     price: 0,
     competitivenessScores: 0,
+    competitivenessScoresPerCategory: 0,
     gapReports: 0,
     rankedCategoryLimit: 0,
     rankingRefreshLevel: "none",
     hasCompetitivenessRanking: false,
     hasGapReports: false,
+    canSaveOpportunities: false,
+    hasDeadlineReminders: false,
+    hasFullDetails: false,
+    hasFullDashboard: false,
+  },
+  basic: {
+    name: "Basic",
+    price: 10,
+    competitivenessScores: 100,
+    competitivenessScoresPerCategory: 100,
+    gapReports: 20,
+    rankedCategoryLimit: 1,
+    rankingRefreshLevel: "standard",
+    hasCompetitivenessRanking: true,
+    hasGapReports: true,
+    canSaveOpportunities: true,
+    hasDeadlineReminders: true,
+    hasFullDetails: true,
+    hasFullDashboard: true,
   },
   pro: {
     name: "Pro",
     price: 20,
-    competitivenessScores: 250,
+    competitivenessScores: 200,
+    competitivenessScoresPerCategory: 100,
     gapReports: 40,
-    rankedCategoryLimit: 3,
+    rankedCategoryLimit: 2,
     rankingRefreshLevel: "standard",
     hasCompetitivenessRanking: true,
     hasGapReports: true,
+    canSaveOpportunities: true,
+    hasDeadlineReminders: true,
+    hasFullDetails: true,
+    hasFullDashboard: true,
   },
   premium: {
     name: "Premium",
     price: 35,
     competitivenessScores: 400,
+    competitivenessScoresPerCategory: 100,
     gapReports: 80,
-    rankedCategoryLimit: "all",
+    rankedCategoryLimit: 4,
     rankingRefreshLevel: "priority",
     hasCompetitivenessRanking: true,
     hasGapReports: true,
+    canSaveOpportunities: true,
+    hasDeadlineReminders: true,
+    hasFullDetails: true,
+    hasFullDashboard: true,
   },
 };
 
 export function getPlanLimits(plan: string | null | undefined): PlanLimits {
-  if (plan === "pro" || plan === "premium" || plan === "free") {
+  if (plan === "basic" || plan === "pro" || plan === "premium" || plan === "free") {
     return PLAN_LIMITS[plan];
   }
 

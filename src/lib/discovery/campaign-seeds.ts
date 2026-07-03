@@ -60,15 +60,18 @@ const REGION_CONFIG: Record<
 const NEGATIVE_AGGREGATORS =
   "-scholarships.com -fastweb -bold.org -unigo -niche -cappex -scholarshiproar -studentscholarships";
 
+// Every phrase is anchored to the current application cycle. Expired
+// opportunities were the biggest source of wasted pipeline work — year-anchored
+// queries strongly bias Brave toward pages for cycles that are open right now.
 const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
   {
     opportunity_type: "scholarship",
     field_area: "all_fields",
     education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
     phrases: [
-      'scholarship application deadline',
-      'student scholarship apply eligibility',
-      'financial aid scholarship application students',
+      'scholarship application deadline 2026',
+      'scholarship "now accepting applications" 2026',
+      'scholarship apply 2026-2027 eligibility',
     ],
   },
   {
@@ -76,10 +79,9 @@ const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     field_area: "research",
     education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student"],
     phrases: [
-      'research program application deadline',
-      'summer research program apply students',
-      'research opportunity application students',
-      'research program application students',
+      'summer research program 2026 application deadline',
+      'research program "apply now" 2026 students',
+      'research internship program 2026 application',
     ],
   },
   {
@@ -87,9 +89,9 @@ const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     field_area: "all_fields",
     education_levels: ["undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
     phrases: [
-      'fellowship application deadline',
-      'student fellowship apply eligibility',
-      'graduate fellowship application deadline',
+      'fellowship application deadline 2026',
+      'fellowship "now accepting applications" 2026',
+      'graduate fellowship 2026-2027 application',
     ],
   },
   {
@@ -97,55 +99,57 @@ const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     field_area: "all_fields",
     education_levels: ["undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
     phrases: [
-      'student grant application eligibility',
-      'research grant students application',
-      'travel grant students application',
-      'education grant students apply',
+      'student grant 2026 application eligibility',
+      'research grant 2026 students application deadline',
+      'travel grant 2026 students apply',
     ],
   },
+  // Competitions need concrete format words — generic "student competition"
+  // queries return scholarship-directory noise that the intake gate then has
+  // to throw away. Named formats find real, registrable events.
   {
     opportunity_type: "competition",
     field_area: "all_fields",
-    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    education_levels: ["high_school", "undergraduate", "masters", "mba"],
     phrases: [
-      'student competition application deadline',
-      'student challenge apply deadline',
-      'case competition registration students',
-      'pitch competition students apply',
-      'essay competition students deadline',
+      'essay contest 2026 deadline submit',
+      'case competition 2026 registration',
+      'innovation challenge 2026 students apply',
+      'business plan competition 2026 registration',
+      'hackathon 2026 students register',
+      'STEM competition 2026 application deadline',
     ],
   },
   {
     opportunity_type: "leadership_program",
     field_area: "leadership",
-    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    education_levels: ["high_school", "undergraduate", "masters", "mba"],
     phrases: [
-      'student leadership program application deadline',
-      'leadership program students apply',
-      'civic leadership program students application',
-      'global leadership program students deadline',
+      'youth leadership program 2026 application',
+      'leadership academy 2026 apply deadline',
+      'leadership institute summer 2026 application',
+      'leadership development program 2026 apply students',
     ],
   },
   {
     opportunity_type: "career_development_program",
     field_area: "career_development",
-    education_levels: ["high_school", "undergraduate", "masters", "phd", "medical_student", "law_student", "mba"],
+    education_levels: ["high_school", "undergraduate", "masters", "medical_student", "law_student", "mba"],
     phrases: [
-      'career development program students application',
-      'professional development program students apply',
-      'career preparation program students deadline',
-      'student development program application deadline',
+      'career development program 2026 students application',
+      'professional development program 2026 apply',
+      'early career program 2026 students application deadline',
     ],
   },
   {
     opportunity_type: "pipeline_program",
     field_area: "pipeline",
-    education_levels: ["high_school", "undergraduate", "masters", "medical_student", "law_student", "mba"],
+    education_levels: ["high_school", "undergraduate", "medical_student", "law_student"],
     phrases: [
-      'pipeline program students application',
-      'student pipeline program apply deadline',
-      'pre-med pipeline program students application',
-      'pathway program students apply',
+      'pipeline program 2026 students application',
+      'pre-med pipeline program 2026 apply',
+      'pathway program 2026 students application deadline',
+      'diversity pipeline program 2026 apply',
     ],
   },
 ];

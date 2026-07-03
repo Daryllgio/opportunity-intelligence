@@ -1,5 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { getPlanLimits } from "@/lib/billing/plans";
+import { scheduleScoringJobForUser } from "@/lib/scoring/schedule-scoring-job";
 
 function createServiceSupabase() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -29,6 +31,12 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString();
 
+    // Fresh-content pass: when opportunities have been published since a
+    // user's last scoring run, schedule a refresh so new matches appear
+    // without the user doing anything. Profile-change refreshes are handled
+    // separately (the profile save flow schedules its own job).
+    const freshContentJobs = await scheduleFreshContentJobs(supabase);
+
     const { data: jobs, error: jobsError } = await supabase
       .from("user_scoring_jobs")
       .select("*")
@@ -45,6 +53,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ran: false,
         processed: 0,
+        freshContentJobs,
         message: "No due scoring jobs found.",
       });
     }
@@ -147,17 +156,78 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ran: true,
       processed: results.length,
+      freshContentJobs,
       results,
     });
   } catch (error) {
+    console.error(
+      "run-scoring-jobs error:",
+      error instanceof Error ? error.message : error
+    );
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to run scoring cron.",
-      },
+      { error: "Failed to run scoring cron." },
       { status: 500 }
     );
   }
+}
+
+/**
+ * Schedule refresh jobs for users on ranking plans when opportunities newer
+ * than their latest score exist. Returns how many jobs were scheduled.
+ */
+async function scheduleFreshContentJobs(supabase: SupabaseClient) {
+  const { data: newestOpportunity } = await supabase
+    .from("opportunities")
+    .select("created_at")
+    .eq("is_active", true)
+    .eq("is_approved", true)
+    .eq("lifecycle_status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!newestOpportunity?.created_at) return 0;
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, subscription_plan")
+    .neq("subscription_plan", "free");
+
+  let scheduled = 0;
+
+  for (const profile of profiles || []) {
+    const planLimits = getPlanLimits(profile.subscription_plan);
+    if (!planLimits.hasCompetitivenessRanking) continue;
+
+    const { data: latestScore } = await supabase
+      .from("opportunity_competitiveness_scores")
+      .select("last_scored_at")
+      .eq("user_id", profile.id)
+      .order("last_scored_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Never scored: the initial-scoring path handles them on profile save.
+    // Scored before the newest publish: schedule a refresh.
+    if (
+      latestScore?.last_scored_at &&
+      latestScore.last_scored_at < newestOpportunity.created_at
+    ) {
+      try {
+        const result = await scheduleScoringJobForUser({
+          supabase,
+          userId: profile.id,
+          force: true,
+        });
+        if (result.scheduled) scheduled++;
+      } catch (error) {
+        console.error(
+          "fresh-content scheduling failed:",
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
+  }
+
+  return scheduled;
 }

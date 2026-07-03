@@ -456,12 +456,17 @@ export function validateExtractedOpportunity({
     applicationUrlQuality === "unknown_application" ||
     (applicationUrlQuality === "same_as_source" && sourceQuality.isAggregator);
 
+  // Calibration note: these thresholds are deliberately achievable. The final
+  // safety gate lives in ingest — nothing goes live without a high/medium
+  // confidence, non-aggregator applicant destination from the ranker. With
+  // that backstop, validation only needs to prove the extraction itself is
+  // complete and from a source we trust.
   const trustedAutoPublish =
-    effectiveSourceTrust === "trusted" && score >= 88 && !needsSourceReview;
+    effectiveSourceTrust === "trusted" && score >= 78 && !needsSourceReview;
 
   const standardAutoPublish =
     effectiveSourceTrust === "standard" &&
-    score >= 94 &&
+    score >= 84 &&
     sourceQuality.isOfficialLeaning &&
     !needsSourceReview;
 
