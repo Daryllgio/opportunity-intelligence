@@ -1249,6 +1249,7 @@ export async function rankApplicationDestination(
   // high-confidence heuristic result must survive AI verification: "the source
   // page looks official" is exactly how content-farm pages slipped through.
   const sourceEvaluation = await evaluateSourceUrlAsDestination(input);
+  let sourceRejectedByVerifier = false;
 
   if (
     sourceEvaluation &&
@@ -1257,8 +1258,9 @@ export async function rankApplicationDestination(
   ) {
     const verified = await verifyBestCandidate(input, [sourceEvaluation]);
     if (verified?.destinationVerified) return verified;
-    // Source page failed reading — fall through to the search phase, keeping
-    // the rejection context for the final result.
+    // Source page failed reading — fall through to the search phase and don't
+    // spend another verification attempt on the same page.
+    sourceRejectedByVerifier = true;
   }
 
   // Phase 2: web search for the official destination.
@@ -1279,6 +1281,12 @@ export async function rankApplicationDestination(
     (candidate) => evaluateCandidate({ input, candidate })
   );
 
+  // A low-confidence source page was never verified in phase 1 — let it
+  // compete here. A verify-rejected one must not burn a second attempt.
+  if (sourceEvaluation && !sourceRejectedByVerifier) {
+    evaluated.push(sourceEvaluation);
+  }
+
   const sorted = evaluated.sort((left, right) => {
     const confidenceDelta =
       confidenceRank(right.confidence) - confidenceRank(left.confidence);
@@ -1286,8 +1294,6 @@ export async function rankApplicationDestination(
     return right.score - left.score;
   });
 
-  // Verify best-first; skip the source page here — it already failed above
-  // (or never qualified).
   const verified = await verifyBestCandidate(input, sorted);
   if (verified) return verified;
 
