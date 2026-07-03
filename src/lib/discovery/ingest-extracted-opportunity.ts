@@ -215,8 +215,7 @@ export async function ingestExtractedOpportunity({
     trustMetadata = {
       ...trustMetadata,
       official_source_url: destinationResult.officialSourceUrl,
-      official_source_verified:
-        destinationResult.officialSourceStatus === "verified_destination",
+      official_source_verified: destinationResult.destinationVerified,
       application_destination_url: destinationResult.applicationDestinationUrl,
       application_destination_type: destinationResult.applicationDestinationType,
       official_source_status: destinationResult.officialSourceStatus,
@@ -224,15 +223,41 @@ export async function ingestExtractedOpportunity({
       destination_reasons: destinationResult.destinationReasons,
       application_document_url: destinationResult.applicationDocumentUrl,
       application_document_type: destinationResult.applicationDocumentType,
-      application_note:
-        destinationResult.destinationConfidence !== "none"
-          ? `Applicant destination selected with ${destinationResult.destinationConfidence} confidence. Review before publishing.`
-          : "No strong applicant-facing destination was found. Review manually.",
+      application_note: destinationResult.destinationVerified
+        ? "Destination confirmed by AI page verification."
+        : destinationResult.destinationConfidence !== "none"
+          ? "Heuristic destination only — AI verification did not confirm it. Review before publishing."
+          : "No verified applicant-facing destination was found. Review manually.",
       source_quality_reasons: [
         ...trustMetadata.source_quality_reasons,
         ...destinationResult.destinationReasons,
       ],
     };
+
+    // Verifier verdicts about the OPPORTUNITY itself, not just the link:
+    // a degree/admissions page means the whole record is out of scope; a
+    // confirmed-closed page means it belongs in next-cycle tracking.
+    if (
+      destinationResult.verificationVerdict === "degree_or_admissions" &&
+      validation.decision !== "reject"
+    ) {
+      validation.decision = "reject";
+      validation.autoPublishEligible = false;
+      validation.reasons = [
+        ...validation.reasons,
+        "AI verification identified this as a degree/admissions page — not an opportunity we list.",
+      ];
+    } else if (
+      destinationResult.verificationVerdict === "expired_or_closed" &&
+      validation.decision === "auto_publish"
+    ) {
+      validation.decision = "track_for_next_cycle";
+      validation.autoPublishEligible = false;
+      validation.reasons = [
+        ...validation.reasons,
+        "AI verification found applications closed on the destination page — tracking for next cycle.",
+      ];
+    }
   } catch (error) {
     trustMetadata = {
       ...trustMetadata,
@@ -254,7 +279,7 @@ export async function ingestExtractedOpportunity({
   // ---------------------------------------------------------------------
   const destinationOkForAutoPublish =
     Boolean(trustMetadata.application_destination_url) &&
-    ["high", "medium"].includes(String(trustMetadata.destination_confidence)) &&
+    trustMetadata.official_source_verified === true &&
     trustMetadata.application_destination_type !== "aggregator_or_database" &&
     trustMetadata.application_destination_type !== "not_found";
 
@@ -263,7 +288,7 @@ export async function ingestExtractedOpportunity({
     validation.autoPublishEligible = false;
     validation.reasons = [
       ...validation.reasons,
-      "Auto-publish blocked: no verified applicant destination (high/medium confidence, non-aggregator) was found.",
+      "Auto-publish blocked: the destination did not pass AI page verification.",
     ];
 
     trustMetadata = {

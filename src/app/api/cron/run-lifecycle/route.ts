@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
+import { reverifyPublishedDestinations } from "@/lib/opportunities/reverify-destinations";
 
 function createServiceSupabase() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -95,12 +96,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Self-healing pass: re-verify a rotating batch of live Apply links with
+    // the same AI verifier used at publish time. Confirmed links stay, dead
+    // cycles expire, wrong links get repaired or pulled for review.
+    const reverify = await reverifyPublishedDestinations({ supabase, limit: 15 });
+
     return NextResponse.json({
       success: true,
       checked,
       expired,
       unchanged,
       scoresMarkedStale,
+      reverify,
     });
   } catch (error) {
     console.error("Cron lifecycle error:", error);

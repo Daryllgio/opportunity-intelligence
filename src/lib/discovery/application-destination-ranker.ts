@@ -34,6 +34,7 @@ import {
   detectAggregatorBehavior,
 } from "@/lib/discovery/source-quality";
 import { searchDiscoveryWeb } from "@/lib/discovery/search/search-provider";
+import { verifyApplicationDestination } from "@/lib/discovery/verify-destination";
 import {
   deadlineAppearsInText,
   hasAnySignal,
@@ -134,6 +135,11 @@ export type RankedDestinationCandidate = DestinationCandidate & {
   applicationDocumentType: string | null;
   applicationDestinationUrl: string | null;
   applicationDestinationType: CandidatePurpose;
+  // Captured page content, retained so the AI verification step can reuse it
+  // without a second fetch when the destination IS the evaluated page.
+  capturedFinalUrl?: string | null;
+  capturedTitle?: string | null;
+  capturedText?: string | null;
 };
 
 export type ApplicationDestinationResult = {
@@ -152,6 +158,10 @@ export type ApplicationDestinationResult = {
   applicationDocumentUrl: string | null;
   applicationDocumentType: string | null;
   candidates: RankedDestinationCandidate[];
+  /** True only when the AI verifier read the page and confirmed it. */
+  destinationVerified: boolean;
+  /** The verifier's verdict for the returned destination (or last rejection). */
+  verificationVerdict: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -926,6 +936,9 @@ async function evaluateCandidate({
     applicationDocumentType: documentType,
     applicationDestinationUrl: destinationUrl,
     applicationDestinationType: purpose,
+    capturedFinalUrl: finalUrl,
+    capturedTitle: page.title,
+    capturedText: pageText.slice(0, 9500),
   };
 }
 
@@ -1097,19 +1110,22 @@ export function emptyApplicationDestinationResult(
     applicationDocumentUrl: null,
     applicationDocumentType: null,
     candidates: [],
+    destinationVerified: false,
+    verificationVerdict: null,
   };
 }
 
 function buildResultFromCandidate(
   best: RankedDestinationCandidate,
-  allCandidates: RankedDestinationCandidate[]
+  allCandidates: RankedDestinationCandidate[],
+  verification: { verified: boolean; verdict: string | null; reason?: string }
 ): ApplicationDestinationResult {
   const isDocument = best.applicationDestinationType === "application_document";
 
   const officialSourceStatus: ApplicationDestinationResult["officialSourceStatus"] =
-    best.confidence === "high"
+    verification.verified
       ? "verified_destination"
-      : best.confidence === "medium"
+      : best.confidence === "medium" || best.confidence === "high"
         ? "candidate_found"
         : "needs_human_review";
 
@@ -1118,14 +1134,105 @@ function buildResultFromCandidate(
     applicationDestinationUrl: best.applicationDestinationUrl,
     applicationDestinationType: best.applicationDestinationType,
     officialSourceStatus,
-    destinationConfidence: best.confidence,
+    destinationConfidence: verification.verified ? best.confidence : "low",
     destinationReasons: [
-      `Best applicant destination selected with ${best.confidence} confidence.`,
+      verification.verified
+        ? `AI verification confirmed the destination (${verification.verdict}): ${verification.reason || ""}`
+        : `Best heuristic candidate, NOT AI-verified${verification.reason ? `: ${verification.reason}` : "."}`,
       ...best.reasons,
     ],
     applicationDocumentUrl: best.applicationDocumentUrl,
     applicationDocumentType: best.applicationDocumentType,
     candidates: allCandidates,
+    destinationVerified: verification.verified,
+    verificationVerdict: verification.verdict,
+  };
+}
+
+// How many candidates get the (capture + model) verification treatment per
+// lookup. Three attempts covers the realistic depth of good candidates.
+const MAX_VERIFICATION_ATTEMPTS = 3;
+
+/**
+ * Try candidates best-first until the AI verifier confirms one. Returns the
+ * verified result, or a rejection summary when nothing survives reading.
+ */
+async function verifyBestCandidate(
+  input: ApplicationDestinationInput,
+  sorted: RankedDestinationCandidate[]
+): Promise<ApplicationDestinationResult | null> {
+  const rejections: string[] = [];
+  let attempts = 0;
+  let sawExpired = false;
+  let sawDegree = false;
+
+  for (const candidate of sorted) {
+    if (attempts >= MAX_VERIFICATION_ATTEMPTS) break;
+    if (candidate.confidence === "none") continue;
+    if (!candidate.applicationDestinationUrl) continue;
+
+    attempts += 1;
+
+    // Reuse the already-captured page when the destination IS that page.
+    const destinationIsEvaluatedPage =
+      candidate.capturedFinalUrl &&
+      candidate.capturedText &&
+      candidate.applicationDestinationUrl.replace(/\/$/, "") ===
+        candidate.capturedFinalUrl.replace(/\/$/, "");
+
+    const verdict = await verifyApplicationDestination({
+      title: input.title,
+      provider: input.provider,
+      type: input.type,
+      deadline: input.deadline,
+      url: candidate.applicationDestinationUrl,
+      preCaptured: destinationIsEvaluatedPage
+        ? {
+            pageTitle: candidate.capturedTitle ?? null,
+            pageText: candidate.capturedText as string,
+          }
+        : null,
+    });
+
+    if (verdict.ok) {
+      return buildResultFromCandidate(candidate, sorted, {
+        verified: true,
+        verdict: verdict.verdict,
+        reason: verdict.reason,
+      });
+    }
+
+    if (verdict.verdict === "expired_or_closed") sawExpired = true;
+    if (verdict.verdict === "degree_or_admissions") sawDegree = true;
+
+    rejections.push(
+      `Rejected ${candidate.applicationDestinationUrl.slice(0, 90)} — ${verdict.verdict}: ${verdict.reason}`
+    );
+  }
+
+  if (rejections.length === 0) return null;
+
+  // Everything readable was wrong. Surface the strongest signal so ingest can
+  // act on it (expired → track next cycle; degree page → out of scope).
+  return {
+    officialSourceUrl: null,
+    applicationDestinationUrl: null,
+    applicationDestinationType: "not_found",
+    officialSourceStatus: "failed_lookup",
+    destinationConfidence: "none",
+    destinationReasons: [
+      "AI verification rejected every candidate destination.",
+      ...rejections,
+    ],
+    applicationDocumentUrl: null,
+    applicationDocumentType: null,
+    candidates: sorted,
+    destinationVerified: false,
+    verificationVerdict: sawDegree
+      ? "degree_or_admissions"
+      : sawExpired
+        ? "expired_or_closed"
+        : "all_candidates_rejected",
   };
 }
 
@@ -1138,7 +1245,9 @@ export async function rankApplicationDestination(
     );
   }
 
-  // Phase 1: the source page itself (cheap — one capture, no search).
+  // Phase 1: the source page itself (cheap — one capture, no search). Even a
+  // high-confidence heuristic result must survive AI verification: "the source
+  // page looks official" is exactly how content-farm pages slipped through.
   const sourceEvaluation = await evaluateSourceUrlAsDestination(input);
 
   if (
@@ -1146,7 +1255,10 @@ export async function rankApplicationDestination(
     (sourceEvaluation.confidence === "high" ||
       sourceEvaluation.confidence === "medium")
   ) {
-    return buildResultFromCandidate(sourceEvaluation, [sourceEvaluation]);
+    const verified = await verifyBestCandidate(input, [sourceEvaluation]);
+    if (verified?.destinationVerified) return verified;
+    // Source page failed reading — fall through to the search phase, keeping
+    // the rejection context for the final result.
   }
 
   // Phase 2: web search for the official destination.
@@ -1167,8 +1279,6 @@ export async function rankApplicationDestination(
     (candidate) => evaluateCandidate({ input, candidate })
   );
 
-  if (sourceEvaluation) evaluated.push(sourceEvaluation);
-
   const sorted = evaluated.sort((left, right) => {
     const confidenceDelta =
       confidenceRank(right.confidence) - confidenceRank(left.confidence);
@@ -1176,11 +1286,10 @@ export async function rankApplicationDestination(
     return right.score - left.score;
   });
 
-  const best = sorted.find((candidate) => candidate.confidence !== "none");
-
-  if (best) {
-    return buildResultFromCandidate(best, sorted);
-  }
+  // Verify best-first; skip the source page here — it already failed above
+  // (or never qualified).
+  const verified = await verifyBestCandidate(input, sorted);
+  if (verified) return verified;
 
   const sourceWasAggregator = isAggregatorDomain(getDomain(input.sourceUrl || null));
 
@@ -1199,5 +1308,7 @@ export async function rankApplicationDestination(
     applicationDocumentUrl: null,
     applicationDocumentType: null,
     candidates: sorted,
+    destinationVerified: false,
+    verificationVerdict: null,
   };
 }
