@@ -74,7 +74,7 @@ export function AppNav() {
 
   function linkClasses(href: string) {
     return isActive(href)
-      ? "px-3 py-1.5 text-sm font-medium text-neutral-900 dark:text-neutral-100"
+      ? "relative px-3 py-1.5 text-sm font-medium text-neutral-900 after:absolute after:inset-x-3 after:-bottom-[13px] after:h-0.5 after:rounded-full after:bg-primary dark:text-neutral-100"
       : "px-3 py-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100";
   }
 

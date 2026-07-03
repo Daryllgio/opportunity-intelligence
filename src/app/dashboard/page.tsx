@@ -269,7 +269,7 @@ export default function DashboardPage() {
       <AppNav />
 
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <header>
+        <header className="animate-fade-up">
           <h1 className="text-2xl font-semibold tracking-tight">
             {firstName ? `Good to see you, ${firstName}` : "Your dashboard"}
           </h1>
@@ -279,6 +279,45 @@ export default function DashboardPage() {
               : "Here's where your opportunities stand."}
           </p>
         </header>
+
+        {/* Stat strip */}
+        <div className="animate-fade-up stagger-1 mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-neutral-200 bg-neutral-200 sm:grid-cols-4 dark:border-neutral-800 dark:bg-neutral-800">
+          {[
+            {
+              label: "Top matches",
+              value: opportunities.filter((o) => scores[o.id] !== undefined).length,
+              accent: true,
+            },
+            { label: "Saved", value: savedRows.length },
+            {
+              label: "Deadlines soon",
+              value: savedRows.filter(({ opportunity }) => {
+                const days = daysUntil(opportunity.deadline);
+                return days !== null && days >= 0 && days <= 30;
+              }).length,
+            },
+            {
+              label: "Reports left",
+              value: gapReportsRemaining === null ? "–" : gapReportsRemaining,
+            },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="bg-white px-5 py-4 dark:bg-neutral-950"
+            >
+              <p
+                className={`text-2xl font-semibold tabular-nums ${
+                  stat.accent ? "text-primary" : ""
+                }`}
+              >
+                {stat.value}
+              </p>
+              <p className="mt-0.5 text-xs font-medium text-neutral-400">
+                {stat.label}
+              </p>
+            </div>
+          ))}
+        </div>
 
         {/* Profile completion prompt — shown only while incomplete */}
         {profile && completion < 80 && (
@@ -304,7 +343,7 @@ export default function DashboardPage() {
           <div className="mt-8 rounded-lg border border-neutral-200 p-8 text-center dark:border-neutral-800">
             <h2 className="text-lg font-semibold">Welcome to OppScore</h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
-              Set up your profile to unlock personalized matches — it takes a
+              Set up your profile to unlock personalized matches. It takes a
               few minutes.
             </p>
             <Link
@@ -332,7 +371,7 @@ export default function DashboardPage() {
             <div className="mt-4 rounded-lg border border-dashed border-neutral-200 p-8 text-center dark:border-neutral-800">
               <p className="text-sm text-neutral-500">
                 {profile
-                  ? "Your matches are being scored — check back shortly, or browse everything now."
+                  ? "Your matches are being scored. Check back shortly, or browse everything now."
                   : "Set up your profile to see scored matches."}
               </p>
               <Link

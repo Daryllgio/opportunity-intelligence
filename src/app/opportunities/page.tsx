@@ -52,7 +52,6 @@ function OpportunitiesBrowse() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
-  const [scoredCategories, setScoredCategories] = useState<string[]>([]);
   const [hasRanking, setHasRanking] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [rows, setRows] = useState<Opportunity[]>([]);
@@ -169,9 +168,6 @@ function OpportunitiesBrowse() {
         );
       }
 
-      const status = searchParams.get("status");
-      if (status) query = query.eq("application_status", status);
-
       const country = searchParams.get("country");
       if (country) {
         const clean = sanitize(country);
@@ -254,17 +250,13 @@ function OpportunitiesBrowse() {
   const unscoredOnPage = pageRows.filter((r) => scores[r.id] === undefined);
 
   const activeTypes = (searchParams.get("type") || "").split(",").filter(Boolean);
-  const activeStatus = searchParams.get("status") || "";
   const activeCountry = searchParams.get("country") || "";
   const activeDeadline = Boolean(
     searchParams.get("deadline_from") || searchParams.get("deadline_to")
   );
   const activeQuery = searchParams.get("q") || "";
   const activeFilterCount =
-    activeTypes.length +
-    (activeStatus ? 1 : 0) +
-    (activeCountry ? 1 : 0) +
-    (activeDeadline ? 1 : 0);
+    activeTypes.length + (activeCountry ? 1 : 0) + (activeDeadline ? 1 : 0);
   const hasAnyFilter = activeFilterCount > 0 || Boolean(activeQuery);
 
   const removeCsv = (key: string, value: string) =>
@@ -312,7 +304,7 @@ function OpportunitiesBrowse() {
         <h1 className="text-2xl font-semibold tracking-tight">Opportunities</h1>
         <p className="mt-1 text-[15px] text-neutral-500 dark:text-neutral-400">
           {hasRanking
-            ? "Sorted by your match strength — your best options are at the top."
+            ? "Sorted by your match strength, best options first."
             : "Currently open opportunities from verified sources."}
         </p>
       </div>
@@ -416,12 +408,6 @@ function OpportunitiesBrowse() {
                     onRemove={() => removeCsv("type", value)}
                   />
                 ))}
-                {activeStatus && (
-                  <Pill
-                    label={activeStatus.charAt(0).toUpperCase() + activeStatus.slice(1)}
-                    onRemove={() => clearKey("status")}
-                  />
-                )}
                 {activeCountry && (
                   <Pill label={activeCountry} onRemove={() => clearKey("country")} />
                 )}
@@ -458,7 +444,7 @@ function OpportunitiesBrowse() {
               <div className="mt-6 rounded-lg border border-dashed border-neutral-200 p-10 text-center dark:border-neutral-800">
                 <p className="font-medium">Nothing matches these filters</p>
                 <p className="mt-1 text-sm text-neutral-500">
-                  New opportunities are discovered daily — try broadening your
+                  New opportunities are discovered daily. Try broadening your
                   filters or check back soon.
                 </p>
                 {hasAnyFilter && (
@@ -509,7 +495,7 @@ function OpportunitiesBrowse() {
                         </h2>
                         <p className="mt-0.5 text-xs text-neutral-400">
                           {hasRanking
-                            ? "Outside your scored categories — open any of them to run an individual report."
+                            ? "Outside your scored categories. Open any of them to run an individual report."
                             : "Upgrade to see match scores for these."}
                         </p>
                       </div>

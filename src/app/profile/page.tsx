@@ -165,7 +165,7 @@ export default function ProfilePage() {
           <div className="rounded-lg border border-dashed border-neutral-200 p-10 text-center dark:border-neutral-800">
             <h1 className="text-xl font-semibold">No profile yet</h1>
             <p className="mx-auto mt-2 max-w-sm text-sm text-neutral-500">
-              Your profile powers everything — matching, scoring, and reports.
+              Your profile powers matching, scoring, and reports.
             </p>
             <Link
               href="/onboarding"

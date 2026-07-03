@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Command,
   CommandEmpty,
@@ -493,7 +492,7 @@ function SectionTitle({
 }) {
   return (
     <div>
-      <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
       <p className="mt-1 text-sm text-muted-foreground">{description}</p>
     </div>
   );
@@ -736,11 +735,9 @@ export function ProfileForm() {
 
   if (fetchingProfile) {
     return (
-      <Card className="mt-8">
-        <CardContent className="p-6">
-          <p className="text-muted-foreground">Loading profile...</p>
-        </CardContent>
-      </Card>
+      <div className="mt-10">
+        <p className="text-sm text-neutral-400">Loading profile...</p>
+      </div>
     );
   }
 
@@ -753,8 +750,8 @@ export function ProfileForm() {
   const opportunityPreferenceHelp = planLimits.hasCompetitivenessRanking
     ? `Your plan includes automatic matching in ${maxRankedCategories} categor${
         maxRankedCategories === 1 ? "y" : "ies"
-      } — your top picks are matched first.`
-    : "Pick your preferred categories now — upgrade any time to unlock automatic matching.";
+      }. Your top picks are matched first.`
+    : "Pick your preferred categories now. Upgrade any time to unlock automatic matching.";
 
   function updateOpportunityPreferences(values: string[]) {
     // Everyone may record preferences; the plan only gates how many get
@@ -772,7 +769,7 @@ export function ProfileForm() {
       | "work_project_experiences"
   ) {
     return (
-      <section className="space-y-4 rounded-2xl border p-5">
+      <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
         <div className="flex items-start justify-between gap-4">
           <SectionTitle title={title} description={description} />
           <Button
@@ -791,7 +788,7 @@ export function ProfileForm() {
         {form[key].map((entry, index) => (
           <div
             key={index}
-            className="space-y-4 rounded-xl border bg-muted/20 p-4"
+            className="space-y-4 border-l-2 border-neutral-100 pl-4 dark:border-neutral-800"
           >
             <div className="grid gap-4 md:grid-cols-2">
               <Input
@@ -870,9 +867,8 @@ export function ProfileForm() {
   }
 
   return (
-    <Card className="mt-8">
-      <CardContent className="p-6">
-        <form onSubmit={handleSubmit} className="space-y-8">
+    <div className="mt-10">
+        <form onSubmit={handleSubmit} className="space-y-12">
           <section className="space-y-4">
             <SectionTitle
               title="Academic profile"
@@ -1029,7 +1025,7 @@ export function ProfileForm() {
             "work_project_experiences"
           )}
 
-          <section className="space-y-4 rounded-2xl border p-5">
+          <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
             <div className="flex items-start justify-between gap-4">
               <SectionTitle
                 title="Awards & honors"
@@ -1050,7 +1046,7 @@ export function ProfileForm() {
             {form.awards.map((entry, index) => (
               <div
                 key={index}
-                className="space-y-4 rounded-xl border bg-muted/20 p-4"
+                className="space-y-4 border-l-2 border-neutral-100 pl-4 dark:border-neutral-800"
               >
                 <div className="grid gap-4 md:grid-cols-2">
                   <Input
@@ -1099,11 +1095,10 @@ export function ProfileForm() {
 
           {message && <p className="text-sm text-muted-foreground">{message}</p>}
 
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" size="lg" disabled={loading} className="px-8">
             {loading ? "Saving profile..." : "Save profile"}
           </Button>
         </form>
-      </CardContent>
-    </Card>
+    </div>
   );
 }

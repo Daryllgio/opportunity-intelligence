@@ -14,12 +14,6 @@ export const OPPORTUNITY_TYPES = [
   { value: "pipeline_program", label: "Pipeline Programs" },
 ];
 
-export const APPLICATION_STATUSES = [
-  { value: "open", label: "Open" },
-  { value: "rolling", label: "Rolling" },
-  { value: "closed", label: "Closed" },
-];
-
 export const DEADLINE_PRESETS = [
   { value: "30", label: "Next 30 days" },
   { value: "90", label: "Next 90 days" },
@@ -90,7 +84,6 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
     });
 
   const activeTypes = csvValues("type");
-  const activeStatus = searchParams.get("status") || "";
   const activeCountry = searchParams.get("country") || "";
   const activeDeadlineTo = searchParams.get("deadline_to") || "";
 
@@ -108,33 +101,6 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
                 checked={activeTypes.includes(option.value)}
                 onChange={() => toggleCsv("type", option.value)}
                 className="h-4 w-4 rounded border-neutral-300 accent-neutral-600 focus:ring-neutral-400"
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-      </FilterGroup>
-
-      <FilterGroup title="Application status">
-        <div className="space-y-0.5">
-          <label className={checkbox}>
-            <input
-              type="radio"
-              name="status"
-              checked={activeStatus === ""}
-              onChange={() => setParam("status", null)}
-              className="h-4 w-4 border-neutral-300 accent-neutral-600 focus:ring-neutral-400"
-            />
-            Any
-          </label>
-          {APPLICATION_STATUSES.map((option) => (
-            <label key={option.value} className={checkbox}>
-              <input
-                type="radio"
-                name="status"
-                checked={activeStatus === option.value}
-                onChange={() => setParam("status", option.value)}
-                className="h-4 w-4 border-neutral-300 accent-neutral-600 focus:ring-neutral-400"
               />
               {option.label}
             </label>

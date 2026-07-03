@@ -361,7 +361,7 @@ export default function OpportunityDetailPage() {
                 {opportunity.description && (
                   <section className="mt-10">
                     <h2 className="text-lg font-semibold">About this opportunity</h2>
-                    <p className="mt-3 whitespace-pre-line text-[15px] leading-7 text-neutral-600 dark:text-neutral-300">
+                    <p className="mt-3 whitespace-pre-line break-words text-[15px] leading-7 text-neutral-600 dark:text-neutral-300">
                       {opportunity.description}
                     </p>
                   </section>
@@ -409,7 +409,7 @@ export default function OpportunityDetailPage() {
                       label="Fields of study"
                       value={
                         opportunity.eligible_fields?.length
-                          ? opportunity.eligible_fields.join(", ")
+                          ? opportunity.eligible_fields.map((f) => f.replace(/_/g, " ")).join(", ")
                           : "All fields"
                       }
                     />

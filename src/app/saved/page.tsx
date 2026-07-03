@@ -277,7 +277,7 @@ export default function SavedPage() {
                     onClick={() => setActiveTab(tab.key)}
                     className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
                       active
-                        ? "border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100"
+                        ? "border-primary text-neutral-900 dark:text-neutral-100"
                         : "border-transparent text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                     }`}
                   >

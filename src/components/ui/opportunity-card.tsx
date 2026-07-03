@@ -56,7 +56,7 @@ export function OpportunityCard({
   return (
     <Link
       href={`/opportunities/${id}`}
-      className={`group flex flex-col rounded-lg border border-neutral-200 bg-white p-5 transition-shadow hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900 ${
+      className={`group card-lift flex flex-col rounded-xl border border-neutral-200 bg-white p-5 hover:border-neutral-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700 ${
         dimmed ? "opacity-70" : ""
       }`}
     >

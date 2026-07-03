@@ -55,7 +55,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.446 0.026 256.8); /* muted blue-gray (#4B5563) */
+  --primary: oklch(0.51 0.17 277); /* refined iris indigo (~#5558cc) */
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -90,8 +90,8 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.68 0.14 277);
+  --primary-foreground: oklch(0.145 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -129,19 +129,19 @@
   }
 }
 
-/* ─── Oppscores Brand ───
-   Muted, professional palette: grayscale UI with one desaturated
-   blue-gray accent reserved for primary CTAs. */
+/* ─── OppScore Brand ───
+   Warm neutrals carry the UI; a single refined iris-indigo accent gives it
+   life — CTAs, links, focus, and small highlights. Nothing neon. */
 :root {
-  /* Primary (muted blue-gray) */
-  --opp-primary-50: #f8fafc;
-  --opp-primary-100: #f1f5f9;
-  --opp-primary-200: #e2e8f0;
-  --opp-primary-500: #64748b;
-  --opp-primary-600: #4b5563;
-  --opp-primary-700: #374151;
-  --opp-primary-800: #1f2937;
-  --opp-primary-900: #111827;
+  /* Primary (iris indigo) */
+  --opp-primary-50: #f2f2fc;
+  --opp-primary-100: #e5e6fa;
+  --opp-primary-200: #cdcff4;
+  --opp-primary-500: #6a6de0;
+  --opp-primary-600: #5558cc;
+  --opp-primary-700: #4548ad;
+  --opp-primary-800: #383a8c;
+  --opp-primary-900: #2e3070;
 
   /* Secondary (warm neutral) */
   --opp-secondary-50: #fafaf9;
@@ -167,4 +167,56 @@
   --opp-surface: #171717;
   --opp-surface-raised: #262626;
   --opp-surface-sunken: #0a0a0a;
+}
+
+/* ─── Motion ───
+   One vocabulary of subtle movement. Respect reduced-motion. */
+@keyframes opp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: opp-fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-up-slow {
+  animation: opp-fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.stagger-1 { animation-delay: 60ms; }
+.stagger-2 { animation-delay: 120ms; }
+.stagger-3 { animation-delay: 180ms; }
+.stagger-4 { animation-delay: 240ms; }
+
+.card-lift {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 8px 24px -8px rgb(46 48 112 / 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-fade-up-slow {
+    animation: none;
+  }
+  .card-lift,
+  .card-lift:hover {
+    transform: none;
+    transition: none;
+  }
 }

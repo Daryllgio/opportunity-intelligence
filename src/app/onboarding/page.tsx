@@ -197,9 +197,9 @@ export default function OnboardingPage() {
           {STEPS.map((label, index) => (
             <div key={label} className="flex flex-1 flex-col gap-2">
               <div
-                className={`h-1 rounded-full ${
+                className={`h-1 rounded-full transition-colors ${
                   index <= step
-                    ? "bg-neutral-900 dark:bg-neutral-100"
+                    ? "bg-primary"
                     : "bg-neutral-100 dark:bg-neutral-800"
                 }`}
               />
@@ -417,7 +417,7 @@ export default function OnboardingPage() {
                     onClick={() => toggleCategory(type)}
                     className={`rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors ${
                       selected
-                        ? "border-neutral-900 bg-neutral-50 dark:border-neutral-100 dark:bg-neutral-900"
+                        ? "border-primary bg-primary/5 text-neutral-900 dark:text-neutral-100"
                         : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
                     }`}
                   >
