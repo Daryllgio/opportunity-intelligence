@@ -56,8 +56,8 @@ export function AppNav() {
 
   function linkClasses(href: string) {
     return isActive(href)
-      ? "rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300"
-      : "rounded-full px-3 py-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100";
+      ? "rounded-md bg-neutral-100 px-3 py-1.5 text-sm font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
+      : "rounded-md px-3 py-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100";
   }
 
   return (
@@ -65,7 +65,7 @@ export function AppNav() {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
         <Link
           href="/dashboard"
-          className="text-xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400"
+          className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-neutral-100"
         >
           OppScore
         </Link>

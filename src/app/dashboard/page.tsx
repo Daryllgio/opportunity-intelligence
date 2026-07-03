@@ -8,18 +8,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 
+type ExperienceEntry = Record<string, unknown>;
+
 type Profile = {
   id: string;
   full_name: string | null;
   field_of_study: string | null;
+  field_of_study_other: string | null;
   education_level: string | null;
   school: string | null;
+  school_other: string | null;
+  student_status: string | null;
+  gpa: number | null;
   country_of_study: string | null;
   nationality: string | null;
   languages: string[] | null;
   target_opportunity_types: string[] | null;
-  profile_completion: number | null;
   subscription_plan: string | null;
+  leadership_experiences: ExperienceEntry[] | null;
+  research_experiences: ExperienceEntry[] | null;
+  volunteer_experiences: ExperienceEntry[] | null;
+  work_project_experiences: ExperienceEntry[] | null;
+  awards: ExperienceEntry[] | null;
 };
 
 type Opportunity = {
@@ -42,12 +52,6 @@ type SavedOpportunity = {
   id: string;
   opportunity_id: string;
   opportunities: Opportunity | null;
-};
-
-type AiUsage = {
-  usage_month: string;
-  competitiveness_scores_used: number;
-  gap_reports_used: number;
 };
 
 type CompetitivenessScore = {
@@ -92,21 +96,25 @@ function getDeadlineLabel(deadline: string | null) {
   return `${days} days left`;
 }
 
-// Urgency color for an upcoming deadline: red <7 days, amber 7-14, green 30+.
-function getDeadlineColor(deadline: string | null) {
+// Urgency dot for an upcoming deadline: red <7 days, amber 7-14, green after.
+function getDeadlineDotColor(deadline: string | null) {
   const days = daysUntil(deadline);
-  if (days === null || days < 0) return "text-muted-foreground";
-  if (days < 7) return "text-rose-600 dark:text-rose-400";
-  if (days <= 14) return "text-amber-600 dark:text-amber-400";
-  return "text-teal-600 dark:text-teal-400";
+  if (days === null || days < 0) return "bg-neutral-300";
+  if (days < 7) return "bg-red-400";
+  if (days <= 14) return "bg-amber-400";
+  return "bg-green-500";
 }
 
-function getCurrentUsageMonth() {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
-
-  return `${year}-${month}`;
+function DeadlineLabel({ deadline }: { deadline: string | null }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${getDeadlineDotColor(deadline)}`}
+        aria-hidden="true"
+      />
+      {getDeadlineLabel(deadline)}
+    </span>
+  );
 }
 
 function getPlanLabel(plan: string | null | undefined) {
@@ -115,25 +123,41 @@ function getPlanLabel(plan: string | null | undefined) {
   return "Free";
 }
 
-function getPlanLimits(plan: string | null | undefined) {
-  if (plan === "pro") {
-    return {
-      competitivenessScores: 250,
-      gapReports: 40,
-    };
-  }
+// Completion is computed from actual profile fields — there is no
+// profile_completion column in the database.
+function getProfileCompletion(profile: Profile | null) {
+  if (!profile) return 0;
 
-  if (plan === "premium") {
-    return {
-      competitivenessScores: 400,
-      gapReports: 90,
-    };
-  }
+  const school =
+    profile.school === "Other" ? profile.school_other : profile.school;
+  const major =
+    profile.field_of_study === "Other"
+      ? profile.field_of_study_other
+      : profile.field_of_study;
 
-  return {
-    competitivenessScores: 0,
-    gapReports: 0,
-  };
+  const fields = [
+    profile.nationality,
+    profile.country_of_study,
+    profile.student_status,
+    school,
+    profile.education_level,
+    major,
+    profile.gpa?.toString(),
+  ];
+
+  const base = fields.filter(Boolean).length / fields.length;
+
+  const evidenceCount =
+    (profile.leadership_experiences?.length || 0) +
+    (profile.research_experiences?.length || 0) +
+    (profile.volunteer_experiences?.length || 0) +
+    (profile.work_project_experiences?.length || 0) +
+    (profile.awards?.length || 0);
+
+  return Math.min(
+    100,
+    Math.round((base * 0.75 + Math.min(0.25, evidenceCount * 0.05)) * 100)
+  );
 }
 
 export default function DashboardPage() {
@@ -143,7 +167,6 @@ export default function DashboardPage() {
     CompetitivenessScore[]
   >([]);
   const [saved, setSaved] = useState<SavedOpportunity[]>([]);
-  const [usage, setUsage] = useState<AiUsage | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -210,13 +233,6 @@ export default function DashboardPage() {
         .eq("user_id", user.id)
         .limit(6);
 
-      const { data: usageData } = await supabase
-        .from("user_ai_usage")
-        .select("usage_month, competitiveness_scores_used, gap_reports_used")
-        .eq("user_id", user.id)
-        .eq("usage_month", getCurrentUsageMonth())
-        .maybeSingle();
-
       const { data: scoreData } = await supabase
         .from("opportunity_competitiveness_scores")
         .select("opportunity_id, score, fit_label, model_used, updated_at, score_status")
@@ -236,7 +252,6 @@ export default function DashboardPage() {
       setOpportunities((opportunityData || []) as Opportunity[]);
       setCompetitivenessScores((scoreData || []) as CompetitivenessScore[]);
       setSaved(normalizedSaved as unknown as SavedOpportunity[]);
-      setUsage(usageData as AiUsage | null);
       setLoading(false);
     }
 
@@ -265,7 +280,6 @@ export default function DashboardPage() {
   }, [opportunitiesWithScores]);
 
   const topMatches = scoredOpportunities.slice(0, 3);
-  const opportunitiesWithCompetitivenessScores = scoredOpportunities.length;
 
   const urgentOpportunities = scoredOpportunities
     .filter(({ opportunity }) => {
@@ -282,17 +296,9 @@ export default function DashboardPage() {
     .map((item) => item.opportunities)
     .filter(Boolean) as Opportunity[];
 
-  const profileCompletion = profile?.profile_completion || 0;
+  const profileCompletion = getProfileCompletion(profile);
   const subscriptionPlan = profile?.subscription_plan || "free";
   const planLabel = getPlanLabel(subscriptionPlan);
-  const planLimits = getPlanLimits(subscriptionPlan);
-  const scoresUsed = usage?.competitiveness_scores_used || 0;
-  const gapReportsUsed = usage?.gap_reports_used || 0;
-  const scoresRemaining = Math.max(
-    0,
-    planLimits.competitivenessScores - scoresUsed
-  );
-  const gapReportsRemaining = Math.max(0, planLimits.gapReports - gapReportsUsed);
   const paidPlan = subscriptionPlan === "pro" || subscriptionPlan === "premium";
 
   const nextActions = [
@@ -353,9 +359,7 @@ export default function DashboardPage() {
 
       <section className="px-6 py-8">
         <div className="mx-auto max-w-7xl">
-          <Badge variant="secondary">Dashboard</Badge>
-
-          <div className="mt-3 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
               <h1 className="text-4xl font-semibold tracking-tight">
                 Opportunity Dashboard
@@ -446,46 +450,6 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {paidPlan && (
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <div className="rounded-xl border p-4">
-                    <p className="text-sm text-muted-foreground">
-                      Scored opportunities
-                    </p>
-                    <p className="mt-2 text-3xl font-semibold">
-                      {opportunitiesWithCompetitivenessScores}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Opportunities with competitiveness scores assigned based on your profile.
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border p-4">
-                    <p className="text-sm text-muted-foreground">Gap reports</p>
-                    <p className="mt-2 text-3xl font-semibold">
-                      {gapReportsUsed}/{planLimits.gapReports}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {gapReportsRemaining} remaining
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border p-4">
-                    <p className="text-sm text-muted-foreground">
-                      Upcoming deadlines for saved opportunities
-                    </p>
-                    <p className="mt-2 text-3xl font-semibold">
-                      {savedOpportunities.filter((opportunity) => {
-                        const days = daysUntil(opportunity.deadline);
-                        return days !== null && days >= 0 && days <= 30;
-                      }).length}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Due within 30 days.
-                    </p>
-                  </div>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -520,17 +484,15 @@ export default function DashboardPage() {
                         >
                           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                             <div>
-                              <div className="flex flex-wrap gap-2">
-                                <Badge variant="secondary">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <Badge variant="outline">
                                   {formatType(opportunity.type)}
                                 </Badge>
-                                <Badge variant="outline">
+                                <span className="text-xs text-muted-foreground">
                                   {score.fit_label}
-                                </Badge>
+                                </span>
                                 {opportunity.deadline && (
-                                  <Badge variant="outline">
-                                    {getDeadlineLabel(opportunity.deadline)}
-                                  </Badge>
+                                  <DeadlineLabel deadline={opportunity.deadline} />
                                 )}
                               </div>
 
@@ -552,12 +514,12 @@ export default function DashboardPage() {
                               )}
                             </div>
 
-                            <div className="shrink-0 rounded-xl border p-4 text-center">
+                            <div className="shrink-0 text-right">
                               <p className="text-xs text-muted-foreground">
                                 Score
                               </p>
-                              <p className="text-2xl font-semibold">
-                                {score.score}/100
+                              <p className="text-xl font-semibold">
+                                {score.score}
                               </p>
                             </div>
                           </div>
@@ -594,15 +556,9 @@ export default function DashboardPage() {
                         >
                           <div>
                             <h3 className="font-medium">{opportunity.title}</h3>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              <span
-                                className={`font-medium ${getDeadlineColor(
-                                  opportunity.deadline
-                                )}`}
-                              >
-                                {getDeadlineLabel(opportunity.deadline)}
-                              </span>{" "}
-                              · Score {score.score}/100
+                            <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+                              <DeadlineLabel deadline={opportunity.deadline} />
+                              <span>· Score {score.score}</span>
                             </p>
                           </div>
 
@@ -634,14 +590,20 @@ export default function DashboardPage() {
                       </p>
                     ) : (
                       nextActions.map((action) => (
-                        <div key={action.title} className="rounded-xl border p-4">
-                          <h3 className="font-medium">{action.title}</h3>
-                          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        <div
+                          key={action.title}
+                          className="border-b border-neutral-100 pb-4 last:border-b-0 last:pb-0 dark:border-neutral-800"
+                        >
+                          <h3 className="text-sm font-medium">{action.title}</h3>
+                          <p className="mt-1 text-sm leading-6 text-muted-foreground">
                             {action.description}
                           </p>
-                          <Button asChild className="mt-4" variant="outline">
-                            <Link href={action.href}>{action.cta}</Link>
-                          </Button>
+                          <Link
+                            href={action.href}
+                            className="mt-2 inline-block text-sm font-medium text-neutral-700 underline underline-offset-2 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
+                          >
+                            {action.cta}
+                          </Link>
                         </div>
                       ))
                     )}
@@ -665,8 +627,8 @@ export default function DashboardPage() {
                       savedOpportunities.slice(0, 4).map((opportunity) => (
                         <div key={opportunity.id} className="rounded-xl border p-4">
                           <h3 className="font-medium">{opportunity.title}</h3>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {getDeadlineLabel(opportunity.deadline)}
+                          <p className="mt-1">
+                            <DeadlineLabel deadline={opportunity.deadline} />
                           </p>
                           <Button asChild className="mt-4" variant="outline">
                             <Link href={`/opportunities/${opportunity.id}`}>
@@ -701,7 +663,7 @@ export default function DashboardPage() {
                         <div key={opportunity.id} className="rounded-xl border p-4">
                           <h3 className="font-medium">{opportunity.title}</h3>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            Score {score.score}/100 · Improve profile before applying.
+                            Score {score.score} · Improve profile before applying.
                           </p>
                         </div>
                       ))

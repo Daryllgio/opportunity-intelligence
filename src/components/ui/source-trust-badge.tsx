@@ -5,7 +5,7 @@ export function SourceTrustBadge({ category }: { category: string }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${style.bg} ${style.text}`}
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${style.bg} ${style.text}`}
     >
       {style.label}
     </span>

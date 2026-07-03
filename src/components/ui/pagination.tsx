@@ -50,7 +50,7 @@ export function Pagination({
   const idle =
     "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800";
   const active =
-    "bg-indigo-600 text-white hover:bg-indigo-700";
+    "border border-neutral-300 bg-neutral-50 text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100";
   const disabled = "cursor-not-allowed text-neutral-300 dark:text-neutral-700";
 
   return (
@@ -64,7 +64,7 @@ export function Pagination({
         disabled={page <= 1}
         className={`${baseBtn} ${page <= 1 ? disabled : idle}`}
       >
-        ← Prev
+        Previous
       </button>
 
       {pageList.map((item, index) =>
@@ -94,7 +94,7 @@ export function Pagination({
         disabled={page >= totalPages}
         className={`${baseBtn} ${page >= totalPages ? disabled : idle}`}
       >
-        Next →
+        Next
       </button>
     </nav>
   );

@@ -33,8 +33,7 @@ const plans = [
     description:
       "For students actively comparing opportunities and deciding where to focus their applications.",
     features: [
-      "Profile-based matching for up to 2 opportunity categories",
-      "Standard competitiveness ranking",
+      "Profile-based matching across up to 3 opportunity categories",
       "Deadline tracking",
       "Effort-to-reward insight",
       "40 gap reports per month",
@@ -52,11 +51,10 @@ const plans = [
       "For students running a broader search across multiple opportunity types and application cycles.",
     features: [
       "Profile-based matching across all opportunity categories",
-      "Expanded competitiveness ranking",
       "Faster updates for new and renewed opportunities",
       "Deadline tracking",
       "Effort-to-reward insight",
-      "90 gap reports per month",
+      "80 gap reports per month",
     ],
     cta: "Upgrade to Premium",
     href: "/signup",

@@ -16,7 +16,6 @@ import { Pagination } from "@/components/ui/pagination";
 import {
   FilterSidebar,
   OPPORTUNITY_TYPES,
-  EDUCATION_LEVELS,
 } from "@/components/opportunities/filter-sidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,8 +43,6 @@ type ScoreRow = { opportunity_id: string; score: number };
 const typeLabel = (value: string) =>
   OPPORTUNITY_TYPES.find((t) => t.value === value)?.label ||
   value.replace(/_/g, " ");
-const educationLabel = (value: string) =>
-  EDUCATION_LEVELS.find((e) => e.value === value)?.label || value;
 
 function sanitize(value: string) {
   return value.replace(/[%,()]/g, " ").trim();
@@ -122,7 +119,7 @@ function OpportunitiesBrowse() {
 
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("id, subscription_plan")
+        .select("id, subscription_plan, education_level")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -169,12 +166,15 @@ function OpportunitiesBrowse() {
       const type = searchParams.get("type");
       if (type) query = query.in("type", type.split(",").filter(Boolean));
 
-      const education = searchParams.get("education");
-      if (education) {
-        const levels = education.split(",").filter(Boolean);
-        if (levels.length) {
-          query = query.overlaps("eligible_education_levels", levels);
-        }
+      // Education level comes from the user's profile, not a filter control.
+      // Rows with no recorded eligibility stay visible.
+      const profileEducationLevel = String(
+        profileData.education_level || ""
+      ).replace(/[^a-z_]/g, "");
+      if (profileEducationLevel) {
+        query = query.or(
+          `eligible_education_levels.is.null,eligible_education_levels.eq.{},eligible_education_levels.cs.{${profileEducationLevel}}`
+        );
       }
 
       const status = searchParams.get("status");
@@ -264,9 +264,6 @@ function OpportunitiesBrowse() {
 
   // ─── Active filter pills ───
   const activeTypes = (searchParams.get("type") || "").split(",").filter(Boolean);
-  const activeEducation = (searchParams.get("education") || "")
-    .split(",")
-    .filter(Boolean);
   const activeStatus = searchParams.get("status") || "";
   const activeCountry = searchParams.get("country") || "";
   const activeField = searchParams.get("field") || "";
@@ -278,7 +275,6 @@ function OpportunitiesBrowse() {
 
   const activeFilterCount =
     activeTypes.length +
-    activeEducation.length +
     (activeStatus ? 1 : 0) +
     (activeCountry ? 1 : 0) +
     (activeField ? 1 : 0) +
@@ -318,10 +314,12 @@ function OpportunitiesBrowse() {
     <button
       type="button"
       onClick={onRemove}
-      className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-sm text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300"
+      className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-sm text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
     >
       {label}
-      <span aria-hidden="true">✕</span>
+      <span className="text-neutral-400" aria-hidden="true">
+        ✕
+      </span>
     </button>
   );
 
@@ -431,13 +429,6 @@ function OpportunitiesBrowse() {
                     key={`type-${value}`}
                     label={typeLabel(value)}
                     onRemove={() => removeCsv("type", value)}
-                  />
-                ))}
-                {activeEducation.map((value) => (
-                  <Pill
-                    key={`edu-${value}`}
-                    label={educationLabel(value)}
-                    onRemove={() => removeCsv("education", value)}
                   />
                 ))}
                 {activeStatus && (

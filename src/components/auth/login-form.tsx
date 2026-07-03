@@ -69,7 +69,7 @@ export function LoginForm() {
               <Label htmlFor="loginPassword">Password</Label>
               <Link
                 href="/reset-password"
-                className="text-sm text-indigo-600 hover:text-indigo-700"
+                className="text-sm text-neutral-500 underline underline-offset-2 hover:text-neutral-700"
               >
                 Forgot password?
               </Link>

@@ -211,12 +211,12 @@ function applyButtonLabel(opp: Opportunity): string {
   const portal = detectPortalName(opp);
   const domain = domainFromUrl(opp.source_url);
 
-  if (destType && VERIFIED_DEST.has(destType)) return "Apply on official website →";
+  if (destType && VERIFIED_DEST.has(destType)) return "Apply on official website";
   if (destType && PORTAL_DEST.has(destType))
-    return `Apply through ${portal ?? "application portal"} →`;
+    return `Apply through ${portal ?? "application portal"}`;
   if (opp.source_category === "aggregator")
-    return `View on ${domain ?? "source"} →`;
-  return "Visit provider website →";
+    return `View on ${domain ?? "source"}`;
+  return "Visit provider website";
 }
 
 export default function OpportunityDetailPage() {
@@ -335,11 +335,11 @@ export default function OpportunityDetailPage() {
 
   const trustToneClass: Record<TrustMessage["tone"], string> = {
     positive:
-      "bg-teal-50 dark:bg-teal-950 text-teal-800 dark:text-teal-200 border-teal-200 dark:border-teal-800",
+      "bg-neutral-50 text-neutral-700 border-neutral-200 dark:bg-neutral-900 dark:text-neutral-300 dark:border-neutral-700",
     neutral:
-      "bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-800",
+      "bg-neutral-50 text-neutral-700 border-neutral-200 dark:bg-neutral-900 dark:text-neutral-300 dark:border-neutral-700",
     caution:
-      "bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800",
+      "bg-amber-50/60 text-amber-900 border-amber-100 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900",
   };
 
   return (
@@ -349,7 +349,7 @@ export default function OpportunityDetailPage() {
       <section className="px-6 py-8">
         <div className="mx-auto max-w-7xl">
           <Button asChild variant="outline">
-            <Link href="/opportunities">← Back to opportunities</Link>
+            <Link href="/opportunities">Back to opportunities</Link>
           </Button>
 
           {loading ? (
@@ -541,7 +541,7 @@ export default function OpportunityDetailPage() {
                                 href={applyUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-indigo-600 hover:underline dark:text-indigo-400"
+                                className="text-neutral-700 underline underline-offset-2 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
                               >
                                 {applyUrl}
                               </a>
@@ -565,7 +565,7 @@ export default function OpportunityDetailPage() {
                               rel="noopener noreferrer"
                               className="font-medium underline"
                             >
-                              Official source →
+                              Official source
                             </a>
                           </>
                         )}
@@ -578,7 +578,7 @@ export default function OpportunityDetailPage() {
                   <Card>
                     <CardContent className="p-6">
                       <h2 className="text-xl font-semibold">AI summary</h2>
-                      <div className="mt-3 rounded-md border-l-4 border-indigo-400 bg-indigo-50 p-4 dark:bg-indigo-950/40">
+                      <div className="mt-3 rounded-md border-l-2 border-neutral-300 bg-neutral-50 p-4 dark:border-neutral-600 dark:bg-neutral-900">
                         <p className="leading-7 text-neutral-700 dark:text-neutral-200">
                           {opportunity.ai_summary}
                         </p>
@@ -681,7 +681,7 @@ export default function OpportunityDetailPage() {
                 </Card>
 
                 {/* ── Apply CTA ──────────────────────────────────── */}
-                <Card className="border-indigo-200 bg-indigo-50/50 dark:border-indigo-900 dark:bg-indigo-950/30">
+                <Card>
                   <CardContent className="p-6">
                     <h2 className="text-xl font-semibold">Ready to apply?</h2>
                     {applyUrl ? (

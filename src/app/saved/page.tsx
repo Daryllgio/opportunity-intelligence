@@ -45,20 +45,20 @@ type ScoredSavedOpportunity = {
   score: { score: number | null; recommendation: string };
 };
 
-// Status workflow values, labels, and badge colors.
+// Status workflow values, labels, and indicator dot colors.
 const STATUS_META: Record<
   string,
-  { label: string; badge: string }
+  { label: string; dot: string }
 > = {
-  saved: { label: "Saved", badge: "bg-neutral-100 text-neutral-600" },
-  planning: { label: "Planning", badge: "bg-blue-50 text-blue-700" },
-  applying: { label: "Applying", badge: "bg-amber-50 text-amber-700" },
-  submitted: { label: "Submitted", badge: "bg-indigo-50 text-indigo-700" },
-  won: { label: "Won", badge: "bg-green-50 text-green-700" },
-  rejected: { label: "Rejected", badge: "bg-red-50 text-red-700" },
+  saved: { label: "Saved", dot: "bg-neutral-300" },
+  planning: { label: "Planning", dot: "bg-sky-400" },
+  applying: { label: "Applying", dot: "bg-amber-400" },
+  submitted: { label: "Submitted", dot: "bg-neutral-500" },
+  won: { label: "Won", dot: "bg-green-500" },
+  rejected: { label: "Rejected", dot: "bg-red-400" },
   not_applying: {
     label: "Not applying",
-    badge: "bg-neutral-100 text-neutral-500",
+    dot: "bg-neutral-300",
   },
 };
 
@@ -117,44 +117,33 @@ function daysUntil(deadline: string | null) {
   return Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-// Deadline urgency pill: red <7 days, amber 7-14, green 30+, gray closed/none.
+// Deadline urgency as a small dot + text: red <7 days, amber 7-14, green after.
 function DeadlineUrgency({ deadline }: { deadline: string | null }) {
   const days = daysUntil(deadline);
 
-  if (days === null) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800">
-        No deadline
-      </span>
-    );
-  }
-
-  if (days < 0) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-500 dark:bg-neutral-800">
-        Closed
-      </span>
-    );
-  }
-
-  const cls =
-    days < 7
-      ? "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
-      : days <= 14
-        ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-        : "bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300";
+  const dot =
+    days === null || days < 0
+      ? "bg-neutral-300"
+      : days < 7
+        ? "bg-red-400"
+        : days <= 14
+          ? "bg-amber-400"
+          : "bg-green-500";
 
   const label =
-    days === 0
-      ? "Due today"
-      : days === 1
-        ? "Due in 1 day"
-        : `Due in ${days} days`;
+    days === null
+      ? "No deadline"
+      : days < 0
+        ? "Closed"
+        : days === 0
+          ? "Due today"
+          : days === 1
+            ? "Due in 1 day"
+            : `Due in ${days} days`;
 
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}
-    >
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />
       {label}
     </span>
   );
@@ -358,9 +347,7 @@ export default function SavedPage() {
 
       <section className="px-6 py-8">
         <div className="mx-auto max-w-7xl">
-          <Badge variant="secondary">Saved</Badge>
-
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Saved opportunities
           </h1>
 
@@ -398,7 +385,7 @@ export default function SavedPage() {
           ) : (
             <>
               {/* Status tabs */}
-              <div className="mt-8 flex flex-wrap gap-2 border-b pb-3">
+              <div className="mt-8 flex flex-wrap gap-1 border-b">
                 {TABS.map((tab) => {
                   const active = tab.key === activeStatus;
                   return (
@@ -406,18 +393,14 @@ export default function SavedPage() {
                       key={tab.key}
                       type="button"
                       onClick={() => selectTab(tab.key)}
-                      className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                      className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
                         active
-                          ? "bg-indigo-600 text-white"
-                          : "bg-background text-muted-foreground ring-1 ring-inset ring-border hover:bg-muted"
+                          ? "border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100"
+                          : "border-transparent text-muted-foreground hover:text-neutral-700 dark:hover:text-neutral-300"
                       }`}
                     >
                       {tab.label}
-                      <span
-                        className={`ml-1.5 ${
-                          active ? "text-indigo-100" : "text-neutral-400"
-                        }`}
-                      >
+                      <span className="ml-1.5 text-neutral-400">
                         {counts[tab.key] ?? 0}
                       </span>
                     </button>
@@ -461,23 +444,25 @@ export default function SavedPage() {
                       <CardContent className="p-5">
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="secondary">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <Badge variant="outline">
                                 {formatOpportunityType(opportunity.type)}
                               </Badge>
 
                               <DeadlineUrgency deadline={opportunity.deadline} />
 
-                              <span
-                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_META[status].badge}`}
-                              >
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${STATUS_META[status].dot}`}
+                                  aria-hidden="true"
+                                />
                                 {STATUS_META[status].label}
                               </span>
                             </div>
 
                             <Link
                               href={`/opportunities/${opportunity.id}`}
-                              className="mt-3 block text-lg font-semibold hover:text-indigo-600"
+                              className="mt-3 block text-lg font-semibold hover:underline"
                             >
                               {opportunity.title}
                             </Link>
@@ -496,15 +481,13 @@ export default function SavedPage() {
                           </div>
 
                           <div className="flex flex-col gap-3 lg:w-[240px]">
-                            <div className="rounded-xl border px-4 py-3">
+                            <div className="rounded-lg border px-4 py-3">
                               <div className="flex items-center justify-between gap-3">
                                 <p className="text-sm text-muted-foreground">
                                   Score
                                 </p>
                                 <p className="text-lg font-semibold">
-                                  {score.score !== null
-                                    ? `${score.score}/100`
-                                    : "—"}
+                                  {score.score !== null ? score.score : "—"}
                                 </p>
                               </div>
 

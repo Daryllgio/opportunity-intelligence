@@ -44,7 +44,7 @@ export function OpportunityCard({
   return (
     <a
       href={`/opportunities/${id}`}
-      className="group block rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-5 transition-all hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600"
+      className="group block rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-5 transition-shadow hover:shadow-sm"
     >
       {/* Top row: type badge + status */}
       <div className="flex items-center justify-between gap-2 mb-3">
@@ -55,7 +55,7 @@ export function OpportunityCard({
       </div>
 
       {/* Title */}
-      <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-2 mb-1">
+      <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 line-clamp-2 mb-1">
         {title}
       </h3>
 
@@ -134,15 +134,7 @@ export function OpportunityCard({
         <div className="flex items-center gap-2">
           {sourceCategory && <SourceTrustBadge category={sourceCategory} />}
           {effortLevel && (
-            <span
-              className={`text-xs ${
-                effortLevel === "low"
-                  ? "text-green-600"
-                  : effortLevel === "high"
-                    ? "text-red-500"
-                    : "text-amber-600"
-              }`}
-            >
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">
               {effortLevel.charAt(0).toUpperCase() + effortLevel.slice(1)} effort
             </span>
           )}
@@ -150,16 +142,8 @@ export function OpportunityCard({
         {score != null && (
           <div className="flex items-center gap-1">
             <span className="text-xs text-neutral-400">Match</span>
-            <span
-              className={`text-sm font-semibold ${
-                score >= 80
-                  ? "text-emerald-600"
-                  : score >= 60
-                    ? "text-amber-600"
-                    : "text-neutral-400"
-              }`}
-            >
-              {score}%
+            <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
+              {score}
             </span>
           </div>
         )}

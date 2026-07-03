@@ -58,7 +58,7 @@ export default function UpdatePasswordPage() {
             </p>
 
             {done ? (
-              <p className="mt-6 rounded-md bg-teal-50 p-4 text-sm font-medium text-teal-800">
+              <p className="mt-6 rounded-md border border-neutral-200 bg-neutral-50 p-4 text-sm font-medium text-neutral-700">
                 Password updated. Redirecting you to your dashboard...
               </p>
             ) : (

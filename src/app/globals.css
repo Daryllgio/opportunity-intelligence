@@ -55,7 +55,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: oklch(0.446 0.026 256.8); /* muted blue-gray (#4B5563) */
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -129,40 +129,42 @@
   }
 }
 
-/* ─── Oppscores Brand ─── */
+/* ─── Oppscores Brand ───
+   Muted, professional palette: grayscale UI with one desaturated
+   blue-gray accent reserved for primary CTAs. */
 :root {
-  /* Primary (indigo) */
-  --opp-primary-50: #eef2ff;
-  --opp-primary-100: #e0e7ff;
-  --opp-primary-200: #c7d2fe;
-  --opp-primary-500: #6366f1;
-  --opp-primary-600: #4f46e5;
-  --opp-primary-700: #4338ca;
-  --opp-primary-800: #3730a3;
-  --opp-primary-900: #312e81;
+  /* Primary (muted blue-gray) */
+  --opp-primary-50: #f8fafc;
+  --opp-primary-100: #f1f5f9;
+  --opp-primary-200: #e2e8f0;
+  --opp-primary-500: #64748b;
+  --opp-primary-600: #4b5563;
+  --opp-primary-700: #374151;
+  --opp-primary-800: #1f2937;
+  --opp-primary-900: #111827;
 
-  /* Secondary (amber) */
-  --opp-secondary-50: #fffbeb;
-  --opp-secondary-100: #fef3c7;
-  --opp-secondary-500: #f59e0b;
-  --opp-secondary-600: #d97706;
-  --opp-secondary-700: #b45309;
+  /* Secondary (warm neutral) */
+  --opp-secondary-50: #fafaf9;
+  --opp-secondary-100: #f5f5f4;
+  --opp-secondary-500: #78716c;
+  --opp-secondary-600: #57534e;
+  --opp-secondary-700: #44403c;
 
-  /* Accent (teal) */
-  --opp-accent-50: #f0fdfa;
-  --opp-accent-100: #ccfbf1;
-  --opp-accent-500: #14b8a6;
-  --opp-accent-600: #0d9488;
-  --opp-accent-700: #0f766e;
+  /* Accent (desaturated green — functional success only) */
+  --opp-accent-50: #f0fdf4;
+  --opp-accent-100: #dcfce7;
+  --opp-accent-500: #4d7c5f;
+  --opp-accent-600: #3f6650;
+  --opp-accent-700: #345441;
 
   /* Surface */
-  --opp-surface: #fafaf9;
+  --opp-surface: #fafafa;
   --opp-surface-raised: #ffffff;
-  --opp-surface-sunken: #f5f5f4;
+  --opp-surface-sunken: #f5f5f5;
 }
 
 .dark {
-  --opp-surface: #1c1917;
-  --opp-surface-raised: #292524;
-  --opp-surface-sunken: #0c0a09;
+  --opp-surface: #171717;
+  --opp-surface-raised: #262626;
+  --opp-surface-sunken: #0a0a0a;
 }

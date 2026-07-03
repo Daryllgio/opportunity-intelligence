@@ -14,16 +14,6 @@ export const OPPORTUNITY_TYPES = [
   { value: "pipeline_program", label: "Pipeline Programs" },
 ];
 
-export const EDUCATION_LEVELS = [
-  { value: "high_school", label: "High School" },
-  { value: "undergraduate", label: "Undergraduate" },
-  { value: "transfer_student", label: "Transfer Student" },
-  { value: "masters", label: "Master's" },
-  { value: "phd", label: "PhD" },
-  { value: "professional_student", label: "Professional School" },
-  { value: "recent_graduate", label: "Recent Graduate" },
-];
-
 export const APPLICATION_STATUSES = [
   { value: "open", label: "Open" },
   { value: "rolling", label: "Rolling" },
@@ -107,7 +97,6 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
     });
 
   const activeTypes = csvValues("type");
-  const activeEducation = csvValues("education");
   const activeStatus = searchParams.get("status") || "";
   const activeSort = searchParams.get("sort") || "deadline_asc";
   const activeCountry = searchParams.get("country") || "";
@@ -141,23 +130,7 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
                 type="checkbox"
                 checked={activeTypes.includes(option.value)}
                 onChange={() => toggleCsv("type", option.value)}
-                className="h-4 w-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-      </FilterGroup>
-
-      <FilterGroup title="Education level">
-        <div className="space-y-0.5">
-          {EDUCATION_LEVELS.map((option) => (
-            <label key={option.value} className={checkbox}>
-              <input
-                type="checkbox"
-                checked={activeEducation.includes(option.value)}
-                onChange={() => toggleCsv("education", option.value)}
-                className="h-4 w-4 rounded border-neutral-300 text-indigo-600 focus:ring-indigo-500"
+                className="h-4 w-4 rounded border-neutral-300 accent-neutral-600 focus:ring-neutral-400"
               />
               {option.label}
             </label>
@@ -173,7 +146,7 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
               name="status"
               checked={activeStatus === ""}
               onChange={() => setParam("status", null)}
-              className="h-4 w-4 border-neutral-300 text-indigo-600 focus:ring-indigo-500"
+              className="h-4 w-4 border-neutral-300 accent-neutral-600 focus:ring-neutral-400"
             />
             Any
           </label>
@@ -184,7 +157,7 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
                 name="status"
                 checked={activeStatus === option.value}
                 onChange={() => setParam("status", option.value)}
-                className="h-4 w-4 border-neutral-300 text-indigo-600 focus:ring-indigo-500"
+                className="h-4 w-4 border-neutral-300 accent-neutral-600 focus:ring-neutral-400"
               />
               {option.label}
             </label>
@@ -237,9 +210,9 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
                 key={preset.value}
                 type="button"
                 onClick={() => applyDeadlinePreset(preset.value)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                className={`rounded-md border px-3 py-1 text-xs transition-colors ${
                   isActive
-                    ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+                    ? "border-neutral-400 bg-neutral-100 text-neutral-900 dark:border-neutral-500 dark:bg-neutral-800 dark:text-neutral-100"
                     : "border-neutral-300 text-neutral-600 hover:border-neutral-400 dark:border-neutral-700 dark:text-neutral-300"
                 }`}
               >
@@ -269,7 +242,7 @@ export function FilterSidebar({ onApply }: { onApply?: () => void }) {
         <button
           type="button"
           onClick={onApply}
-          className="mt-4 w-full rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+          className="mt-4 w-full rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           Show results
         </button>
