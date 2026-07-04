@@ -18,6 +18,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { verifyApplicationDestination } from "@/lib/discovery/verify-destination";
 import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
+import { looksLikeDegreeProgramRecord } from "@/lib/discovery/opportunity-scope";
 
 export type ReverifySummary = {
   checked: number;
@@ -163,8 +164,14 @@ export async function reverifyPublishedDestinations({
       continue;
     }
 
-    if (replacement.verificationVerdict === "degree_or_admissions") {
-      // Not a link problem — the record itself is out of scope.
+    // Archive as out-of-scope only when the record itself reads as a degree
+    // program. A funding-named record (scholarship/fund/award in the title)
+    // is pulled for human review instead — auto-archiving those cost us real
+    // opportunities when a stray admissions page appeared among candidates.
+    if (
+      replacement.verificationVerdict === "degree_or_admissions" &&
+      looksLikeDegreeProgramRecord({ title: row.title, text: "" }).isDegree
+    ) {
       await supabase
         .from("opportunities")
         .update({

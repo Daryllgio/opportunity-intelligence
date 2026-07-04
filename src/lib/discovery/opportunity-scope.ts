@@ -96,12 +96,18 @@ function hasAny(text: string, signals: string[]) {
 
 const FUNDING_TITLE_SIGNALS = [
   "scholarship",
+  "scholars",
   "fellowship",
+  "fellows",
   "bursary",
   "grant",
   "award",
   "stipend",
   "prize",
+  "fund",
+  "competition",
+  "contest",
+  "challenge",
 ];
 
 const DEGREE_TITLE_PATTERNS: RegExp[] = [

@@ -1166,6 +1166,8 @@ async function verifyBestCandidate(
   let sawExpired = false;
   let sawDegree = false;
 
+  const normalizedSourceUrl = String(input.sourceUrl || "").replace(/\/$/, "");
+
   for (const candidate of sorted) {
     if (attempts >= MAX_VERIFICATION_ATTEMPTS) break;
     if (candidate.confidence === "none") continue;
@@ -1203,7 +1205,18 @@ async function verifyBestCandidate(
     }
 
     if (verdict.verdict === "expired_or_closed") sawExpired = true;
-    if (verdict.verdict === "degree_or_admissions") sawDegree = true;
+
+    // A degree verdict is evidence about the RECORD only when it applies to
+    // the page the opportunity came from. A random admissions page among
+    // search candidates says nothing about the opportunity itself — treating
+    // it as if it did caused real scholarships to be archived.
+    if (
+      verdict.verdict === "degree_or_admissions" &&
+      normalizedSourceUrl &&
+      candidate.url.replace(/\/$/, "") === normalizedSourceUrl
+    ) {
+      sawDegree = true;
+    }
 
     rejections.push(
       `Rejected ${candidate.applicationDestinationUrl.slice(0, 90)} — ${verdict.verdict}: ${verdict.reason}`
