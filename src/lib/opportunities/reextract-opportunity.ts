@@ -3,6 +3,10 @@ import {
   OPPORTUNITY_TYPES,
   normalizeOpportunityType,
 } from "@/lib/discovery/taxonomy";
+import {
+  normalizeEligibilityCriteria,
+  type EligibilityCriterion,
+} from "@/lib/matching/eligibility";
 import { withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
@@ -28,6 +32,7 @@ export type ReextractedOpportunity = {
   effort_level?: string | null;
   reward_level?: string | null;
   competitiveness_factors?: string[] | null;
+  eligibility_criteria?: EligibilityCriterion[];
 };
 
 function arrayOrEmpty(value: unknown) {
@@ -68,6 +73,13 @@ Important:
 - Deadline should be ISO date format YYYY-MM-DD when possible.
 - type must be one of:
   ${OPPORTUNITY_TYPES.map((type) => `"${type}"`).join(", ")}
+- eligibility_criteria: capture EVERY criterion the page states about who can
+  apply. Each entry: {"kind": one of "citizenship", "residency", "location",
+  "specific_school", "education_level", "field_of_study", "gpa_minimum",
+  "age", "demographic", "financial_need", "enrollment_status", "grade_level"
+  or a short snake_case word of your own; "requirement": short factual
+  sentence; "values": normalized values ("United States" not "US citizens",
+  "3.5" not "3.5 GPA"); "strict": true when must/required/only}.
 
 Return this JSON shape:
 {
@@ -86,7 +98,10 @@ Return this JSON shape:
   "application_url": string | null,
   "effort_level": string | null,
   "reward_level": string | null,
-  "competitiveness_factors": string[]
+  "competitiveness_factors": string[],
+  "eligibility_criteria": [
+    { "kind": string, "requirement": string, "values": string[], "strict": boolean }
+  ]
 }
 
 Existing opportunity:
@@ -147,5 +162,6 @@ ${pageText.slice(0, 25000)}
     effort_level: stringOrNull(parsed.effort_level),
     reward_level: stringOrNull(parsed.reward_level),
     competitiveness_factors: arrayOrEmpty(parsed.competitiveness_factors),
+    eligibility_criteria: normalizeEligibilityCriteria(parsed.eligibility_criteria),
   };
 }

@@ -2,6 +2,7 @@ import { normalizeUrl } from "@/lib/utils/url-normalizer";
 import { tableHasColumn } from "@/lib/utils/schema-features";
 import { normalizeEligibilityCriteria } from "@/lib/matching/eligibility";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
+import { baselineVerifiedDestination } from "@/lib/opportunities/reverify-destinations";
 import { validateExtractedOpportunity } from "@/lib/discovery/validation";
 import { assessDuplicateRisk } from "@/lib/discovery/duplicate-risk";
 import { shouldRejectExtractedOpportunity } from "@/lib/discovery/opportunity-scope";
@@ -539,6 +540,16 @@ export async function ingestExtractedOpportunity({
 
     if (insertError) {
       throw new Error(insertError.message);
+    }
+
+    // Hash-baseline the verified destination so the nightly re-verification
+    // can confirm it without an AI call.
+    if (publishPayload.application_url) {
+      await baselineVerifiedDestination({
+        supabase,
+        opportunityId: insertedOpportunity.id,
+        url: publishPayload.application_url,
+      });
     }
 
     await supabase

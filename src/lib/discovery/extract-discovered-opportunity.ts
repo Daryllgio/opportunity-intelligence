@@ -78,10 +78,19 @@ function normalizeDeadlineConfidence(value: unknown) {
 // Re-exported for existing importers; the implementation lives in taxonomy.
 export { normalizeOpportunityType };
 
+/**
+ * First-pass extraction model. Benchmarked head-to-head against
+ * gemini-2.5-pro on 50 real captured pages (see the Round 2 report):
+ * Flash is the default; the destination VERIFIER stays on Pro regardless —
+ * extraction mistakes are recoverable downstream, wrong Apply links are not.
+ */
+export const EXTRACTION_MODEL = "gemini-2.5-flash";
+
 export async function extractDiscoveredOpportunity({
   pageText,
   sourceUrl,
   discoveryContext,
+  model = EXTRACTION_MODEL,
 }: {
   pageText: string;
   sourceUrl: string;
@@ -91,6 +100,7 @@ export async function extractDiscoveredOpportunity({
     educationLevel?: string | null;
     fieldArea?: string | null;
   };
+  model?: string;
 }): Promise<DiscoveredOpportunityExtraction> {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error("Missing GEMINI_API_KEY.");
@@ -200,13 +210,15 @@ ${pageText.slice(0, 30000)}
       const response = await withTimeout(
         () =>
           ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model,
             contents: prompt,
             config: {
-              maxOutputTokens: 4096,
+              // Pro is a thinking model: reasoning shares this budget, so it
+              // must be far larger than the JSON we expect back.
+              maxOutputTokens: 8192,
             },
           }),
-        60000,
+        90000,
         "Gemini discovery extraction"
       );
 

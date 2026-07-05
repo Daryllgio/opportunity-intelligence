@@ -84,6 +84,7 @@ create table if not exists opportunities (
   check_reason text,
   last_rechecked_at timestamptz,
   last_recheck_error text,
+  last_verified_at timestamptz,
   last_http_status integer,
   last_raw_content_hash text,
   last_clean_content_hash text,

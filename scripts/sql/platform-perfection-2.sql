@@ -37,3 +37,13 @@ alter table profiles
 
 alter table profiles
   add column if not exists demographic_tags text[] default '{}';
+
+-- ---------------------------------------------------------------------------
+-- 3. Re-verification bookkeeping.
+--    last_verified_at: when the AI verifier last read the destination page.
+--    Lets the nightly loop cheap-confirm unchanged pages by content hash and
+--    force a full AI read only when the verification is older than 30 days.
+--    Also powers "Verified N days ago" freshness labels in the UI.
+-- ---------------------------------------------------------------------------
+alter table opportunities
+  add column if not exists last_verified_at timestamptz;

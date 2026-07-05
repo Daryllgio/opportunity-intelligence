@@ -96,10 +96,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Self-healing pass: re-verify a rotating batch of live Apply links with
-    // the same AI verifier used at publish time. Confirmed links stay, dead
-    // cycles expire, wrong links get repaired or pulled for review.
-    const reverify = await reverifyPublishedDestinations({ supabase, limit: 15 });
+    // Self-healing pass: sweep due Apply links with cheap hash probes first,
+    // escalating to the AI verifier only for changed/unreachable/stale pages
+    // (budgeted). Confirmed links stay, dead cycles expire, wrong links get
+    // repaired or pulled for review.
+    const reverify = await reverifyPublishedDestinations({
+      supabase,
+      aiBudget: 15,
+      sweepLimit: 120,
+    });
 
     return NextResponse.json({
       success: true,

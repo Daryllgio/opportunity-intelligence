@@ -105,6 +105,7 @@ export type OpportunityRow = {
   last_http_status: number | null;
   last_raw_content_hash: string | null;
   last_clean_content_hash: string | null;
+  last_verified_at: string | null;
   recheck_attempts: number | null;
   renewed_from_id: string | null;
   renewed_at: string | null;

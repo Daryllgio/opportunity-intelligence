@@ -5,6 +5,7 @@ import { rankApplicationDestination } from "@/lib/discovery/application-destinat
 import { looksLikeDegreeProgramRecord } from "@/lib/discovery/opportunity-scope";
 import { normalizeEligibilityCriteria } from "@/lib/matching/eligibility";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
+import { baselineVerifiedDestination } from "@/lib/opportunities/reverify-destinations";
 import { tableHasColumn } from "@/lib/utils/schema-features";
 
 function createServiceSupabase() {
@@ -172,6 +173,12 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    await baselineVerifiedDestination({
+      supabase,
+      opportunityId: inserted.id,
+      url: destination.applicationDestinationUrl,
+    });
 
     await supabase
       .from("opportunity_drafts")

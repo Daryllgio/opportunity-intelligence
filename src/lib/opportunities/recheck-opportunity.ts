@@ -10,9 +10,11 @@ import {
   fetchAndHashOpportunityPage,
   pickRecheckUrl,
 } from "@/lib/opportunities/page-recheck";
+import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
 import { reextractOpportunityFromPage } from "@/lib/opportunities/reextract-opportunity";
 import { reuseScoresForRenewedOpportunity } from "@/lib/opportunities/reuse-renewed-scores";
 import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
+import { tableHasColumn } from "@/lib/utils/schema-features";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -158,6 +160,10 @@ function mergeExtractedOpportunity({
   existing: Record<string, unknown>;
   extracted: Record<string, unknown>;
 }) {
+  const extractedEligibility = Array.isArray(extracted.eligibility_criteria)
+    ? extracted.eligibility_criteria
+    : [];
+
   return {
     title: extracted.title || existing.title,
     provider: extracted.provider || existing.provider,
@@ -172,10 +178,17 @@ function mergeExtractedOpportunity({
       existing.eligible_education_levels ||
       [],
     eligible_fields: extracted.eligible_fields || existing.eligible_fields || [],
+    eligibility_criteria:
+      extractedEligibility.length > 0
+        ? extractedEligibility
+        : existing.eligibility_criteria || [],
     funding_amount: extracted.funding_amount || existing.funding_amount,
     funding_type: extracted.funding_type || existing.funding_type,
     deadline: extracted.deadline || existing.deadline,
-    application_url: extracted.application_url || existing.application_url,
+    // The verified destination is owned by the AI verification loop; a
+    // re-extraction never overwrites it. Renewal inserts get a freshly
+    // ranked + verified destination instead.
+    application_url: existing.application_url,
     effort_level: extracted.effort_level || existing.effort_level,
     reward_level: extracted.reward_level || existing.reward_level,
     competitiveness_factors:
