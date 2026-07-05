@@ -18,7 +18,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://oppscore.app";
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
   title: {
-    default: "OppScore — Opportunities you're actually competitive for",
+    default: "OppScore · Opportunities you're actually competitive for",
     template: "%s · OppScore",
   },
   description:
@@ -26,16 +26,16 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "OppScore",
-    title: "OppScore — Opportunities you're actually competitive for",
+    title: "OppScore · Opportunities you're actually competitive for",
     description:
-      "Verified scholarships, fellowships, research programs, grants, and competitions — matched and scored against your profile.",
+      "Verified scholarships, fellowships, research programs, grants, and competitions, matched and scored against your profile.",
     url: APP_URL,
   },
   twitter: {
     card: "summary_large_image",
-    title: "OppScore — Opportunities you're actually competitive for",
+    title: "OppScore · Opportunities you're actually competitive for",
     description:
-      "Verified scholarships, fellowships, research programs, grants, and competitions — matched and scored against your profile.",
+      "Verified scholarships, fellowships, research programs, grants, and competitions, matched and scored against your profile.",
   },
 };
 

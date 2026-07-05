@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "OppScore — Opportunities you're actually competitive for";
+export const alt = "OppScore · Opportunities you're actually competitive for";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -45,7 +45,7 @@ export default function OpenGraphImage() {
           }}
         >
           Scholarships, fellowships, research programs, grants, and
-          competitions — verified sources, real application links, scored
+          competitions. Verified sources, real application links, scored
           against your profile.
         </div>
         <div

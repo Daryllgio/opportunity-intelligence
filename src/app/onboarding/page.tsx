@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import {
   OPPORTUNITY_TYPES,
   OPPORTUNITY_TYPE_LABELS,
+  OPPORTUNITY_TYPE_DESCRIPTIONS,
 } from "@/lib/discovery/taxonomy";
 import {
   STUDY_COUNTRIES,
@@ -472,13 +473,18 @@ export default function OnboardingPage() {
                     key={type}
                     type="button"
                     onClick={() => toggleCategory(type)}
-                    className={`rounded-lg border px-4 py-3 text-left text-sm font-medium transition-colors ${
+                    className={`rounded-lg border px-4 py-3 text-left transition-colors ${
                       selected
-                        ? "border-primary bg-primary/5 text-neutral-900 dark:text-neutral-100"
+                        ? "border-primary bg-primary/5"
                         : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
                     }`}
                   >
-                    {OPPORTUNITY_TYPE_LABELS[type]}
+                    <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      {OPPORTUNITY_TYPE_LABELS[type]}
+                    </span>
+                    <span className="mt-0.5 block text-xs leading-5 text-neutral-600 dark:text-neutral-400">
+                      {OPPORTUNITY_TYPE_DESCRIPTIONS[type]}
+                    </span>
                   </button>
                 );
               })}

@@ -22,6 +22,30 @@ export const OPPORTUNITY_TYPE_LABELS: Record<OpportunityType, string> = {
   pipeline_program: "Pipeline Program",
 };
 
+/**
+ * Final user-facing copy for each category. Examples are illustrative, never
+ * exhaustive — every description says so, because each category is broader
+ * than any list.
+ */
+export const OPPORTUNITY_TYPE_DESCRIPTIONS: Record<OpportunityType, string> = {
+  scholarship:
+    "Money for your education: merit awards, need-based aid, essay scholarships, identity- and field-specific awards, and more.",
+  fellowship:
+    "Funded programs that invest in you: research fellowships, public-service and policy fellowships, graduate funding, and more.",
+  research_program:
+    "Hands-on research experience: summer research programs, lab placements, mentored projects, field work, and more.",
+  grant:
+    "Funding for something you want to do: project grants, travel and conference funding, startup and community grants, and more.",
+  competition:
+    "Win recognition and prizes: hackathons, case competitions, essay contests, pitch and innovation challenges, science fairs, and more.",
+  leadership_program:
+    "Selective programs that develop leaders: youth councils, civic and global leadership institutes, ambassador programs, and more.",
+  career_development_program:
+    "Cohort-based professional preparation with its own application: consulting and finance prep programs, diversity career pipelines, and more.",
+  pipeline_program:
+    "Structured pathways into a profession or graduate school: pre-med and pre-law pipelines, PhD preparation programs, and more.",
+};
+
 export const EDUCATION_LEVELS = [
   "high_school",
   "undergraduate",

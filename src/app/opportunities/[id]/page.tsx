@@ -15,6 +15,7 @@ import { DestinationConfidenceBadge } from "@/components/ui/destination-confiden
 import { FreshnessLabel } from "@/components/ui/freshness-label";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimits } from "@/lib/billing/plans";
+import { evaluateEligibility } from "@/lib/matching/eligibility";
 
 type Opportunity = {
   id: string;
@@ -44,6 +45,7 @@ type Opportunity = {
   official_source_url: string | null;
   created_at: string | null;
   updated_at: string | null;
+  eligibility_criteria?: unknown;
 };
 
 type ScoreReport = {
@@ -59,8 +61,9 @@ type ScoreReport = {
   updated_at: string | null;
 };
 
-const OPPORTUNITY_SELECT =
-  "id, title, provider, type, description, ai_summary, country, eligible_countries, eligible_education_levels, eligible_fields, funding_amount, funding_type, deadline, deadline_confidence, application_status, effort_level, reward_level, application_url, source_url, competitiveness_factors, source_category, application_destination_url, application_destination_type, destination_confidence, official_source_url, created_at, updated_at";
+// select * so newly migrated columns (eligibility_criteria) flow in without
+// breaking before the migration lands.
+const OPPORTUNITY_SELECT = "*";
 
 const DESTINATION_TYPE_LABELS: Record<string, string> = {
   official_application_page: "Official application page",
@@ -103,7 +106,7 @@ function FactItem({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
     <div>
-      <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+      <dt className="text-xs font-medium uppercase tracking-wide text-neutral-500">
         {label}
       </dt>
       <dd className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">
@@ -123,6 +126,7 @@ export default function OpportunityDetailPage() {
   const [matchScore, setMatchScore] = useState<number | null>(null);
   const [hasFullDetails, setHasFullDetails] = useState(true);
   const [hasGapReports, setHasGapReports] = useState(false);
+  const [profileRow, setProfileRow] = useState<Record<string, unknown> | null>(null);
   const [message, setMessage] = useState("");
   const [scoreMessage, setScoreMessage] = useState("");
   const [scoring, setScoring] = useState(false);
@@ -140,13 +144,14 @@ export default function OpportunityDetailPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("subscription_plan")
+        .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
       const planLimits = getPlanLimits(profile?.subscription_plan);
       setHasFullDetails(planLimits.hasFullDetails);
       setHasGapReports(planLimits.hasGapReports);
+      setProfileRow((profile as Record<string, unknown> | null) || null);
 
       const { data: opportunityData, error } = await supabase
         .from("opportunities")
@@ -284,7 +289,7 @@ export default function OpportunityDetailPage() {
               </h1>
 
               {opportunity.provider && (
-                <p className="mt-2 text-base text-neutral-500 dark:text-neutral-400">
+                <p className="mt-2 text-base text-neutral-600 dark:text-neutral-400">
                   {opportunity.provider}
                 </p>
               )}
@@ -394,6 +399,63 @@ export default function OpportunityDetailPage() {
                 {/* ── Eligibility ── */}
                 <section className="mt-10">
                   <h2 className="text-lg font-semibold">Eligibility</h2>
+
+                  {(() => {
+                    if (!profileRow) return null;
+                    const criteria = opportunity.eligibility_criteria;
+                    if (!Array.isArray(criteria) || criteria.length === 0) {
+                      return null;
+                    }
+                    const result = evaluateEligibility({
+                      profile: profileRow,
+                      criteria,
+                    });
+                    if (result.checks.length === 0) return null;
+                    const iconFor = (verdict: string) =>
+                      verdict === "met" ? (
+                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6.5L4.5 9L10 3.5" /></svg>
+                        </span>
+                      ) : verdict === "not_met" ? (
+                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400">
+                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3l6 6M9 3l-6 6" /></svg>
+                        </span>
+                      ) : (
+                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                          <span className="h-1 w-1 rounded-full bg-current" />
+                        </span>
+                      );
+                    return (
+                      <div className="mt-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
+                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                          Stated requirements, checked against your profile
+                        </p>
+                        <ul className="mt-3 space-y-2.5">
+                          {result.checks.map((check, index) => (
+                            <li key={index} className="flex gap-2.5 text-sm">
+                              {iconFor(check.verdict)}
+                              <span className="text-neutral-800 dark:text-neutral-200">
+                                {check.criterion.requirement}
+                                {check.note && (
+                                  <span className="block text-xs text-neutral-500">
+                                    {check.note}
+                                  </span>
+                                )}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        {result.status === "ineligible" && (
+                          <p className="mt-3 border-t border-neutral-100 pt-3 text-sm text-red-700 dark:border-neutral-800 dark:text-red-400">
+                            Based on your profile, you do not appear to meet every
+                            requirement. Double-check with the provider before
+                            ruling it out.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
                     <FactItem
                       label="Education levels"

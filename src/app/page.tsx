@@ -7,7 +7,7 @@ import { Reveal } from "@/components/home/reveal";
 import { VerificationChecklist } from "@/components/home/verification-checklist";
 
 export const metadata: Metadata = {
-  title: "OppScore — Opportunities you're actually competitive for",
+  title: "OppScore · Opportunities you're actually competitive for",
   description:
     "OppScore finds scholarships, fellowships, research programs, grants, and competitions from official sources, verifies every application link by reading the page, and scores each one against your profile.",
 };
