@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
-import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 
 type Opportunity = {
   id: string;
@@ -21,9 +20,22 @@ type Opportunity = {
   deadline: string | null;
   is_active: boolean | null;
   is_approved: boolean | null;
+  validation_decision: string | null;
+  official_source_verified: boolean | null;
+  application_note: string | null;
+  lifecycle_status: string | null;
   updated_at: string | null;
   created_at: string | null;
 };
+
+/** Rows the nightly verifier took offline pending a human call. */
+function isPulled(opportunity: Opportunity) {
+  return (
+    !opportunity.is_active &&
+    opportunity.validation_decision === "review" &&
+    opportunity.lifecycle_status !== "archived"
+  );
+}
 
 function formatType(type: string | null) {
   if (!type) return "Opportunity";
@@ -51,7 +63,7 @@ export default function AdminOpportunitiesPage() {
     const { data, error } = await supabase
       .from("opportunities")
       .select(
-        "id, title, provider, type, ai_summary, country, funding_amount, deadline, is_active, is_approved, lifecycle_status, updated_at, created_at"
+        "id, title, provider, type, ai_summary, country, funding_amount, deadline, is_active, is_approved, validation_decision, official_source_verified, application_note, lifecycle_status, updated_at, created_at"
       )
       .order("updated_at", { ascending: false });
 
@@ -68,22 +80,52 @@ export default function AdminOpportunitiesPage() {
     const now = new Date().toISOString();
     const activating = !opportunity.is_active;
 
-    const updates = activating
-      ? {
-          ...buildLifecycleFields(opportunity as unknown as Record<string, unknown>),
-          archived_at: null,
-          updated_at: now,
+    if (activating) {
+      // Going live is a publish, and every publish passes AI verification —
+      // especially rows the verifier itself pulled.
+      setMessage(`Verifying "${opportunity.title}" before it goes live…`);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      try {
+        const response = await fetch("/api/admin/reactivate-opportunity", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: session?.access_token
+              ? `Bearer ${session.access_token}`
+              : "",
+          },
+          body: JSON.stringify({ opportunityId: opportunity.id }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          setMessage(
+            `${result.error || "Reactivation failed."}${
+              result.reasons?.length ? ` (${result.reasons[0]})` : ""
+            }`
+          );
+          return;
         }
-      : {
-          is_active: false,
-          lifecycle_status: "archived",
-          archived_at: now,
-          updated_at: now,
-        };
+        setMessage(result.note || "Verified and live.");
+      } catch {
+        setMessage("Reactivation failed. Please try again.");
+        return;
+      }
+
+      await loadOpportunities();
+      return;
+    }
 
     const { error } = await supabase
       .from("opportunities")
-      .update(updates)
+      .update({
+        is_active: false,
+        lifecycle_status: "archived",
+        archived_at: now,
+        updated_at: now,
+      })
       .eq("id", opportunity.id);
 
     if (error) {
@@ -97,10 +139,10 @@ export default function AdminOpportunitiesPage() {
   const stats = useMemo(() => {
     const total = opportunities.length;
     const active = opportunities.filter((item) => item.is_active).length;
-    const inactive = opportunities.filter((item) => !item.is_active).length;
+    const pulled = opportunities.filter(isPulled).length;
     const approved = opportunities.filter((item) => item.is_approved).length;
 
-    return { total, active, inactive, approved };
+    return { total, active, pulled, approved };
   }, [opportunities]);
 
   const filteredOpportunities = opportunities.filter((opportunity) => {
@@ -117,6 +159,7 @@ export default function AdminOpportunitiesPage() {
       statusFilter === "all" ||
       (statusFilter === "active" && opportunity.is_active) ||
       (statusFilter === "inactive" && !opportunity.is_active) ||
+      (statusFilter === "pulled" && isPulled(opportunity)) ||
       (statusFilter === "approved" && opportunity.is_approved);
 
     return matchesSearch && matchesStatus;
@@ -170,9 +213,11 @@ export default function AdminOpportunitiesPage() {
 
             <Card>
               <CardContent className="p-5">
-                <p className="text-sm text-muted-foreground">Inactive</p>
+                <p className="text-sm text-muted-foreground">
+                  Pulled by verifier
+                </p>
                 <h2 className="mt-2 text-3xl font-semibold">
-                  {stats.inactive}
+                  {stats.pulled}
                 </h2>
               </CardContent>
             </Card>
@@ -201,6 +246,7 @@ export default function AdminOpportunitiesPage() {
             >
               <option value="all">All statuses</option>
               <option value="active">Active</option>
+              <option value="pulled">Pulled by verifier</option>
               <option value="inactive">Inactive</option>
               <option value="approved">Approved</option>
             </select>
@@ -250,7 +296,11 @@ export default function AdminOpportunitiesPage() {
                               opportunity.is_active ? "default" : "outline"
                             }
                           >
-                            {opportunity.is_active ? "Active" : "Paused"}
+                            {opportunity.is_active
+                              ? "Active"
+                              : isPulled(opportunity)
+                                ? "Pulled by verifier"
+                                : "Paused"}
                           </Badge>
 
                           {opportunity.country && (
@@ -283,6 +333,12 @@ export default function AdminOpportunitiesPage() {
                           </p>
                         )}
 
+                        {isPulled(opportunity) && opportunity.application_note && (
+                          <p className="mt-3 max-w-3xl rounded-md bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                            {opportunity.application_note}
+                          </p>
+                        )}
+
                         <p className="mt-3 text-xs text-muted-foreground">
                           Last updated:{" "}
                           {opportunity.updated_at
@@ -311,7 +367,7 @@ export default function AdminOpportunitiesPage() {
                           variant="outline"
                           onClick={() => toggleActive(opportunity)}
                         >
-                          {opportunity.is_active ? "Pause" : "Activate"}
+                          {opportunity.is_active ? "Pause" : "Verify & activate"}
                         </Button>
                       </div>
                     </div>
