@@ -179,7 +179,9 @@ ${JSON.stringify(catalog)}
         ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: prompt,
-          config: { maxOutputTokens: 4096 },
+          // Flash thinks before answering and its reasoning shares this
+          // budget — 4096 gets eaten by thought and truncates the JSON.
+          config: { maxOutputTokens: 12288 },
         }),
       45000,
       "AI search"
