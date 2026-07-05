@@ -24,6 +24,14 @@ type SavedRow = {
   score: number | null;
 };
 
+type ReportRow = {
+  opportunityId: string;
+  title: string;
+  overallScore: number | null;
+  fitLabel: string | null;
+  updatedAt: string | null;
+};
+
 const STATUS_META: Record<string, { label: string; dot: string }> = {
   saved: { label: "Saved", dot: "bg-neutral-300" },
   planning: { label: "Planning", dot: "bg-sky-400" },
@@ -89,6 +97,8 @@ export default function SavedPage() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [rows, setRows] = useState<SavedRow[]>([]);
+  const [reports, setReports] = useState<ReportRow[]>([]);
+  const [view, setView] = useState<"applications" | "reports">("applications");
   const [activeTab, setActiveTab] = useState("all");
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
@@ -105,21 +115,47 @@ export default function SavedPage() {
 
       setUserId(user.id);
 
-      const [{ data }, { data: scoreRows }] = await Promise.all([
-        supabase
-          .from("saved_opportunities")
-          .select(
-            `id, status,
+      const [{ data }, { data: scoreRows }, { data: reportRows }] =
+        await Promise.all([
+          supabase
+            .from("saved_opportunities")
+            .select(
+              `id, status,
              opportunities (id, title, provider, type, deadline, funding_amount, application_url, lifecycle_status)`
-          )
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("opportunity_competitiveness_scores")
-          .select("opportunity_id, score")
-          .eq("user_id", user.id)
-          .eq("score_status", "current"),
-      ]);
+            )
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("opportunity_competitiveness_scores")
+            .select("opportunity_id, score")
+            .eq("user_id", user.id)
+            .eq("score_status", "current"),
+          supabase
+            .from("opportunity_score_reports")
+            .select(
+              "opportunity_id, overall_score, fit_label, updated_at, opportunities (title)"
+            )
+            .eq("user_id", user.id)
+            .order("updated_at", { ascending: false }),
+        ]);
+
+      setReports(
+        ((reportRows || []) as Array<Record<string, unknown>>).map((item) => {
+          const opportunity = Array.isArray(item.opportunities)
+            ? item.opportunities[0]
+            : item.opportunities;
+          return {
+            opportunityId: String(item.opportunity_id),
+            title: String(
+              (opportunity as { title?: string } | null)?.title || "Opportunity"
+            ),
+            overallScore:
+              typeof item.overall_score === "number" ? item.overall_score : null,
+            fitLabel: (item.fit_label as string | null) || null,
+            updatedAt: (item.updated_at as string | null) || null,
+          };
+        })
+      );
 
       const scoreMap = new Map(
         (scoreRows || []).map((row) => [row.opportunity_id, row.score])
@@ -226,22 +262,91 @@ export default function SavedPage() {
         <div className="flex items-end justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Saved</h1>
-            <p className="mt-1 text-[15px] text-neutral-500 dark:text-neutral-400">
+            <p className="mt-1 text-[15px] text-neutral-600 dark:text-neutral-400">
               Track where each application stands.
             </p>
           </div>
-          {rows.length > 0 && (
+          {view === "applications" && rows.length > 0 && (
             <button
               type="button"
               onClick={exportCsv}
-              className="shrink-0 text-sm text-neutral-400 underline underline-offset-2 hover:text-neutral-600 dark:hover:text-neutral-300"
+              className="shrink-0 text-sm text-neutral-500 underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300"
             >
               Export CSV
             </button>
           )}
         </div>
 
-        {loading ? (
+        <div className="mt-6 inline-flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-800">
+          {(
+            [
+              { key: "applications", label: "Applications" },
+              { key: "reports", label: "Gap reports" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setView(item.key)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                view === item.key
+                  ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+              }`}
+            >
+              {item.label}
+              {item.key === "reports" && reports.length > 0 && (
+                <span className="ml-1.5 opacity-60">{reports.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {view === "reports" && !loading ? (
+          reports.length === 0 ? (
+            <div className="mt-10 rounded-lg border border-dashed border-neutral-200 p-10 text-center dark:border-neutral-800">
+              <h2 className="text-lg font-semibold">No gap reports yet</h2>
+              <p className="mx-auto mt-2 max-w-sm text-sm text-neutral-600 dark:text-neutral-400">
+                Open any opportunity and run a gap report to see exactly what
+                strengthens your application. Your reports collect here.
+              </p>
+              <Link
+                href="/opportunities"
+                className="mt-6 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Browse opportunities
+              </Link>
+            </div>
+          ) : (
+            <ul className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-900">
+              {reports.map((report) => (
+                <li
+                  key={report.opportunityId}
+                  className="flex flex-col gap-2 py-5 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <Link
+                      href={`/opportunities/${report.opportunityId}`}
+                      className="text-[15px] font-medium hover:underline"
+                    >
+                      {report.title}
+                    </Link>
+                    <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                      {report.fitLabel || "Report"}
+                      {report.updatedAt &&
+                        ` · Updated ${new Date(report.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                    </p>
+                  </div>
+                  {report.overallScore !== null && (
+                    <span className="shrink-0 text-sm font-semibold tabular-nums text-neutral-800 dark:text-neutral-200">
+                      {Math.round(report.overallScore)}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )
+        ) : loading ? (
           <div className="mt-8 space-y-3">
             {Array.from({ length: 4 }).map((_, index) => (
               <div
