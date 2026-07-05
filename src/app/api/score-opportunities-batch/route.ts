@@ -353,16 +353,16 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const scoresUsed = existingUsage?.competitiveness_scores_used || 0;
-    const scoresRemaining = planLimits.competitivenessScores - scoresUsed;
+    const scoresRemaining = Math.max(
+      0,
+      planLimits.competitivenessScores - scoresUsed
+    );
 
-    if (scoresRemaining <= 0) {
-      return NextResponse.json(
-        {
-          error: `You have used all ${planLimits.competitivenessScores} competitiveness scores for this month.`,
-        },
-        { status: 403 }
-      );
-    }
+    // Quota buys COVERAGE: the first scoring of an opportunity for this user.
+    // Keeping existing scores fresh after profile edits or opportunity
+    // updates is the platform's job — hash-gated so only genuine changes
+    // rescore, and capped per run so a single pass stays bounded.
+    const REFRESH_BATCH_CAP = 50;
 
     const batchLimit = scoreAllEligible
       ? scoresRemaining
@@ -456,13 +456,36 @@ export async function POST(request: NextRequest) {
         }),
       }));
 
-    const unscored = allocateScoringSlots({
-      candidates,
+    const newCandidates = candidates.filter(
+      (candidate) => !existingScoreMap.has(String(candidate.opportunity.id))
+    );
+    const refreshCandidates = candidates.filter((candidate) =>
+      existingScoreMap.has(String(candidate.opportunity.id))
+    );
+
+    // New coverage spends quota and respects per-category caps; refreshes of
+    // already-covered opportunities are free but bounded per run.
+    const newlyChosen = allocateScoringSlots({
+      candidates: newCandidates,
       totalRemaining: batchLimit,
       perCategoryRemaining,
     });
+    const refreshChosen = allocateScoringSlots({
+      candidates: refreshCandidates,
+      totalRemaining: REFRESH_BATCH_CAP,
+      perCategoryRemaining: {},
+    });
+    const unscored = [...newlyChosen, ...refreshChosen];
 
     if (unscored.length === 0) {
+      if (scoresRemaining <= 0 && newCandidates.length > 0) {
+        return NextResponse.json(
+          {
+            error: `You have used all ${planLimits.competitivenessScores} competitiveness scores for this month.`,
+          },
+          { status: 403 }
+        );
+      }
       return NextResponse.json({
         scores: [],
         usage: {
@@ -554,7 +577,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Scoring failed. Please try again." }, { status: 500 });
     }
 
-    const newScoresUsed = scoresUsed + scoreRows.length;
+    // Only new coverage consumes quota; refreshes are the platform's cost.
+    const newScoresUsed = scoresUsed + scoringCounts.created;
 
     if (existingUsage?.id) {
       const { error: usageError } = await supabase

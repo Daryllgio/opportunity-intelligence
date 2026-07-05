@@ -9,6 +9,7 @@ import {
   FilterSidebar,
   OPPORTUNITY_TYPES,
 } from "@/components/opportunities/filter-sidebar";
+import { ScoreRefreshTrigger } from "@/components/opportunities/score-refresh-trigger";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimits } from "@/lib/billing/plans";
 
@@ -48,6 +49,7 @@ function OpportunitiesBrowse() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const paramsKey = searchParams.toString();
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -228,7 +230,7 @@ function OpportunitiesBrowse() {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramsKey]);
+  }, [paramsKey, reloadNonce]);
 
   // ─── Sort: scored (best first), then unscored ───
   const { scored, unscored } = useMemo(() => {
@@ -300,6 +302,9 @@ function OpportunitiesBrowse() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+      <ScoreRefreshTrigger
+        onScoresRefreshed={() => setReloadNonce((nonce) => nonce + 1)}
+      />
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Opportunities</h1>
         <p className="mt-1 text-[15px] text-neutral-500 dark:text-neutral-400">

@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getPlanLimits } from "@/lib/billing/plans";
+import { processScoringJob } from "@/lib/scoring/process-scoring-job";
 import { scheduleScoringJobForUser } from "@/lib/scoring/schedule-scoring-job";
 
 function createServiceSupabase() {
@@ -61,96 +62,17 @@ export async function POST(request: NextRequest) {
     const results = [];
 
     for (const job of jobs) {
-      const startedAt = new Date().toISOString();
+      const result = await processScoringJob({
+        supabase,
+        job,
+        origin: request.nextUrl.origin,
+      });
 
-      await supabase
-        .from("user_scoring_jobs")
-        .update({
-          status: "running",
-          started_at: startedAt,
-          attempts: (job.attempts || 0) + 1,
-          updated_at: startedAt,
-        })
-        .eq("id", job.id);
-
-      try {
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", job.user_id)
-          .maybeSingle();
-
-        if (profileError || !profile) {
-          throw new Error("Profile not found for scoring job.");
-        }
-
-        const scoreResponse = await fetch(
-          `${request.nextUrl.origin}/api/score-opportunities-batch`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: request.headers.get("authorization") || "",
-            },
-            body: JSON.stringify({
-              scoreAllEligible: true,
-              cronUserId: job.user_id,
-              cronSecret: process.env.CRON_SECRET,
-            }),
-          }
-        );
-
-        const scoreResult = await scoreResponse.json();
-
-        if (!scoreResponse.ok) {
-          throw new Error(scoreResult.error || "Scoring route failed.");
-        }
-
-        const created = scoreResult.counts?.created || 0;
-        const refreshed = scoreResult.counts?.refreshed || 0;
-
-        const { data: completedJob } = await supabase
-          .from("user_scoring_jobs")
-          .update({
-            status: "completed",
-            completed_at: new Date().toISOString(),
-            scores_created: created,
-            scores_refreshed: refreshed,
-            last_error: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", job.id)
-          .select("*")
-          .single();
-
-        results.push({
-          job_id: job.id,
-          user_id: job.user_id,
-          status: "completed",
-          created,
-          refreshed,
-          completedJob,
-        });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown scoring job error.";
-
-        await supabase
-          .from("user_scoring_jobs")
-          .update({
-            status: "failed",
-            last_error: message,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", job.id);
-
-        results.push({
-          job_id: job.id,
-          user_id: job.user_id,
-          status: "failed",
-          error: message,
-        });
-      }
+      results.push({
+        job_id: job.id,
+        user_id: job.user_id,
+        ...result,
+      });
     }
 
     return NextResponse.json({
