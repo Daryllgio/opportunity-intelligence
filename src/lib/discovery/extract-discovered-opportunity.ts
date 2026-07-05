@@ -45,6 +45,15 @@ function stringOrNull(value: unknown) {
   return text || null;
 }
 
+/** Deadlines must be real ISO dates — the model sometimes echoes the format
+ * placeholder ("YYYY-07-01"), which a date column rejects. */
+function isoDateOrNull(value: unknown) {
+  const text = stringOrNull(value);
+  if (!text) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  return Number.isNaN(new Date(text).getTime()) ? null : text;
+}
+
 function arrayOrEmpty(value: unknown) {
   return Array.isArray(value)
     ? value.map((item) => String(item).trim()).filter(Boolean)
@@ -267,7 +276,7 @@ ${pageText.slice(0, 30000)}
     eligible_fields: arrayOrEmpty(parsed.eligible_fields),
     funding_amount: stringOrNull(parsed.funding_amount),
     funding_type: stringOrNull(parsed.funding_type),
-    deadline: stringOrNull(parsed.deadline),
+    deadline: isoDateOrNull(parsed.deadline),
     application_status: normalizeApplicationStatus(parsed.application_status),
     deadline_confidence: normalizeDeadlineConfidence(parsed.deadline_confidence),
     cycle_notes: stringOrNull(parsed.cycle_notes),
