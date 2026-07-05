@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
 import { reverifyPublishedDestinations } from "@/lib/opportunities/reverify-destinations";
+import { runDueOpportunityChecks } from "@/lib/opportunities/run-due-checks";
+import { recheckTrackedDrafts } from "@/lib/opportunities/recheck-tracked-drafts";
 
 function createServiceSupabase() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -96,6 +98,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Renewal heartbeat: expired rows in their renewal window get re-read;
+    // pages that came back with a new deadline republish as a verified
+    // renewed cycle, reusing prior user scores when criteria are unchanged.
+    let dueChecks;
+    try {
+      dueChecks = await runDueOpportunityChecks({ supabase, limit: 20 });
+    } catch (error) {
+      dueChecks = {
+        error: error instanceof Error ? error.message : "due checks failed",
+      };
+    }
+
+    // Tracked drafts whose next cycle should have opened: re-read the page
+    // and push reopened ones back through the full verified ingest gate.
+    let trackedDrafts;
+    try {
+      trackedDrafts = await recheckTrackedDrafts({ supabase, limit: 8 });
+    } catch (error) {
+      trackedDrafts = {
+        error: error instanceof Error ? error.message : "tracked drafts failed",
+      };
+    }
+
     // Self-healing pass: sweep due Apply links with cheap hash probes first,
     // escalating to the AI verifier only for changed/unreachable/stale pages
     // (budgeted). Confirmed links stay, dead cycles expire, wrong links get
@@ -112,6 +137,8 @@ export async function GET(request: NextRequest) {
       expired,
       unchanged,
       scoresMarkedStale,
+      dueChecks,
+      trackedDrafts,
       reverify,
     });
   } catch (error) {

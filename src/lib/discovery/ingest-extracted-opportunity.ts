@@ -35,8 +35,32 @@ function arrayOrEmpty(value: unknown) {
     : [];
 }
 
-function computeExpectedNextCheckAt() {
+const MONTH_NAMES = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+/**
+ * When the next cycle should be re-checked. Pages often say when they reopen
+ * ("applications open in August") — checking on the 1st of that month beats
+ * a flat three-month snooze that can overshoot the whole window.
+ */
+function computeExpectedNextCheckAt(cycleNotes?: unknown) {
   const now = new Date();
+  const notes = String(cycleNotes || "").toLowerCase();
+
+  const reopeningPhrase = notes.match(
+    /(?:open|reopen|begin|start|resume|available|launch)[a-z]*(?:\s+\w+){0,4}?\s+(?:in|on|by)?\s*(january|february|march|april|may|june|july|august|september|october|november|december)/
+  );
+  if (reopeningPhrase) {
+    const monthIndex = MONTH_NAMES.indexOf(reopeningPhrase[1]);
+    if (monthIndex >= 0) {
+      const target = new Date(Date.UTC(now.getUTCFullYear(), monthIndex, 1));
+      if (target <= now) target.setUTCFullYear(target.getUTCFullYear() + 1);
+      return target.toISOString();
+    }
+  }
+
   const next = new Date(now);
   next.setMonth(next.getMonth() + 3);
   return next.toISOString();
@@ -409,7 +433,9 @@ export async function ingestExtractedOpportunity({
   }
 
   if (validation.decision === "track_for_next_cycle") {
-    const expectedNextCheckAt = computeExpectedNextCheckAt();
+    const expectedNextCheckAt = computeExpectedNextCheckAt(
+      opportunityPayload.cycle_notes
+    );
 
     const draftPayload = {
       normalized_url: normalizedUrl || null,

@@ -13,6 +13,7 @@ import {
 import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
 import { reextractOpportunityFromPage } from "@/lib/opportunities/reextract-opportunity";
 import { reuseScoresForRenewedOpportunity } from "@/lib/opportunities/reuse-renewed-scores";
+import { buildOpportunityCriteriaHash as buildScoringCriteriaHash } from "@/lib/scoring/hashes";
 import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
 import { tableHasColumn } from "@/lib/utils/schema-features";
 
@@ -47,7 +48,7 @@ async function linkExistingRenewedCycleIfPresent({
 
   const { data: existingRenewed, error } = await supabase
     .from("opportunities")
-    .select("id, cycle_year, criteria_hash")
+    .select("*")
     .eq("canonical_key", canonicalKey)
     .eq("lifecycle_status", "active")
     .gt("cycle_year", cycleYear)
@@ -92,11 +93,14 @@ async function linkExistingRenewedCycleIfPresent({
     throw new Error(oldUpdateError.message);
   }
 
+  // Score rows store the SCORING criteria hash (scoring/hashes.ts), not the
+  // lifecycle one — comparing against the lifecycle hash would never match
+  // and reuse would silently do nothing.
   const reuseResult = await reuseScoresForRenewedOpportunity({
     supabase,
     oldOpportunityId: opportunityId,
     newOpportunityId: existingRenewed.id,
-    newCriteriaHash: existingRenewed.criteria_hash || null,
+    newCriteriaHash: buildScoringCriteriaHash(existingRenewed),
   });
 
   return {
@@ -334,6 +338,10 @@ export async function recheckOpportunity({
     extracted: extracted as Record<string, unknown>,
   });
 
+  if (!(await tableHasColumn(supabase, "opportunities", "eligibility_criteria"))) {
+    delete (mergedOpportunity as Record<string, unknown>).eligibility_criteria;
+  }
+
   const lifecycleFields = buildLifecycleFields(mergedOpportunity);
 
   if (
@@ -344,6 +352,7 @@ export async function recheckOpportunity({
   ) {
     const renewedLifecycleFields = buildLifecycleFields(mergedOpportunity);
     const now = new Date().toISOString();
+    const renewedScoringCriteriaHash = buildScoringCriteriaHash(mergedOpportunity);
 
     const { data: existingRenewed } = await supabase
       .from("opportunities")
@@ -353,10 +362,14 @@ export async function recheckOpportunity({
       .maybeSingle();
 
     if (existingRenewed?.id) {
+      // The renewed row's verified destination is owned by its own
+      // verification loop; content refreshes must not overwrite it.
+      const { application_url: _renewedUrlUntouched, ...mergedForUpdate } =
+        mergedOpportunity;
       const { error: existingUpdateError } = await supabase
         .from("opportunities")
         .update({
-          ...mergedOpportunity,
+          ...mergedForUpdate,
           ...renewedLifecycleFields,
           renewed_from_id: opportunityId,
           renewed_at: now,
@@ -375,7 +388,7 @@ export async function recheckOpportunity({
         supabase,
         oldOpportunityId: opportunityId,
         newOpportunityId: existingRenewed.id,
-        newCriteriaHash: renewedLifecycleFields.criteria_hash || null,
+        newCriteriaHash: renewedScoringCriteriaHash,
       });
 
       return {
@@ -389,12 +402,48 @@ export async function recheckOpportunity({
       };
     }
 
+    // A renewed cycle is a fresh publish, and every publish path must pass
+    // AI destination verification. Verified: the row goes live pointing at
+    // the verified page. Not verified: the row is created dark, flagged for
+    // review — a returning scholarship must never relaunch with last year's
+    // (possibly dead) Apply link.
+    const destination = await rankApplicationDestination({
+      title: String(mergedOpportunity.title || ""),
+      provider: mergedOpportunity.provider ? String(mergedOpportunity.provider) : null,
+      type: mergedOpportunity.type ? String(mergedOpportunity.type) : null,
+      sourceUrl: mergedOpportunity.source_url ? String(mergedOpportunity.source_url) : null,
+      deadline: mergedOpportunity.deadline ? String(mergedOpportunity.deadline) : null,
+    });
+    const destinationVerified = Boolean(
+      destination.destinationVerified && destination.applicationDestinationUrl
+    );
+
     const { data: renewedOpportunity, error: renewedInsertError } =
       await supabase
         .from("opportunities")
         .insert({
           ...mergedOpportunity,
           ...renewedLifecycleFields,
+          application_url: destinationVerified
+            ? destination.applicationDestinationUrl
+            : mergedOpportunity.application_url,
+          application_destination_url: destinationVerified
+            ? destination.applicationDestinationUrl
+            : null,
+          application_destination_type: destination.applicationDestinationType,
+          destination_confidence: destination.destinationConfidence,
+          destination_reasons: destination.destinationReasons,
+          official_source_url: destination.officialSourceUrl,
+          official_source_verified: destinationVerified,
+          official_source_status: destinationVerified
+            ? "verified_destination"
+            : destination.officialSourceStatus,
+          is_active: destinationVerified ? renewedLifecycleFields.is_active : false,
+          is_approved: destinationVerified ? mergedOpportunity.is_approved : false,
+          validation_decision: destinationVerified ? "approved" : "review",
+          application_note: destinationVerified
+            ? "Renewed cycle published with an AI-verified destination."
+            : "Renewed cycle detected, but no AI-verified destination was found. Held for review.",
           renewed_from_id: opportunityId,
           renewed_at: now,
           last_http_status: pageResult.status,
@@ -428,7 +477,7 @@ export async function recheckOpportunity({
       supabase,
       oldOpportunityId: opportunityId,
       newOpportunityId: renewedOpportunity.id,
-      newCriteriaHash: renewedLifecycleFields.criteria_hash || null,
+      newCriteriaHash: renewedScoringCriteriaHash,
     });
 
     return {
