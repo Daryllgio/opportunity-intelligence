@@ -548,7 +548,7 @@ export default function OpportunityDetailPage() {
                         </p>
                       )}
 
-                      <div className="mt-8 grid gap-8 sm:grid-cols-2">
+                      <div className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-2">
                         <div>
                           <h3 className="text-sm font-semibold">Strengths</h3>
                           <ul className="mt-3 space-y-2 text-sm leading-6 text-neutral-600 dark:text-neutral-300">
@@ -618,6 +618,10 @@ export default function OpportunityDetailPage() {
                 <SourceTrustBadge category={opportunity.source_category || "unknown"} />
                 <DestinationConfidenceBadge
                   confidence={opportunity.destination_confidence || "none"}
+                  verified={Boolean(
+                    (opportunity as unknown as Record<string, unknown>)
+                      .official_source_verified
+                  )}
                 />
               </div>
               <p className="mt-3 text-sm leading-6 text-neutral-500">

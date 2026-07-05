@@ -371,7 +371,7 @@ export default function OnboardingPage() {
                 )}
               </div>
 
-              <div className="grid gap-6 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div>
                   <label htmlFor="fieldOfStudy" className={labelClass}>
                     Field of study
@@ -418,7 +418,7 @@ export default function OnboardingPage() {
                 <div key={section.key}>
                   <p className={labelClass}>{section.label}</p>
                   <p className="text-xs text-neutral-400">{section.hint}</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <input
                       value={experience[section.key]?.title || ""}
                       onChange={(event) =>
@@ -465,7 +465,7 @@ export default function OnboardingPage() {
               your profile first. You can browse everything regardless.
             </p>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {OPPORTUNITY_TYPES.map((type) => {
                 const selected = categories.includes(type);
                 return (

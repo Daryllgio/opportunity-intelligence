@@ -135,7 +135,7 @@ export default async function HomePage() {
 
       {/* Steps */}
       <section className="border-y border-neutral-100 bg-neutral-50/60 dark:border-neutral-900 dark:bg-neutral-900/40">
-        <div className="mx-auto grid max-w-5xl gap-10 px-6 py-16 md:grid-cols-3">
+        <div className="mx-auto grid max-w-5xl grid-cols-1 gap-10 px-6 py-16 md:grid-cols-3">
           {STEPS.map((step, index) => (
             <Reveal key={step.title} delay={index * 120}>
               <p className="text-sm font-semibold text-primary">
@@ -154,7 +154,7 @@ export default async function HomePage() {
 
       {/* The apply-link promise */}
       <section className="mx-auto max-w-5xl px-6 py-20">
-        <div className="grid items-start gap-10 md:grid-cols-[1fr_340px]">
+        <div className="grid grid-cols-1 items-start gap-10 md:grid-cols-[1fr_340px]">
           <Reveal className="max-w-2xl">
             <h2 className="text-2xl font-semibold tracking-tight text-neutral-900 dark:text-white">
               The Apply button is the product
@@ -179,7 +179,7 @@ export default async function HomePage() {
 
       {/* Gap reports — the coaching layer */}
       <section className="border-y border-neutral-100 bg-neutral-50/60 dark:border-neutral-900 dark:bg-neutral-900/40">
-        <div className="mx-auto grid max-w-5xl items-center gap-10 px-6 py-20 md:grid-cols-[340px_1fr] lg:grid-cols-[420px_1fr]">
+        <div className="mx-auto grid max-w-5xl grid-cols-1 items-center gap-10 px-6 py-20 md:grid-cols-[340px_1fr] lg:grid-cols-[420px_1fr]">
           <Reveal>
             <GapReportDemo />
           </Reveal>

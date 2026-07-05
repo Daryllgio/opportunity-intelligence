@@ -22,7 +22,7 @@ function Section({
 }) {
   return (
     <section className="border-t border-neutral-100 py-8 first:border-t-0 dark:border-neutral-900">
-      <div className="grid gap-6 sm:grid-cols-[220px_1fr]">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-[220px_1fr]">
         <div>
           <h2 className="text-sm font-semibold">{title}</h2>
           {description && (

@@ -80,7 +80,7 @@ export function SimilarOpportunities({
   return (
     <section className="mt-12">
       <h2 className="text-lg font-semibold">You might also like</h2>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {similar.map((opportunity) => (
           <OpportunityCard
             key={opportunity.id}

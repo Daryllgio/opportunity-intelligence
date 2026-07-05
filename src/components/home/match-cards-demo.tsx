@@ -97,7 +97,7 @@ export function MatchCardsDemo() {
         </p>
         <p className="text-xs text-neutral-500">Sorted by match strength</p>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {PREVIEW_CARDS.map((card, index) => (
           <div
             key={card.title}

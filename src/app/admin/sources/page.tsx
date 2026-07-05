@@ -557,7 +557,7 @@ export default function AdminSourcesPage() {
                 <Badge variant="outline">{filteredSources.length} shown</Badge>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-[1fr_220px]">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px]">
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}

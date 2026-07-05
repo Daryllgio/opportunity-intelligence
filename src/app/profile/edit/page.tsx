@@ -13,7 +13,7 @@ export default function EditProfilePage() {
       <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         <h1 className="text-2xl font-semibold tracking-tight">Edit profile</h1>
         <p className="mt-1 max-w-xl text-[15px] text-neutral-500 dark:text-neutral-400">
-          Everything here feeds your match scores — the more complete it is,
+          Everything here feeds your match scores. The more complete it is,
           the sharper the results.
         </p>
 

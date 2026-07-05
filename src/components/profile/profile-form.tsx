@@ -814,7 +814,7 @@ export function ProfileForm() {
               </Button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Input
                 placeholder="Role or title"
                 value={entry.title}
@@ -885,7 +885,7 @@ export function ProfileForm() {
               description="Add the academic details used to match you with relevant opportunities."
             />
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SearchableSelect
                 label="Nationality"
                 value={form.nationality}
@@ -1094,7 +1094,7 @@ export function ProfileForm() {
                 key={index}
                 className="space-y-4 border-l-2 border-neutral-100 pl-4 dark:border-neutral-800"
               >
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <Input
                     placeholder="Award name"
                     value={entry.name}

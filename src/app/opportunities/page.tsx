@@ -412,7 +412,7 @@ function OpportunitiesBrowse() {
       )}
 
       {(isLoggedIn && hasProfile) || loading ? (
-        <div className="grid gap-10 lg:grid-cols-[15rem_1fr]">
+        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[15rem_1fr]">
           {/* Desktop sidebar — no box, just a rail */}
           <aside className="hidden lg:block">
             <div className="sticky top-20">
@@ -494,7 +494,7 @@ function OpportunitiesBrowse() {
             )}
 
             {loading ? (
-              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, index) => (
                   <div
                     key={index}
@@ -566,7 +566,7 @@ function OpportunitiesBrowse() {
                 )}
 
                 {scoredOnPage.length > 0 && (
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {scoredOnPage.map((opportunity) => (
                       <OpportunityCard
                         key={opportunity.id}
@@ -602,7 +602,7 @@ function OpportunitiesBrowse() {
                         </p>
                       </div>
                     )}
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                       {unscoredOnPage.map((opportunity) => (
                         <OpportunityCard
                           key={opportunity.id}

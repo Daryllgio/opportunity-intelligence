@@ -262,7 +262,7 @@ export default function EditOpportunityPage() {
 
           <form onSubmit={saveOpportunity} className="mt-8 space-y-6">
             <Card>
-              <CardContent className="grid gap-5 p-6 md:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-5 p-6 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2">
                   <Label>Title</Label>
                   <Input
@@ -396,7 +396,7 @@ export default function EditOpportunityPage() {
             </Card>
 
             <Card>
-              <CardContent className="grid gap-5 p-6 md:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-5 p-6 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Eligible countries</Label>
                   <Input
@@ -444,7 +444,7 @@ export default function EditOpportunityPage() {
             </Card>
 
             <Card>
-              <CardContent className="grid gap-5 p-6 md:grid-cols-2">
+              <CardContent className="grid grid-cols-1 gap-5 p-6 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Application URL</Label>
                   <Input
