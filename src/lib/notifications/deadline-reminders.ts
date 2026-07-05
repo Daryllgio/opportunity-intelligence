@@ -66,15 +66,15 @@ export function buildReminderEmail(candidate: ReminderCandidate) {
   <h1 style="font-size: 20px; font-weight: 600; margin: 0 0 8px;">
     Application deadline ${milestone.label}
   </h1>
-  <p style="font-size: 15px; line-height: 1.6; color: #525252; margin: 0 0 24px;">
-    A saved opportunity is due ${milestone.label} — ${formatDeadline(deadline)}.
+  <p style="font-size: 15px; line-height: 1.6; color: #404040; margin: 0 0 24px;">
+    A saved opportunity is due ${milestone.label}, on ${formatDeadline(deadline)}.
   </p>
   <div style="border: 1px solid #e5e5e5; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
     <p style="font-size: 16px; font-weight: 600; margin: 0 0 4px;">${title}</p>
     ${provider ? `<p style="font-size: 14px; color: #737373; margin: 0;">${provider}</p>` : ""}
   </div>
   <a href="${detailUrl}"
-     style="display: inline-block; background: #4b5563; color: #ffffff; font-size: 14px; font-weight: 500; padding: 10px 20px; border-radius: 8px; text-decoration: none;">
+     style="display: inline-block; background: #5558cc; color: #ffffff; font-size: 14px; font-weight: 500; padding: 10px 20px; border-radius: 8px; text-decoration: none;">
     View opportunity
   </a>
   <p style="font-size: 12px; color: #a3a3a3; margin: 32px 0 0; line-height: 1.6;">
