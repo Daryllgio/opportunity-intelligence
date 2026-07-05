@@ -136,6 +136,12 @@ Important rules:
   title and type to null. We only list things students apply to ON TOP of
   their education (a scholarship FOR admitted students is fine; the admission
   itself is not).
+- DIRECTORY PAGES: if the page is a listing of MANY distinct opportunities
+  from different providers (a scholarship directory, a financial-aid office
+  list, a fellowships index), do NOT pick one arbitrarily. Extract only when
+  a single opportunity clearly dominates the page or clearly matches the
+  discovery context; otherwise set title and type to null so the page can be
+  handled as a hub instead of becoming a coin-flip record.
 - career_development_program means a selective, cohort-based professional
   development program with its own application and defined start/end (e.g.
   MLT Career Prep, Forte MBALaunch). It is NOT a job posting, a paid course

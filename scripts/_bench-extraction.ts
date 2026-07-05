@@ -14,8 +14,9 @@ import { createClient } from "@supabase/supabase-js";
 import { capturePageWithHybrid } from "../src/lib/discovery/capture/hybrid-capture";
 import { extractDiscoveredOpportunity } from "../src/lib/discovery/extract-discovered-opportunity";
 
-const OUT_FILE = "/private/tmp/claude-501/-Users-d-gio-opportunity-intelligence/68227b55-4c7d-4c69-860f-3723f136ac44/scratchpad/bench-extraction-results.json";
-const TARGET = 50;
+const OUT_FILE =
+  process.env.BENCH_OUT || "/tmp/bench-extraction-results.json";
+const TARGET = Number(process.env.BENCH_TARGET || 50);
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
