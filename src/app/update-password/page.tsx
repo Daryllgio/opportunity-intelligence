@@ -42,7 +42,7 @@ export default function UpdatePasswordPage() {
     }
 
     setDone(true);
-    setTimeout(() => router.push("/dashboard"), 1500);
+    setTimeout(() => router.push("/opportunities"), 1500);
   }
 
   return (

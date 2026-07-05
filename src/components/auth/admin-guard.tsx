@@ -54,7 +54,7 @@ export function AdminGuard({ children }: AdminGuardProps) {
 
               <div className="mt-6 flex flex-wrap gap-3">
                 <Button asChild>
-                  <Link href="/dashboard">Go to dashboard</Link>
+                  <Link href="/opportunities">Go to opportunities</Link>
                 </Button>
 
                 <Button asChild variant="outline">

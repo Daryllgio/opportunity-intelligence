@@ -10,6 +10,10 @@ import {
   OPPORTUNITY_TYPES,
 } from "@/components/opportunities/filter-sidebar";
 import { ScoreRefreshTrigger } from "@/components/opportunities/score-refresh-trigger";
+import {
+  evaluateEligibility,
+  shortBlockerLabel,
+} from "@/lib/matching/eligibility";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimits } from "@/lib/billing/plans";
 
@@ -27,6 +31,9 @@ type Opportunity = {
   country: string | null;
   created_at: string | null;
   eligible_education_levels: string[] | null;
+  effort_level?: string | null;
+  reward_level?: string | null;
+  eligibility_criteria?: unknown;
 };
 
 const typeLabel = (value: string) =>
@@ -55,6 +62,7 @@ function OpportunitiesBrowse() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
   const [hasRanking, setHasRanking] = useState(false);
+  const [profileRow, setProfileRow] = useState<Record<string, unknown> | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [rows, setRows] = useState<Opportunity[]>([]);
   const [scores, setScores] = useState<Record<string, number>>({});
@@ -115,7 +123,7 @@ function OpportunitiesBrowse() {
 
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("id, subscription_plan, education_level, target_opportunity_types")
+        .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -133,15 +141,16 @@ function OpportunitiesBrowse() {
       }
       if (!active) return;
       setHasProfile(true);
+      setProfileRow(profileData as Record<string, unknown>);
 
       const planLimits = getPlanLimits(profileData.subscription_plan);
       setHasRanking(planLimits.hasCompetitivenessRanking);
 
       let query = supabase
         .from("opportunities")
-        .select(
-          "id, title, provider, type, deadline, application_status, funding_amount, country, created_at, eligible_education_levels"
-        )
+        // select * so newly migrated columns (eligibility_criteria) flow in
+        // without breaking before the migration lands.
+        .select("*")
         .eq("is_active", true)
         .eq("is_approved", true)
         .eq("lifecycle_status", "active");
@@ -232,24 +241,65 @@ function OpportunitiesBrowse() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsKey, reloadNonce]);
 
-  // ─── Sort: scored (best first), then unscored ───
+  // ─── Structured eligibility, evaluated against the viewer's profile ───
+  const eligibilityFlags = useMemo(() => {
+    const flags = new Map<string, string>();
+    if (!profileRow) return flags;
+    for (const row of rows) {
+      const criteria = row.eligibility_criteria;
+      if (!Array.isArray(criteria) || criteria.length === 0) continue;
+      const result = evaluateEligibility({ profile: profileRow, criteria });
+      if (result.status === "ineligible" && result.blockers[0]) {
+        flags.set(row.id, shortBlockerLabel(result.blockers[0]));
+      }
+    }
+    return flags;
+  }, [rows, profileRow]);
+
+  const sortMode = searchParams.get("sort") || "match";
+  const hideIneligible = searchParams.get("eligible") === "only";
+
+  // ─── Sort: best match (scored first), newest added, or deadline soonest ───
   const { scored, unscored } = useMemo(() => {
+    const visible = hideIneligible
+      ? rows.filter((row) => !eligibilityFlags.has(row.id))
+      : rows;
+
+    if (sortMode === "newest") {
+      const sorted = [...visible].sort((a, b) =>
+        String(b.created_at || "").localeCompare(String(a.created_at || ""))
+      );
+      return { scored: sorted, unscored: [] as Opportunity[] };
+    }
+    if (sortMode === "deadline") {
+      // Fetch order is already deadline-ascending with nulls last.
+      return { scored: [...visible], unscored: [] as Opportunity[] };
+    }
+
     const scoredRows: Opportunity[] = [];
     const unscoredRows: Opportunity[] = [];
-    for (const row of rows) {
+    for (const row of visible) {
       if (scores[row.id] !== undefined) scoredRows.push(row);
       else unscoredRows.push(row);
     }
     scoredRows.sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0));
     // Unscored stay deadline-ascending (the fetch order).
     return { scored: scoredRows, unscored: unscoredRows };
-  }, [rows, scores]);
+  }, [rows, scores, sortMode, hideIneligible, eligibilityFlags]);
 
   const combined = useMemo(() => [...scored, ...unscored], [scored, unscored]);
   const totalPages = Math.max(1, Math.ceil(combined.length / PAGE_SIZE));
   const pageRows = combined.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const scoredOnPage = pageRows.filter((r) => scores[r.id] !== undefined);
-  const unscoredOnPage = pageRows.filter((r) => scores[r.id] === undefined);
+  // The scored/unscored section split only exists in match order; other sorts
+  // render one flat grid.
+  const scoredOnPage =
+    sortMode === "match"
+      ? pageRows.filter((r) => scores[r.id] !== undefined)
+      : pageRows;
+  const unscoredOnPage =
+    sortMode === "match"
+      ? pageRows.filter((r) => scores[r.id] === undefined)
+      : [];
 
   const activeTypes = (searchParams.get("type") || "").split(",").filter(Boolean);
   const activeCountry = searchParams.get("country") || "";
@@ -465,10 +515,47 @@ function OpportunitiesBrowse() {
             ) : (
               <>
                 {!loading && (
-                  <p className="mt-4 text-sm text-neutral-400">
-                    {combined.length} open opportunit{combined.length === 1 ? "y" : "ies"}
-                    {scored.length > 0 && ` · ${scored.length} scored for you`}
-                  </p>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                      {combined.length} open opportunit{combined.length === 1 ? "y" : "ies"}
+                      {sortMode === "match" &&
+                        scored.length > 0 &&
+                        ` · ${scored.length} scored for you`}
+                    </p>
+                    <div className="flex items-center gap-4">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+                        <input
+                          type="checkbox"
+                          checked={hideIneligible}
+                          onChange={(event) =>
+                            updateParams((params) => {
+                              if (event.target.checked) params.set("eligible", "only");
+                              else params.delete("eligible");
+                              params.delete("page");
+                            })
+                          }
+                          className="h-3.5 w-3.5 rounded border-neutral-300 accent-[var(--primary)]"
+                        />
+                        Hide ones I can&apos;t apply to
+                      </label>
+                      <select
+                        value={sortMode}
+                        onChange={(event) =>
+                          updateParams((params) => {
+                            if (event.target.value === "match") params.delete("sort");
+                            else params.set("sort", event.target.value);
+                            params.delete("page");
+                          })
+                        }
+                        className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
+                        aria-label="Sort opportunities"
+                      >
+                        <option value="match">Best match</option>
+                        <option value="newest">Newest added</option>
+                        <option value="deadline">Deadline soonest</option>
+                      </select>
+                    </div>
+                  </div>
                 )}
 
                 {scoredOnPage.length > 0 && (
@@ -485,7 +572,10 @@ function OpportunitiesBrowse() {
                         fundingAmount={opportunity.funding_amount}
                         country={opportunity.country}
                         createdAt={opportunity.created_at}
+                        effortLevel={opportunity.effort_level}
+                        rewardLevel={opportunity.reward_level}
                         score={scores[opportunity.id]}
+                        eligibilityFlag={eligibilityFlags.get(opportunity.id)}
                       />
                     ))}
                   </div>
@@ -518,7 +608,11 @@ function OpportunitiesBrowse() {
                           fundingAmount={opportunity.funding_amount}
                           country={opportunity.country}
                           createdAt={opportunity.created_at}
-                          unscored={hasRanking}
+                          effortLevel={opportunity.effort_level}
+                          rewardLevel={opportunity.reward_level}
+                          unscored={hasRanking && sortMode === "match"}
+                          score={sortMode === "match" ? undefined : scores[opportunity.id]}
+                          eligibilityFlag={eligibilityFlags.get(opportunity.id)}
                         />
                       ))}
                     </div>

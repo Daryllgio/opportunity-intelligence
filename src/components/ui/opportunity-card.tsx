@@ -13,9 +13,31 @@ interface OpportunityCardProps {
   fundingAmount: string | null;
   country: string | null;
   createdAt?: string | null;
+  effortLevel?: string | null;
+  rewardLevel?: string | null;
   score?: number | null;
   /** True when this type isn't in the user's scored categories. */
   unscored?: boolean;
+  /** Short flag when a stated requirement isn't met, e.g. "Requires US citizenship". */
+  eligibilityFlag?: string | null;
+}
+
+function effortRewardLine(effort?: string | null, reward?: string | null) {
+  const clean = (value?: string | null) => {
+    const v = String(value || "").trim().toLowerCase();
+    return ["low", "medium", "high"].includes(v)
+      ? v.charAt(0).toUpperCase() + v.slice(1)
+      : null;
+  };
+  const effortLabel = clean(effort);
+  const rewardLabel = clean(reward);
+  if (!effortLabel && !rewardLabel) return null;
+  return [
+    effortLabel ? `${effortLabel} effort` : null,
+    rewardLabel ? `${rewardLabel} reward` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatDeadline(deadline: string): string {
@@ -48,10 +70,14 @@ export function OpportunityCard({
   applicationStatus,
   fundingAmount,
   createdAt,
+  effortLevel,
+  rewardLevel,
   score,
   unscored,
+  eligibilityFlag,
 }: OpportunityCardProps) {
   const dimmed = typeof score === "number" && score < 40;
+  const effortReward = effortRewardLine(effortLevel, rewardLevel);
 
   return (
     <Link
@@ -65,7 +91,7 @@ export function OpportunityCard({
         {typeof score === "number" ? (
           <MatchScore score={score} />
         ) : unscored ? (
-          <span className="text-xs text-neutral-400">Not scored</span>
+          <span className="text-xs text-neutral-500">Not scored</span>
         ) : null}
       </div>
 
@@ -74,12 +100,27 @@ export function OpportunityCard({
       </h3>
 
       {provider && (
-        <p className="mt-1 truncate text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="mt-1 truncate text-sm text-neutral-600 dark:text-neutral-400">
           {provider}
         </p>
       )}
 
-      <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-neutral-500 dark:text-neutral-400">
+      {(effortReward || eligibilityFlag) && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          {effortReward && (
+            <span className="text-neutral-600 dark:text-neutral-400">
+              {effortReward}
+            </span>
+          )}
+          {eligibilityFlag && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+              {eligibilityFlag}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-neutral-600 dark:text-neutral-400">
         <span className="inline-flex items-center gap-1.5">
           {deadline ? (
             <>
@@ -101,9 +142,9 @@ export function OpportunityCard({
             "No deadline listed"
           )}
         </span>
-        <span className="flex items-center gap-3">
+        <span className="flex min-w-0 items-center gap-3">
           {fundingAmount && (
-            <span className="truncate font-medium text-neutral-600 dark:text-neutral-300">
+            <span className="truncate font-medium text-neutral-700 dark:text-neutral-300">
               {fundingAmount}
             </span>
           )}

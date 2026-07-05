@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/saved", label: "Saved" },
 ];
@@ -67,9 +66,7 @@ export function AppNav() {
   }
 
   function isActive(href: string) {
-    return (
-      pathname === href || (href !== "/dashboard" && pathname.startsWith(href))
-    );
+    return pathname === href || pathname.startsWith(href);
   }
 
   function linkClasses(href: string) {
@@ -83,7 +80,7 @@ export function AppNav() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-8">
           <Link
-            href="/dashboard"
+            href="/opportunities"
             className="text-[15px] font-semibold tracking-tight text-neutral-900 dark:text-neutral-100"
           >
             OppScore

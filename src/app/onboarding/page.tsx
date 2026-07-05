@@ -176,7 +176,7 @@ export default function OnboardingPage() {
     });
     if (!ok) return;
 
-    // Kick off scoring so matches are ready when they reach the dashboard.
+    // Kick off scoring so matches are ready when they land on their list.
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -187,7 +187,7 @@ export default function OnboardingPage() {
       }).catch(() => {});
     }
 
-    router.push("/dashboard");
+    router.push("/opportunities");
   }
 
   function toggleCategory(type: string) {
@@ -207,7 +207,7 @@ export default function OnboardingPage() {
       <header className="mx-auto flex h-16 max-w-2xl items-center justify-between px-6">
         <span className="text-[15px] font-semibold tracking-tight">OppScore</span>
         <Link
-          href="/dashboard"
+          href="/opportunities"
           className="text-sm text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
         >
           Skip for now

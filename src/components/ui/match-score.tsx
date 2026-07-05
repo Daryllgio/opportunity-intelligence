@@ -1,38 +1,41 @@
 /**
  * Match score display with visual tiers. All scored opportunities are shown —
  * low scores are de-emphasized, never hidden.
+ *
+ * Tier colors: strong reads as a clear green "go", good as the brand iris
+ * (positive, confident), partial as amber "check the details", low as muted.
  */
 
 export function getMatchTier(score: number) {
   if (score >= 80) {
     return {
       label: "Strong match",
-      dot: "bg-primary",
-      text: "text-primary",
-      score: "text-primary",
+      dot: "bg-emerald-500",
+      text: "text-emerald-700 dark:text-emerald-400",
+      score: "text-emerald-700 dark:text-emerald-400",
     };
   }
   if (score >= 60) {
     return {
       label: "Good match",
-      dot: "bg-green-500",
-      text: "text-neutral-700 dark:text-neutral-200",
-      score: "text-neutral-800 dark:text-neutral-100",
+      dot: "bg-primary",
+      text: "text-primary",
+      score: "text-primary",
     };
   }
   if (score >= 40) {
     return {
       label: "Partial match",
-      dot: "bg-neutral-300",
-      text: "text-neutral-500 dark:text-neutral-400",
-      score: "text-neutral-600 dark:text-neutral-300",
+      dot: "bg-amber-500",
+      text: "text-amber-700 dark:text-amber-400",
+      score: "text-amber-700 dark:text-amber-400",
     };
   }
   return {
     label: "Low match",
-    dot: "bg-neutral-200",
-    text: "text-neutral-400 dark:text-neutral-500",
-    score: "text-neutral-400 dark:text-neutral-500",
+    dot: "bg-neutral-300 dark:bg-neutral-600",
+    text: "text-neutral-500 dark:text-neutral-400",
+    score: "text-neutral-500 dark:text-neutral-400",
   };
 }
 

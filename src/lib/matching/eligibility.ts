@@ -341,6 +341,28 @@ export function evaluateEligibility({
   return { status: "unknown", checks, blockers: [] };
 }
 
+/** Compact card-chip label for a failed requirement, e.g. "Requires US citizenship". */
+export function shortBlockerLabel(check: EligibilityCheck): string {
+  const { kind, values } = check.criterion;
+  const first = values[0] || "";
+  switch (kind) {
+    case "citizenship":
+      return `Requires ${first || "specific"} citizenship`;
+    case "residency":
+    case "location":
+      return first ? `${first} residents only` : "Location restricted";
+    case "specific_school":
+      return first ? `${first} students only` : "School specific";
+    case "gpa_minimum":
+      return first ? `Requires ${first}+ GPA` : "GPA requirement";
+    case "education_level":
+    case "grade_level":
+      return first ? `For ${first.toLowerCase()} students` : "Level restricted";
+    default:
+      return `${criterionKindLabel(kind)} requirement`;
+  }
+}
+
 /** Short human label for a criterion kind, for chips and flags. */
 export function criterionKindLabel(kind: string): string {
   const labels: Record<string, string> = {

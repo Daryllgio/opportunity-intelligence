@@ -19,7 +19,7 @@ export default function NotFound() {
           Browse opportunities
         </Link>
         <Link
-          href="/dashboard"
+          href="/opportunities"
           className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
         >
           Go to dashboard
