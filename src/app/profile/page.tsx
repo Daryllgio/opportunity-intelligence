@@ -25,6 +25,7 @@ type AwardEntry = {
 type Profile = {
   nationality: string | null;
   country_of_study: string | null;
+  state_or_province?: string | null;
   student_status: string | null;
   school: string | null;
   school_other: string | null;
@@ -33,6 +34,8 @@ type Profile = {
   field_of_study_other: string | null;
   gpa: number | null;
   languages: string[] | null;
+  first_generation?: boolean | null;
+  demographic_tags?: string[] | null;
   target_opportunity_types: string[] | null;
   leadership_experiences: ExperienceEntry[] | null;
   research_experiences: ExperienceEntry[] | null;
@@ -94,13 +97,13 @@ function ExperienceList({
               </p>
             )}
             {entry.description && (
-              <p className="mt-1.5 text-sm leading-6 text-neutral-500">
+              <p className="mt-1.5 whitespace-pre-line text-sm leading-6 text-neutral-600 dark:text-neutral-300">
                 {entry.description}
               </p>
             )}
             {entry.impact && (
-              <p className="mt-1 text-sm leading-6 text-neutral-500">
-                <span className="font-medium text-neutral-600 dark:text-neutral-300">
+              <p className="mt-1 whitespace-pre-line text-sm leading-6 text-neutral-600 dark:text-neutral-300">
+                <span className="font-medium text-neutral-800 dark:text-neutral-100">
                   Impact:
                 </span>{" "}
                 {entry.impact}
@@ -138,9 +141,7 @@ export default function ProfilePage() {
 
       const { data } = await supabase
         .from("profiles")
-        .select(
-          "nationality, country_of_study, student_status, school, school_other, education_level, field_of_study, field_of_study_other, gpa, languages, target_opportunity_types, leadership_experiences, research_experiences, volunteer_experiences, work_project_experiences, awards"
-        )
+        .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -197,7 +198,14 @@ export default function ProfilePage() {
 
             <dl className="mt-10 grid grid-cols-2 gap-x-8 gap-y-6 border-y border-neutral-100 py-8 sm:grid-cols-3 dark:border-neutral-900">
               <Field label="Nationality" value={profile.nationality} />
-              <Field label="Studying in" value={profile.country_of_study} />
+              <Field
+                label="Studying in"
+                value={
+                  [profile.state_or_province, profile.country_of_study]
+                    .filter(Boolean)
+                    .join(", ") || null
+                }
+              />
               <Field label="Status" value={profile.student_status} />
               <Field label="Level" value={profile.education_level} />
               <Field label="GPA" value={profile.gpa ? profile.gpa.toFixed(2) : null} />
@@ -206,6 +214,27 @@ export default function ProfilePage() {
                 value={profile.languages?.length ? profile.languages.join(", ") : null}
               />
             </dl>
+
+            {(profile.first_generation || (profile.demographic_tags || []).length > 0) && (
+              <div className="mt-8">
+                <h3 className="text-sm font-semibold">Background</h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {profile.first_generation && (
+                    <span className="rounded-md border border-neutral-200 px-2.5 py-1 text-sm text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
+                      First-generation student
+                    </span>
+                  )}
+                  {(profile.demographic_tags || []).map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-md border border-neutral-200 px-2.5 py-1 text-sm text-neutral-700 dark:border-neutral-800 dark:text-neutral-300"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {profile.target_opportunity_types &&
               profile.target_opportunity_types.length > 0 && (

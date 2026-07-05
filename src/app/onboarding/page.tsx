@@ -9,6 +9,12 @@ import {
   OPPORTUNITY_TYPES,
   OPPORTUNITY_TYPE_LABELS,
 } from "@/lib/discovery/taxonomy";
+import {
+  STUDY_COUNTRIES,
+  regionLabelForCountry,
+  regionsForCountry,
+} from "@/lib/data/regions";
+import { UniversityCombobox } from "@/components/ui/university-combobox";
 
 const EDUCATION_LEVELS = [
   "High School",
@@ -40,10 +46,12 @@ export default function OnboardingPage() {
   // Step 1 — basics
   const [nationality, setNationality] = useState("");
   const [countryOfStudy, setCountryOfStudy] = useState("");
+  const [stateOrProvince, setStateOrProvince] = useState("");
 
   // Step 2 — education
   const [educationLevel, setEducationLevel] = useState("");
   const [school, setSchool] = useState("");
+  const [schoolOther, setSchoolOther] = useState("");
   const [fieldOfStudy, setFieldOfStudy] = useState("");
   const [gpa, setGpa] = useState("");
 
@@ -72,17 +80,18 @@ export default function OnboardingPage() {
       // Resume where they left off if a partial profile exists.
       supabase
         .from("profiles")
-        .select(
-          "nationality, country_of_study, education_level, school, field_of_study, gpa, target_opportunity_types"
-        )
+        .select("*")
         .eq("id", user.id)
         .maybeSingle()
         .then(({ data }) => {
           if (!data) return;
+          const record = data as Record<string, unknown>;
           setNationality(data.nationality || "");
           setCountryOfStudy(data.country_of_study || "");
+          setStateOrProvince(String(record.state_or_province || ""));
           setEducationLevel(data.education_level || "");
           setSchool(data.school || "");
+          setSchoolOther(data.school_other || "");
           setFieldOfStudy(data.field_of_study || "");
           setGpa(data.gpa ? String(data.gpa) : "");
           setCategories(
@@ -101,9 +110,21 @@ export default function OnboardingPage() {
     setSaving(true);
     setError("");
 
-    const { error: upsertError } = await supabase
+    let { error: upsertError } = await supabase
       .from("profiles")
       .upsert({ id: userId, ...fields, updated_at: new Date().toISOString() });
+
+    // Newest columns land with a hand-applied migration; never block signup
+    // on their absence.
+    if (upsertError && /column|schema/i.test(upsertError.message)) {
+      const fallback = { ...fields };
+      delete fallback.state_or_province;
+      delete fallback.first_generation;
+      delete fallback.demographic_tags;
+      ({ error: upsertError } = await supabase
+        .from("profiles")
+        .upsert({ id: userId, ...fallback, updated_at: new Date().toISOString() }));
+    }
 
     setSaving(false);
     if (upsertError) {
@@ -120,11 +141,13 @@ export default function OnboardingPage() {
       ok = await savePartial({
         nationality: nationality || null,
         country_of_study: countryOfStudy || null,
+        state_or_province: stateOrProvince || null,
       });
     } else if (step === 1) {
       ok = await savePartial({
         education_level: educationLevel || null,
         school: school || null,
+        school_other: school === "Other" ? schoolOther || null : null,
         field_of_study: fieldOfStudy || null,
         gpa: gpa ? Number(gpa) : null,
       });
@@ -254,17 +277,47 @@ export default function OnboardingPage() {
                 <select
                   id="countryOfStudy"
                   value={countryOfStudy}
-                  onChange={(event) => setCountryOfStudy(event.target.value)}
+                  onChange={(event) => {
+                    setCountryOfStudy(event.target.value);
+                    setStateOrProvince("");
+                  }}
                   className={`${inputClass} mt-2`}
                 >
                   <option value="">Select a country</option>
-                  {countries.map((country) => (
+                  {STUDY_COUNTRIES.map((country) => (
                     <option key={country} value={country}>
                       {country}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {countryOfStudy && (
+                <div>
+                  <label htmlFor="stateOrProvince" className={labelClass}>
+                    {regionLabelForCountry(countryOfStudy)}
+                  </label>
+                  <select
+                    id="stateOrProvince"
+                    value={stateOrProvince}
+                    onChange={(event) => setStateOrProvince(event.target.value)}
+                    className={`${inputClass} mt-2`}
+                  >
+                    <option value="">
+                      Select your {regionLabelForCountry(countryOfStudy).toLowerCase()}
+                    </option>
+                    {regionsForCountry(countryOfStudy).map((region) => (
+                      <option key={region} value={region}>
+                        {region}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-neutral-500">
+                    Many scholarships are state or province specific — this
+                    unlocks them for you.
+                  </p>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -300,17 +353,21 @@ export default function OnboardingPage() {
                 </select>
               </div>
 
-              <div>
-                <label htmlFor="school" className={labelClass}>
-                  School or university
-                </label>
-                <input
-                  id="school"
+              <div className="[&_label]:text-sm [&_label]:font-medium">
+                <UniversityCombobox
+                  label="School or university"
+                  country={countryOfStudy}
                   value={school}
-                  onChange={(event) => setSchool(event.target.value)}
-                  placeholder="e.g. University of Toronto"
-                  className={`${inputClass} mt-2`}
+                  onChange={setSchool}
                 />
+                {school === "Other" && (
+                  <input
+                    value={schoolOther}
+                    onChange={(event) => setSchoolOther(event.target.value)}
+                    placeholder="Type your school name"
+                    className={`${inputClass} mt-2`}
+                  />
+                )}
               </div>
 
               <div className="grid gap-6 sm:grid-cols-2">

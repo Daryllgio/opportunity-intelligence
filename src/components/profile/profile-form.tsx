@@ -29,6 +29,12 @@ import {
   normalizeOpportunityType,
 } from "@/lib/discovery/taxonomy";
 import { getPlanLimits } from "@/lib/billing/plans";
+import {
+  STUDY_COUNTRIES,
+  regionLabelForCountry,
+  regionsForCountry,
+} from "@/lib/data/regions";
+import { UniversityCombobox } from "@/components/ui/university-combobox";
 
 type ExperienceEntry = {
   title: string;
@@ -47,9 +53,43 @@ type AwardEntry = {
   description: string;
 };
 
+/**
+ * One unified experience list in the UI; entries carry a kind tag and are
+ * bucketed back into the four storage arrays on save, so scoring, experience
+ * summaries, and profile hashes keep working unchanged.
+ */
+export type ExperienceKind =
+  | "leadership"
+  | "research"
+  | "volunteer"
+  | "work_project";
+
+type TaggedExperience = ExperienceEntry & { kind: ExperienceKind };
+
+export const EXPERIENCE_KIND_LABELS: Record<ExperienceKind, string> = {
+  leadership: "Leadership",
+  research: "Research",
+  volunteer: "Volunteering",
+  work_project: "Work / Project",
+};
+
+const EXPERIENCE_KIND_TO_COLUMN: Record<
+  ExperienceKind,
+  | "leadership_experiences"
+  | "research_experiences"
+  | "volunteer_experiences"
+  | "work_project_experiences"
+> = {
+  leadership: "leadership_experiences",
+  research: "research_experiences",
+  volunteer: "volunteer_experiences",
+  work_project: "work_project_experiences",
+};
+
 type ProfileFormState = {
   nationality: string;
   country_of_study: string;
+  state_or_province: string;
   student_status: string;
   school: string;
   school_other: string;
@@ -60,107 +100,36 @@ type ProfileFormState = {
   languages: string[];
   target_opportunity_types: string[];
   subscription_plan: "free" | "pro" | "premium";
-  leadership_experiences: ExperienceEntry[];
-  research_experiences: ExperienceEntry[];
-  volunteer_experiences: ExperienceEntry[];
-  work_project_experiences: ExperienceEntry[];
+  experiences: TaggedExperience[];
   awards: AwardEntry[];
+  first_generation: boolean;
+  financial_need: boolean;
+  demographic_tags: string[];
 };
 
+// Nationality can be anywhere in the world; study country is US/Canada — the
+// two markets the catalog covers.
 const countries = Array.from(
   new Set(countriesData.map((country) => country.name.common))
 )
   .sort((a, b) => a.localeCompare(b))
   .concat("Other");
 
-const universitiesByCountry: Record<string, string[]> = {
-  Canada: [
-    "Carleton University",
-    "University of Toronto",
-    "University of British Columbia",
-    "McGill University",
-    "University of Waterloo",
-    "University of Alberta",
-    "University of Calgary",
-    "University of Ottawa",
-    "York University",
-    "Western University",
-    "Queen's University",
-    "McMaster University",
-    "Simon Fraser University",
-    "Concordia University",
-    "Dalhousie University",
-    "Other",
-  ],
-  "United States": [
-    "Harvard University",
-    "Stanford University",
-    "Massachusetts Institute of Technology",
-    "University of California, Berkeley",
-    "University of California, Los Angeles",
-    "University of Michigan",
-    "New York University",
-    "Columbia University",
-    "University of Maryland, Baltimore County",
-    "University of Maryland, College Park",
-    "Howard University",
-    "Johns Hopkins University",
-    "Other",
-  ],
-  "United Kingdom": [
-    "University of Oxford",
-    "University of Cambridge",
-    "Imperial College London",
-    "University College London",
-    "King's College London",
-    "University of Edinburgh",
-    "University of Manchester",
-    "University of Warwick",
-    "Other",
-  ],
-  Cameroon: [
-    "University of Buea",
-    "University of Yaoundé I",
-    "University of Yaoundé II",
-    "University of Douala",
-    "University of Dschang",
-    "Catholic University of Cameroon",
-    "ICT University",
-    "Other",
-  ],
-  Nigeria: [
-    "University of Lagos",
-    "University of Ibadan",
-    "Covenant University",
-    "University of Nigeria",
-    "Ahmadu Bello University",
-    "Obafemi Awolowo University",
-    "Other",
-  ],
-  Ghana: [
-    "University of Ghana",
-    "Kwame Nkrumah University of Science and Technology",
-    "University of Cape Coast",
-    "Ashesi University",
-    "Other",
-  ],
-};
-
-const fallbackUniversities = [
-  "University of Toronto",
-  "Harvard University",
-  "University of Oxford",
-  "University of Cambridge",
-  "Stanford University",
-  "Massachusetts Institute of Technology",
-  "University of British Columbia",
-  "McGill University",
-  "University of Waterloo",
-  "Carleton University",
-  "University of Lagos",
-  "University of Ghana",
-  "University of Buea",
-  "Other",
+// Optional self-identification. Only ever used to CONFIRM eligibility for
+// opportunities that name a group — never to exclude anyone from anything.
+const demographicOptions = [
+  "First-generation college student",
+  "Woman",
+  "Black or African American",
+  "Hispanic or Latino",
+  "Indigenous or Native",
+  "Asian or Pacific Islander",
+  "LGBTQ+",
+  "Student with a disability",
+  "Veteran or military family",
+  "Immigrant or refugee",
+  "From a rural community",
+  "Low-income household",
 ];
 
 const educationLevels = [
@@ -311,6 +280,7 @@ const emptyAward: AwardEntry = {
 const initialState: ProfileFormState = {
   nationality: "",
   country_of_study: "",
+  state_or_province: "",
   student_status: "",
   school: "",
   school_other: "",
@@ -321,12 +291,46 @@ const initialState: ProfileFormState = {
   languages: [],
   target_opportunity_types: [],
   subscription_plan: "free",
-  leadership_experiences: [],
-  research_experiences: [],
-  volunteer_experiences: [],
-  work_project_experiences: [],
+  experiences: [],
   awards: [],
+  first_generation: false,
+  financial_need: false,
+  demographic_tags: [],
 };
+
+function mergeExperienceBuckets(
+  data: Record<string, unknown>
+): TaggedExperience[] {
+  const merged: TaggedExperience[] = [];
+  for (const kind of Object.keys(EXPERIENCE_KIND_TO_COLUMN) as ExperienceKind[]) {
+    const column = EXPERIENCE_KIND_TO_COLUMN[kind];
+    const entries = (data[column] as ExperienceEntry[] | null) || [];
+    for (const entry of entries) {
+      merged.push({ ...entry, kind });
+    }
+  }
+  return merged;
+}
+
+function bucketExperiences(experiences: TaggedExperience[]): {
+  leadership_experiences: ExperienceEntry[];
+  research_experiences: ExperienceEntry[];
+  volunteer_experiences: ExperienceEntry[];
+  work_project_experiences: ExperienceEntry[];
+} {
+  const buckets = {
+    leadership_experiences: [] as ExperienceEntry[],
+    research_experiences: [] as ExperienceEntry[],
+    volunteer_experiences: [] as ExperienceEntry[],
+    work_project_experiences: [] as ExperienceEntry[],
+  };
+  for (const { kind, ...entry } of experiences) {
+    buckets[EXPERIENCE_KIND_TO_COLUMN[kind] || "work_project_experiences"].push(
+      entry
+    );
+  }
+  return buckets;
+}
 
 function SearchableSelect({
   label,
@@ -335,6 +339,7 @@ function SearchableSelect({
   options,
   placeholder = "Select an option",
   searchPlaceholder = "Search...",
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -342,11 +347,12 @@ function SearchableSelect({
   options: string[];
   placeholder?: string;
   searchPlaceholder?: string;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="space-y-2">
+    <div className={compact ? "flex items-center gap-3" : "space-y-2"}>
       <Label>{label}</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
@@ -354,7 +360,10 @@ function SearchableSelect({
             type="button"
             variant="outline"
             role="combobox"
-            className="w-full justify-between font-normal"
+            className={cn(
+              "justify-between font-normal",
+              compact ? "h-9 w-44" : "h-10 w-full"
+            )}
           >
             <span className="truncate">{value || placeholder}</span>
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -505,9 +514,10 @@ export function ProfileForm() {
   const [fetchingProfile, setFetchingProfile] = useState(true);
   const [message, setMessage] = useState("");
 
-  const schoolOptions = useMemo(() => {
-    return universitiesByCountry[form.country_of_study] || fallbackUniversities;
-  }, [form.country_of_study]);
+  const regionOptions = useMemo(
+    () => regionsForCountry(form.country_of_study),
+    [form.country_of_study]
+  );
 
   useEffect(() => {
     async function loadProfile() {
@@ -533,9 +543,11 @@ export function ProfileForm() {
       }
 
       if (data) {
+        const record = data as Record<string, unknown>;
         setForm({
           nationality: data.nationality || "",
           country_of_study: data.country_of_study || "",
+          state_or_province: String(record.state_or_province || ""),
           student_status: data.student_status || "",
           school: data.school || "",
           school_other: data.school_other || "",
@@ -550,20 +562,15 @@ export function ProfileForm() {
           subscription_plan:
             (data.subscription_plan as "free" | "pro" | "premium" | null) ||
             "free",
-          leadership_experiences:
-            (data.leadership_experiences as unknown as ExperienceEntry[] | null) ||
-            [],
-          research_experiences:
-            (data.research_experiences as unknown as ExperienceEntry[] | null) ||
-            [],
-          volunteer_experiences:
-            (data.volunteer_experiences as unknown as ExperienceEntry[] | null) ||
-            [],
-          work_project_experiences:
-            (data.work_project_experiences as unknown as
-              | ExperienceEntry[]
-              | null) || [],
+          experiences: mergeExperienceBuckets(record),
           awards: (data.awards as unknown as AwardEntry[] | null) || [],
+          first_generation: record.first_generation === true,
+          financial_need: ["yes", "true", "high"].includes(
+            String(record.financial_need || "").toLowerCase()
+          ),
+          demographic_tags: Array.isArray(record.demographic_tags)
+            ? (record.demographic_tags as string[])
+            : [],
         });
       }
 
@@ -580,42 +587,27 @@ export function ProfileForm() {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  function addExperience(
-    key:
-      | "leadership_experiences"
-      | "research_experiences"
-      | "volunteer_experiences"
-      | "work_project_experiences"
-  ) {
-    updateField(key, [...form[key], { ...emptyExperience }]);
+  function addExperience(kind: ExperienceKind) {
+    updateField("experiences", [
+      ...form.experiences,
+      { ...emptyExperience, kind },
+    ]);
   }
 
   function updateExperience(
-    key:
-      | "leadership_experiences"
-      | "research_experiences"
-      | "volunteer_experiences"
-      | "work_project_experiences",
     index: number,
-    field: keyof ExperienceEntry,
+    field: keyof TaggedExperience,
     value: string
   ) {
-    const updated = [...form[key]];
+    const updated = [...form.experiences];
     updated[index] = { ...updated[index], [field]: value };
-    updateField(key, updated);
+    updateField("experiences", updated);
   }
 
-  function removeExperience(
-    key:
-      | "leadership_experiences"
-      | "research_experiences"
-      | "volunteer_experiences"
-      | "work_project_experiences",
-    index: number
-  ) {
+  function removeExperience(index: number) {
     updateField(
-      key,
-      form[key].filter((_, itemIndex) => itemIndex !== index)
+      "experiences",
+      form.experiences.filter((_, itemIndex) => itemIndex !== index)
     );
   }
 
@@ -695,7 +687,7 @@ export function ProfileForm() {
       return;
     }
 
-    const { error } = await supabase.from("profiles").upsert({
+    const basePayload = {
       id: user.id,
       nationality: form.nationality,
       country_of_study: form.country_of_study,
@@ -710,13 +702,28 @@ export function ProfileForm() {
       target_opportunity_types: typeLabelsToCanonical(
         form.target_opportunity_types
       ),
-      leadership_experiences: form.leadership_experiences,
-      research_experiences: form.research_experiences,
-      volunteer_experiences: form.volunteer_experiences,
-      work_project_experiences: form.work_project_experiences,
+      ...bucketExperiences(form.experiences),
       awards: form.awards,
+      financial_need: form.financial_need ? "yes" : "no",
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    // The newest profile columns arrive with a hand-applied migration; save
+    // must succeed either way, so retry without them on an unknown-column
+    // error.
+    const newColumns = {
+      state_or_province: form.state_or_province,
+      first_generation: form.first_generation,
+      demographic_tags: form.demographic_tags,
+    };
+
+    let { error } = await supabase
+      .from("profiles")
+      .upsert({ ...basePayload, ...newColumns });
+
+    if (error && /column|schema/i.test(error.message)) {
+      ({ error } = await supabase.from("profiles").upsert(basePayload));
+    }
 
     setLoading(false);
 
@@ -759,89 +766,100 @@ export function ProfileForm() {
     updateField("target_opportunity_types", values);
   }
 
-  function renderExperienceSection(
-    title: string,
-    description: string,
-    key:
-      | "leadership_experiences"
-      | "research_experiences"
-      | "volunteer_experiences"
-      | "work_project_experiences"
-  ) {
+  function renderExperienceSection() {
     return (
       <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
-        <div className="flex items-start justify-between gap-4">
-          <SectionTitle title={title} description={description} />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => addExperience(key)}
-          >
-            + Add
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <SectionTitle
+            title="Experience"
+            description="Leadership, research, volunteering, work, and projects all live here. Line breaks and bullet points you type are kept exactly as written."
+          />
+          <Button type="button" variant="outline" onClick={() => addExperience("leadership")}>
+            + Add experience
           </Button>
         </div>
 
-        {form[key].length === 0 && (
-          <p className="text-sm text-muted-foreground">No entries added yet.</p>
+        {form.experiences.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            Nothing added yet. Experience is the strongest signal for your match
+            scores.
+          </p>
         )}
 
-        {form[key].map((entry, index) => (
+        {form.experiences.map((entry, index) => (
           <div
             key={index}
-            className="space-y-4 border-l-2 border-neutral-100 pl-4 dark:border-neutral-800"
+            className="space-y-4 rounded-xl border border-neutral-200 p-4 sm:p-5 dark:border-neutral-800"
           >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <SearchableSelect
+                label="Type"
+                value={EXPERIENCE_KIND_LABELS[entry.kind]}
+                onChange={(label) => {
+                  const kind = (Object.keys(EXPERIENCE_KIND_LABELS) as ExperienceKind[]).find(
+                    (key) => EXPERIENCE_KIND_LABELS[key] === label
+                  );
+                  if (kind) updateExperience(index, "kind", kind);
+                }}
+                options={Object.values(EXPERIENCE_KIND_LABELS)}
+                compact
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-neutral-500 hover:text-red-600"
+                onClick={() => removeExperience(index)}
+              >
+                Remove
+              </Button>
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <Input
-                placeholder="Role / title"
+                placeholder="Role or title"
                 value={entry.title}
                 onChange={(event) =>
-                  updateExperience(key, index, "title", event.target.value)
+                  updateExperience(index, "title", event.target.value)
                 }
               />
-
               <Input
                 placeholder="Organization"
                 value={entry.organization}
                 onChange={(event) =>
-                  updateExperience(
-                    key,
-                    index,
-                    "organization",
-                    event.target.value
-                  )
+                  updateExperience(index, "organization", event.target.value)
                 }
               />
-
               <Input
                 placeholder="Start date"
                 value={entry.startDate}
                 onChange={(event) =>
-                  updateExperience(key, index, "startDate", event.target.value)
+                  updateExperience(index, "startDate", event.target.value)
                 }
               />
-
               <Input
                 placeholder="End date or Present"
                 value={entry.endDate}
                 onChange={(event) =>
-                  updateExperience(key, index, "endDate", event.target.value)
+                  updateExperience(index, "endDate", event.target.value)
                 }
               />
             </div>
 
             <Textarea
-              placeholder="Describe what you did."
+              placeholder={"What did you do? Bullet points welcome:\n• Organized weekly tutoring for 30 students\n• Grew club membership from 12 to 45"}
               value={entry.description}
+              rows={4}
               onChange={(event) =>
-                updateExperience(key, index, "description", event.target.value)
+                updateExperience(index, "description", event.target.value)
               }
             />
 
             <Textarea
-              placeholder="Impact or results, if any. Example: Led 12 members, raised $2,000, served 300 students."
+              placeholder="Impact or results. Example: Led 12 members, raised $2,000, served 300 students."
               value={entry.impact}
+              rows={2}
               onChange={(event) =>
-                updateExperience(key, index, "impact", event.target.value)
+                updateExperience(index, "impact", event.target.value)
               }
             />
 
@@ -849,17 +867,9 @@ export function ProfileForm() {
               placeholder="Optional link"
               value={entry.link}
               onChange={(event) =>
-                updateExperience(key, index, "link", event.target.value)
+                updateExperience(index, "link", event.target.value)
               }
             />
-
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => removeExperience(key, index)}
-            >
-              Remove
-            </Button>
           </div>
         ))}
       </section>
@@ -889,11 +899,25 @@ export function ProfileForm() {
                 value={form.country_of_study}
                 onChange={(value) => {
                   updateField("country_of_study", value);
+                  updateField("state_or_province", "");
                   updateField("school", "");
                   updateField("school_other", "");
                 }}
-                options={countries}
+                options={STUDY_COUNTRIES}
                 searchPlaceholder="Search country..."
+              />
+
+              <SearchableSelect
+                label={regionLabelForCountry(form.country_of_study)}
+                value={form.state_or_province}
+                onChange={(value) => updateField("state_or_province", value)}
+                options={regionOptions}
+                placeholder={
+                  form.country_of_study
+                    ? `Select your ${regionLabelForCountry(form.country_of_study).toLowerCase()}`
+                    : "Select country first"
+                }
+                searchPlaceholder="Search..."
               />
 
               <SearchableSelect
@@ -903,17 +927,10 @@ export function ProfileForm() {
                 options={["Domestic student", "International student"]}
               />
 
-              <SearchableSelect
-                label="School / university"
+              <UniversityCombobox
+                country={form.country_of_study}
                 value={form.school}
                 onChange={(value) => updateField("school", value)}
-                options={schoolOptions}
-                placeholder={
-                  form.country_of_study
-                    ? "Select your school"
-                    : "Select country first"
-                }
-                searchPlaceholder="Search school..."
               />
 
               {form.school === "Other" && (
@@ -1001,29 +1018,58 @@ export function ProfileForm() {
             </div>
           </section>
 
-          {renderExperienceSection(
-            "Leadership experience",
-            "Add clubs, organizations, student leadership, nonprofit leadership, or team roles.",
-            "leadership_experiences"
-          )}
+          <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
+            <SectionTitle
+              title="Background"
+              description="Optional. Some opportunities are created for specific groups; sharing here only ever unlocks more matches. It is never used to exclude you from anything."
+            />
 
-          {renderExperienceSection(
-            "Research experience",
-            "Add labs, papers, projects, posters, research assistant roles, or academic work.",
-            "research_experiences"
-          )}
+            <div className="space-y-4">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.first_generation}
+                  onChange={(event) =>
+                    updateField("first_generation", event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 rounded border-neutral-300 accent-[var(--primary)]"
+                />
+                <span className="text-sm text-neutral-800 dark:text-neutral-200">
+                  I am a first-generation college student
+                  <span className="block text-neutral-500">
+                    Neither of my parents completed a four-year degree.
+                  </span>
+                </span>
+              </label>
 
-          {renderExperienceSection(
-            "Volunteer experience",
-            "Add community service, mentoring, outreach, nonprofit, or social impact work.",
-            "volunteer_experiences"
-          )}
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.financial_need}
+                  onChange={(event) =>
+                    updateField("financial_need", event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 rounded border-neutral-300 accent-[var(--primary)]"
+                />
+                <span className="text-sm text-neutral-800 dark:text-neutral-200">
+                  I want to see need-based opportunities
+                  <span className="block text-neutral-500">
+                    Surfaces awards that consider financial need.
+                  </span>
+                </span>
+              </label>
 
-          {renderExperienceSection(
-            "Work / project experience",
-            "Add jobs, internships, startups, projects, freelance work, or technical builds.",
-            "work_project_experiences"
-          )}
+              <SearchableMultiSelect
+                label="Groups you identify with (optional)"
+                selected={form.demographic_tags}
+                onChange={(values) => updateField("demographic_tags", values)}
+                options={demographicOptions}
+                placeholder="Search..."
+              />
+            </div>
+          </section>
+
+          {renderExperienceSection()}
 
           <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
             <div className="flex items-start justify-between gap-4">
