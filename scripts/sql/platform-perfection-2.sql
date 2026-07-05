@@ -47,3 +47,12 @@ alter table profiles
 -- ---------------------------------------------------------------------------
 alter table opportunities
   add column if not exists last_verified_at timestamptz;
+
+-- ---------------------------------------------------------------------------
+-- 4. Premium AI search metering.
+--    Natural-language search is budgeted by actual model tokens per month
+--    (see plans.ts: aiSearchMonthlyTokens). The route fails closed — no
+--    searches run until this column exists.
+-- ---------------------------------------------------------------------------
+alter table user_ai_usage
+  add column if not exists ai_search_tokens_used bigint default 0;

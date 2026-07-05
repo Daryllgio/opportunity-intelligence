@@ -51,6 +51,7 @@ const TIERS = [
       "Full opportunity details",
       "Matching in 4 categories",
       "80 competitiveness reports / month",
+      "AI search: describe what you want in plain language",
       "Save opportunities + deadline reminders",
       "Priority score refreshes",
     ],
@@ -90,10 +91,10 @@ export default function PricingPage() {
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
             Simple plans, honest limits
           </h1>
-          <p className="mt-3 text-[15px] leading-7 text-neutral-500 dark:text-neutral-400">
+          <p className="mt-3 text-[15px] leading-7 text-neutral-600 dark:text-neutral-400">
             Every plan browses the same verified opportunities. Paid plans add
-            profile-based matching, competitiveness reports, saving, and
-            deadline reminders.
+            profile-based matching, competitiveness reports, saving, deadline
+            reminders, and on Premium, AI search in plain language.
           </p>
         </div>
 

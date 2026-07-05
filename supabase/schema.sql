@@ -375,6 +375,7 @@ create table if not exists user_ai_usage (
   usage_month text not null,
   competitiveness_scores_used integer default 0,
   gap_reports_used integer default 0,
+  ai_search_tokens_used bigint default 0,
   updated_at timestamptz default now(),
   unique (user_id, usage_month)
 );

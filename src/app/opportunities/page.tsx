@@ -9,6 +9,7 @@ import {
   FilterSidebar,
   OPPORTUNITY_TYPES,
 } from "@/components/opportunities/filter-sidebar";
+import { AiSearch } from "@/components/opportunities/ai-search";
 import { ScoreRefreshTrigger } from "@/components/opportunities/score-refresh-trigger";
 import {
   evaluateEligibility,
@@ -355,14 +356,20 @@ function OpportunitiesBrowse() {
       <ScoreRefreshTrigger
         onScoresRefreshed={() => setReloadNonce((nonce) => nonce + 1)}
       />
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Opportunities</h1>
-        <p className="mt-1 text-[15px] text-neutral-500 dark:text-neutral-400">
+        <p className="mt-1 text-[15px] text-neutral-600 dark:text-neutral-400">
           {hasRanking
             ? "Sorted by your match strength, best options first."
             : "Currently open opportunities from verified sources."}
         </p>
       </div>
+
+      {isLoggedIn && hasProfile && (
+        <AiSearch
+          hasAiSearch={getPlanLimits(String(profileRow?.subscription_plan || "")).hasAiSearch}
+        />
+      )}
 
       {!loading && !isLoggedIn && (
         <div className="rounded-lg border border-neutral-200 p-8 text-center dark:border-neutral-800">

@@ -309,6 +309,7 @@ export type UserAiUsageRow = {
   usage_month: string;
   competitiveness_scores_used: number | null;
   gap_reports_used: number | null;
+  ai_search_tokens_used: number | null;
   updated_at: string | null;
 };
 
