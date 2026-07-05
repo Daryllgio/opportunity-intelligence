@@ -1,3 +1,4 @@
+import { evaluateEligibility } from "@/lib/matching/eligibility";
 import type {
   MatchEvaluation,
   OpportunityForScoring,
@@ -94,10 +95,47 @@ export function evaluateMatch({
   const completenessPenalty =
     profileStrength.profile_completeness < 50 ? 8 : profileStrength.profile_completeness < 70 ? 4 : 0;
 
-  const score = clamp(weightedScore - completenessPenalty);
+  // Structured eligibility, evaluated against the profile. Confirmed
+  // eligibility lifts the score slightly; unresolved strict requirements pull
+  // it down — a great-looking match the user may not qualify for should not
+  // outrank one they definitely do.
+  const eligibility = evaluateEligibility({
+    profile: profile as unknown as Record<string, unknown>,
+    criteria: opportunity.eligibility_criteria,
+  });
+  const eligibilityAdjustment =
+    eligibility.status === "eligible"
+      ? 5
+      : eligibility.status === "ineligible"
+        ? -35
+        : eligibility.status === "unknown"
+          ? -4
+          : 0;
+
+  const score = clamp(weightedScore - completenessPenalty + eligibilityAdjustment);
 
   const reasons: string[] = [];
   const gaps: string[] = [];
+
+  if (eligibility.status === "eligible") {
+    reasons.push("You meet every stated eligibility requirement.");
+  }
+  for (const blocker of eligibility.blockers) {
+    gaps.push(`Eligibility: ${blocker.criterion.requirement}`);
+  }
+  if (eligibility.status === "unknown" || eligibility.status === "likely_eligible") {
+    const unresolved = eligibility.checks.filter(
+      (check) => check.verdict === "unknown" && check.criterion.strict
+    );
+    if (unresolved.length > 0) {
+      gaps.push(
+        `Confirm before applying: ${unresolved
+          .slice(0, 2)
+          .map((check) => check.criterion.requirement)
+          .join(" ")}`
+      );
+    }
+  }
 
   if (fieldScore >= 80) {
     reasons.push("Your field of study aligns well with this opportunity.");

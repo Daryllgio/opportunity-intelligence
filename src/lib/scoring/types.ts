@@ -18,6 +18,7 @@ export type AwardEntry = {
 export type StudentProfileForScoring = {
   nationality?: string | null;
   country_of_study?: string | null;
+  state_or_province?: string | null;
   student_status?: string | null;
   school?: string | null;
   school_other?: string | null;
@@ -26,6 +27,9 @@ export type StudentProfileForScoring = {
   field_of_study_other?: string | null;
   gpa?: number | null;
   languages?: string[] | null;
+  first_generation?: boolean | null;
+  demographic_tags?: string[] | null;
+  financial_need?: boolean | string | null;
   target_opportunity_types?: string[] | null;
   leadership_experiences?: ExperienceEntry[] | null;
   research_experiences?: ExperienceEntry[] | null;
@@ -50,6 +54,7 @@ export type OpportunityForScoring = {
   effort_level?: string | null;
   reward_level?: string | null;
   competitiveness_factors?: string[] | null;
+  eligibility_criteria?: unknown;
 };
 
 export type ProfileStrengthAnalysis = {

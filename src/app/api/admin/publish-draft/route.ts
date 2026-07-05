@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminRequest } from "@/lib/auth/admin";
 import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
 import { looksLikeDegreeProgramRecord } from "@/lib/discovery/opportunity-scope";
+import { normalizeEligibilityCriteria } from "@/lib/matching/eligibility";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
+import { tableHasColumn } from "@/lib/utils/schema-features";
 
 function createServiceSupabase() {
   return createClient(
@@ -142,6 +144,13 @@ export async function POST(request: NextRequest) {
       validation_score: draft.validation_score,
       validation_decision: "approved",
       review_flags: draft.review_flags || [],
+      ...((await tableHasColumn(supabase, "opportunities", "eligibility_criteria"))
+        ? {
+            eligibility_criteria: normalizeEligibilityCriteria(
+              draft.eligibility_criteria
+            ),
+          }
+        : {}),
       is_active: true,
       is_approved: true,
     };

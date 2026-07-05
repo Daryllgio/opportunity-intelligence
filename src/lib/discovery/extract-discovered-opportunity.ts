@@ -3,6 +3,10 @@ import {
   OPPORTUNITY_TYPES,
   normalizeOpportunityType,
 } from "@/lib/discovery/taxonomy";
+import {
+  normalizeEligibilityCriteria,
+  type EligibilityCriterion,
+} from "@/lib/matching/eligibility";
 import { isRetryableError, withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
@@ -32,6 +36,7 @@ export type DiscoveredOpportunityExtraction = {
   effort_level: string | null;
   reward_level: string | null;
   competitiveness_factors: string[];
+  eligibility_criteria: EligibilityCriterion[];
 };
 
 function stringOrNull(value: unknown) {
@@ -130,6 +135,26 @@ Important rules:
   Business Administration; essay contest on policy -> Political Science).
   Only leave eligible_fields empty when the competition is truly open to all
   fields.
+- ELIGIBILITY CRITERIA: capture EVERY criterion the page states about who can
+  apply, as structured entries in eligibility_criteria. Do not limit yourself
+  to the known kinds — anything that determines who may apply belongs here.
+  Each entry:
+    - "kind": one of "citizenship", "residency", "location",
+      "specific_school", "education_level", "field_of_study", "gpa_minimum",
+      "age", "demographic", "financial_need", "enrollment_status",
+      "grade_level" — or a short snake_case word of your own for anything
+      else (e.g. "military_affiliation", "employer", "membership").
+    - "requirement": the requirement as a short factual sentence, faithful to
+      the page ("Open to US citizens and permanent residents", "Must be
+      enrolled at the University of Toronto", "Minimum 3.5 GPA").
+    - "values": normalized comparable values ("United States" not "US
+      citizens"; "3.5" not "3.5 GPA"; "California" not "CA residents";
+      full school names).
+    - "strict": true when the page says must/required/only; false when it is
+      a preference or "priority given to".
+  Capture demographic eligibility factually as stated (e.g. "Open to women in
+  engineering", "For first-generation college students"). Do not editorialize.
+  If the page states no eligibility constraints, return [].
 
 Discovery context:
 ${JSON.stringify(discoveryContext || {}, null, 2)}
@@ -158,7 +183,10 @@ Return this exact JSON shape:
   "source_url": string | null,
   "effort_level": string | null,
   "reward_level": string | null,
-  "competitiveness_factors": string[]
+  "competitiveness_factors": string[],
+  "eligibility_criteria": [
+    { "kind": string, "requirement": string, "values": string[], "strict": boolean }
+  ]
 }
 
 Page text:
@@ -230,5 +258,6 @@ ${pageText.slice(0, 30000)}
     effort_level: stringOrNull(parsed.effort_level),
     reward_level: stringOrNull(parsed.reward_level),
     competitiveness_factors: arrayOrEmpty(parsed.competitiveness_factors),
+    eligibility_criteria: normalizeEligibilityCriteria(parsed.eligibility_criteria),
   };
 }

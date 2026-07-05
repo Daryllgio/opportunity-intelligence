@@ -93,10 +93,21 @@ export function buildProfileScoringHash({
   );
 }
 
+// eligibility_criteria joins a fingerprint only when present: existing rows
+// (and rows written before the migration) hash identically to before, so
+// adding the field does not invalidate every cached score.
+function eligibilityFingerprintFields(opportunity: Record<string, unknown>) {
+  const criteria = opportunity.eligibility_criteria;
+  return Array.isArray(criteria) && criteria.length > 0
+    ? { eligibility_criteria: criteria }
+    : {};
+}
+
 export function buildOpportunityContentFingerprint(
   opportunity: Record<string, unknown>
 ) {
   return {
+    ...eligibilityFingerprintFields(opportunity),
     title: opportunity.title,
     provider: opportunity.provider,
     type: opportunity.type,
@@ -126,6 +137,7 @@ export function buildOpportunityCriteriaFingerprint(
   opportunity: Record<string, unknown>
 ) {
   return {
+    ...eligibilityFingerprintFields(opportunity),
     type: opportunity.type,
     country: opportunity.country,
     eligible_countries: opportunity.eligible_countries,

@@ -9,6 +9,7 @@
  * to pass a boolean filter.
  */
 import { normalizeOpportunityType } from "@/lib/discovery/taxonomy";
+import { evaluateEligibility } from "@/lib/matching/eligibility";
 import type { PlanLimits } from "@/lib/billing/plans";
 
 type Row = Record<string, unknown>;
@@ -363,6 +364,15 @@ export function shouldScoreOpportunity(
   if (!type) return false;
   if (rankedCategories.length > 0 && !rankedCategories.includes(type)) return false;
 
+  // Positively contradicted structured criteria (wrong citizenship, wrong
+  // school, GPA below a stated floor) never spend a scoring slot. Unknowns
+  // pass — missing profile data is not ineligibility.
+  const eligibility = evaluateEligibility({
+    profile,
+    criteria: opportunity.eligibility_criteria,
+  });
+  if (eligibility.status === "ineligible") return false;
+
   return (
     deadlineIsActive(opportunity) &&
     regionMatches(profile, opportunity) &&
@@ -428,6 +438,16 @@ export function criteriaPriorityScore({
   // Small nudges: high reward and low effort are better uses of a slot.
   if (normalizeText(opportunity.reward_level) === "high") priority += 3;
   if (normalizeText(opportunity.effort_level) === "low") priority += 2;
+
+  // Confirmed structured eligibility is a strong signal the slot pays off —
+  // a scholarship whose citizenship, school, and GPA checks all pass is a
+  // far better bet than one we merely can't rule out.
+  const eligibility = evaluateEligibility({
+    profile,
+    criteria: opportunity.eligibility_criteria,
+  });
+  if (eligibility.status === "eligible") priority += 10;
+  else if (eligibility.status === "likely_eligible") priority += 5;
 
   return priority;
 }

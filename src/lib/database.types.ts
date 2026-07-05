@@ -40,6 +40,9 @@ export type ProfileRow = {
   education_entries: Json | null;
   field_of_study: string | null;
   field_of_study_other: string | null;
+  state_or_province: string | null;
+  first_generation: boolean | null;
+  demographic_tags: string[] | null;
   gpa: number | null;
   languages: string[] | null;
   interests: string[] | null;
@@ -72,6 +75,7 @@ export type OpportunityRow = {
   eligible_countries: string[] | null;
   eligible_education_levels: string[] | null;
   eligible_fields: string[] | null;
+  eligibility_criteria: Json | null;
   funding_amount: string | null;
   funding_type: string | null;
   deadline: string | null;

@@ -1,4 +1,6 @@
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
+import { tableHasColumn } from "@/lib/utils/schema-features";
+import { normalizeEligibilityCriteria } from "@/lib/matching/eligibility";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 import { validateExtractedOpportunity } from "@/lib/discovery/validation";
 import { assessDuplicateRisk } from "@/lib/discovery/duplicate-risk";
@@ -123,6 +125,19 @@ export async function ingestExtractedOpportunity({
   };
 
   opportunityPayload = normalizeOpportunityStatusByDeadline(opportunityPayload);
+
+  // eligibility_criteria rides along on every write, but only once the
+  // migration adding the column has been applied.
+  const eligibilityCriteria = normalizeEligibilityCriteria(
+    extracted.eligibility_criteria
+  );
+  const eligibilityFields = (await tableHasColumn(
+    supabase,
+    "opportunity_drafts",
+    "eligibility_criteria"
+  ))
+    ? { eligibility_criteria: eligibilityCriteria }
+    : {};
 
   const scopeCheck = shouldRejectExtractedOpportunity({
     type: opportunityPayload.type,
@@ -421,6 +436,7 @@ export async function ingestExtractedOpportunity({
       competitiveness_factors: opportunityPayload.competitiveness_factors,
       extraction_status: "closed_cycle",
       ...trustMetadata,
+      ...eligibilityFields,
       auto_publish_eligible: false,
       discovered_page_id: discoveredPage.id,
       updated_at: now,
@@ -511,6 +527,9 @@ export async function ingestExtractedOpportunity({
         ...publishPayload,
         ...lifecycleFields,
         ...trustMetadata,
+        ...((await tableHasColumn(supabase, "opportunities", "eligibility_criteria"))
+          ? { eligibility_criteria: eligibilityCriteria }
+          : {}),
         is_active: true,
         is_approved: true,
         updated_at: now,
@@ -566,6 +585,7 @@ export async function ingestExtractedOpportunity({
     competitiveness_factors: opportunityPayload.competitiveness_factors,
     extraction_status: "pending_review",
     ...trustMetadata,
+    ...eligibilityFields,
     discovered_page_id: discoveredPage.id,
     updated_at: now,
   };

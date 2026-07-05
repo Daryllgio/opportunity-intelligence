@@ -152,9 +152,10 @@ async function fetchAllActiveOpportunities(supabase: SupabaseClient) {
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("opportunities")
-      .select(
-        "id, title, provider, type, description, ai_summary, country, eligible_countries, eligible_education_levels, eligible_fields, funding_amount, funding_type, deadline, effort_level, reward_level, competitiveness_factors, application_status"
-      )
+      // select * so new matching columns (eligibility_criteria, ...) flow into
+      // scoring without a code change — and without breaking before the
+      // migration that adds them is applied.
+      .select("*")
       .eq("is_active", true)
       .eq("is_approved", true)
       .eq("lifecycle_status", "active")
