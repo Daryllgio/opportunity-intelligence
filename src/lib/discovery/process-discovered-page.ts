@@ -179,10 +179,15 @@ export async function processPendingDiscoveredPages({
     details: [],
   };
 
+  // Fresh candidates, plus claims stranded by a crashed run (claimed to
+  // "processing" over an hour ago and never finished) — self-healing.
+  const staleClaimCutoff = new Date(Date.now() - 60 * 60000).toISOString();
   const { data: pages, error } = await supabase
     .from("discovered_pages")
     .select("*")
-    .eq("discovery_status", "candidate")
+    .or(
+      `discovery_status.eq.candidate,and(discovery_status.eq.processing,updated_at.lt.${staleClaimCutoff})`
+    )
     .order("quality_score", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: true })
     .limit(limit);
@@ -193,6 +198,21 @@ export async function processPendingDiscoveredPages({
   }
 
   for (const page of pages || []) {
+    // Claim before work: cron slots can overlap (peak season runs four), and
+    // a compare-and-swap on the status means a page is only ever processed
+    // by one run. Losing the race is not an error — someone else has it.
+    const { data: claimed } = await supabase
+      .from("discovered_pages")
+      .update({
+        discovery_status: "processing",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", page.id)
+      .eq("discovery_status", page.discovery_status) // CAS on what we read
+      .eq("updated_at", page.updated_at)
+      .select("id");
+    if (!claimed || claimed.length === 0) continue;
+
     summary.processed += 1;
     try {
       const outcome = await processDiscoveredPage({
@@ -213,9 +233,11 @@ export async function processPendingDiscoveredPages({
       }
     } catch (processError) {
       summary.failed += 1;
+      // Release the claim so the next run retries.
       await supabase
         .from("discovered_pages")
         .update({
+          discovery_status: "candidate",
           rejection_reason: `Processing failed: ${
             processError instanceof Error ? processError.message : "unknown"
           }`,

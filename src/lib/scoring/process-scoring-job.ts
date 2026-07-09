@@ -31,7 +31,10 @@ export async function processScoringJob({
 }> {
   const startedAt = new Date().toISOString();
 
-  await supabase
+  // Claim: the daily cron and the on-browse runner can race for the same
+  // pending job — compare-and-swap on status means exactly one wins, so a
+  // job can never be double-processed (and its AI spend never doubled).
+  const { data: claimed } = await supabase
     .from("user_scoring_jobs")
     .update({
       status: "running",
@@ -39,7 +42,18 @@ export async function processScoringJob({
       attempts: (job.attempts || 0) + 1,
       updated_at: startedAt,
     })
-    .eq("id", job.id);
+    .eq("id", job.id)
+    .eq("status", "pending")
+    .select("id");
+
+  if (!claimed || claimed.length === 0) {
+    return {
+      status: "failed",
+      created: 0,
+      refreshed: 0,
+      error: "Job already claimed by another runner.",
+    };
+  }
 
   try {
     const scoreResponse = await fetch(`${origin}/api/score-opportunities-batch`, {
