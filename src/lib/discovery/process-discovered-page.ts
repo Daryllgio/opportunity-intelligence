@@ -13,6 +13,7 @@ import { capturePageWithHybrid } from "@/lib/discovery/capture/hybrid-capture";
 import { extractDiscoveredOpportunity } from "@/lib/discovery/extract-discovered-opportunity";
 import { ingestExtractedOpportunity } from "@/lib/discovery/ingest-extracted-opportunity";
 import { shouldRejectDiscoveredPageBeforeExtraction } from "@/lib/discovery/opportunity-scope";
+import { checkKnownOpportunity } from "@/lib/discovery/pre-ai-dedup";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -49,6 +50,30 @@ export async function processDiscoveredPage({
       })
       .eq("id", discoveredPageId);
     return { discoveredPageId, decision: "reject", reason: "missing_url" };
+  }
+
+  // Dedup BEFORE any AI or capture is spent: URL and yearless-title checks
+  // against the catalog and draft pool. A hit on an expired row forwards its
+  // renewal check instead of re-extracting from scratch.
+  const known = await checkKnownOpportunity({
+    supabase,
+    url,
+    title: discoveredPage.title,
+  });
+  if (known.known) {
+    await supabase
+      .from("discovered_pages")
+      .update({
+        discovery_status: "rejected",
+        rejection_reason: `Already ${known.table === "opportunities" ? "in the catalog" : "drafted"} (${known.matchType}): ${known.rowTitle || known.rowId}${known.renewalScheduled ? "; renewal check pulled forward" : ""}.`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", discoveredPageId);
+    return {
+      discoveredPageId,
+      decision: "already_known",
+      reason: known.matchType,
+    };
   }
 
   const capture = await capturePageWithHybrid(url);
@@ -131,6 +156,7 @@ export type ProcessPendingSummary = {
   review: number;
   tracked: number;
   rejected: number;
+  alreadyKnown: number;
   failed: number;
   details: string[];
 };
@@ -148,6 +174,7 @@ export async function processPendingDiscoveredPages({
     review: 0,
     tracked: 0,
     rejected: 0,
+    alreadyKnown: 0,
     failed: 0,
     details: [],
   };
@@ -179,6 +206,8 @@ export async function processPendingDiscoveredPages({
         summary.review += 1;
       } else if (outcome.decision === "track_for_next_cycle") {
         summary.tracked += 1;
+      } else if (outcome.decision === "already_known") {
+        summary.alreadyKnown += 1;
       } else {
         summary.rejected += 1;
       }

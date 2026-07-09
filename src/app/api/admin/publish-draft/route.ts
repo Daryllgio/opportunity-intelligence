@@ -90,6 +90,27 @@ export async function POST(request: NextRequest) {
       deadline: draft.deadline,
     });
 
+    // Destination identity gate: a live row already using this destination
+    // means this draft is the same opportunity found via another page.
+    if (destination.applicationDestinationUrl) {
+      const { findLiveRowByDestination } = await import(
+        "@/lib/discovery/pre-ai-dedup"
+      );
+      const twin = await findLiveRowByDestination({
+        supabase,
+        destinationUrl: destination.applicationDestinationUrl,
+      });
+      if (twin) {
+        return NextResponse.json(
+          {
+            error: `Already live as "${twin.title}" (same application destination).`,
+            duplicateId: twin.id,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     if (!destination.destinationVerified || !destination.applicationDestinationUrl) {
       await supabase
         .from("opportunity_drafts")

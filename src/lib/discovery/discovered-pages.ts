@@ -141,11 +141,38 @@ export async function upsertDiscoveredPages({
   if (preparedRows.length === 0) {
     return {
       upserted: 0,
+      skippedKnown: 0,
       rows: [],
     };
   }
 
-  const normalizedUrls = preparedRows
+  let normalizedUrls = preparedRows
+    .map((row) => String(row.normalized_url || ""))
+    .filter(Boolean);
+
+  // URLs already in the catalog or draft pool never become candidates at
+  // all — the cheapest possible dedup, before a page row even exists.
+  const knownUrls = new Set<string>();
+  for (const table of ["opportunities", "opportunity_drafts"]) {
+    const { data: knownRows } = await supabase
+      .from(table)
+      .select("normalized_url")
+      .in("normalized_url", normalizedUrls);
+    for (const row of knownRows || []) {
+      if (row.normalized_url) knownUrls.add(String(row.normalized_url));
+    }
+  }
+
+  const freshRows = preparedRows.filter(
+    (row) => !knownUrls.has(String(row.normalized_url))
+  );
+  const skippedKnown = preparedRows.length - freshRows.length;
+
+  if (freshRows.length === 0) {
+    return { upserted: 0, skippedKnown, rows: [] };
+  }
+
+  normalizedUrls = freshRows
     .map((row) => String(row.normalized_url || ""))
     .filter(Boolean);
 
@@ -173,7 +200,7 @@ export async function upsertDiscoveredPages({
 
   const savedRows = [];
 
-  for (const row of preparedRows) {
+  for (const row of freshRows) {
     const existing = existingByUrl.get(String(row.normalized_url));
 
     if (existing?.id) {
@@ -225,6 +252,7 @@ export async function upsertDiscoveredPages({
 
   return {
     upserted: savedRows.length,
+    skippedKnown,
     rows: savedRows,
   };
 }

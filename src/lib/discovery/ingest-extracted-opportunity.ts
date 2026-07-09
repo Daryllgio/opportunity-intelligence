@@ -537,6 +537,41 @@ export async function ingestExtractedOpportunity({
   }
 
   if (validation.decision === "auto_publish") {
+    // Destination identity gate: if a live row already sends applicants to
+    // this exact destination, this is the same opportunity found via a
+    // different page — never publish a twin.
+    if (trustMetadata.application_destination_url) {
+      const { findLiveRowByDestination } = await import(
+        "@/lib/discovery/pre-ai-dedup"
+      );
+      const twin = await findLiveRowByDestination({
+        supabase,
+        destinationUrl: trustMetadata.application_destination_url,
+      });
+      if (twin) {
+        validation.decision = "reject";
+        validation.reasons = [
+          ...validation.reasons,
+          `Duplicate: live opportunity "${twin.title}" already uses this application destination.`,
+        ];
+        await supabase
+          .from("discovered_pages")
+          .update({
+            discovery_status: "rejected",
+            rejection_reason: `Duplicate destination of "${twin.title}".`,
+            updated_at: now,
+          })
+          .eq("id", discoveredPage.id);
+        return {
+          decision: "reject",
+          validation,
+          duplicate,
+          publishedOpportunityId: null,
+          draftId: null,
+        };
+      }
+    }
+
     // Users must land on the verified destination, not whatever URL the
     // extractor happened to find on the source page.
     const publishPayload = {
