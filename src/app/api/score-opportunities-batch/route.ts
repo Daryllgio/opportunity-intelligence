@@ -5,6 +5,7 @@ import { safeParseJson } from "@/lib/utils/safe-json";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUsageMonth, getPlanLimits } from "@/lib/billing/plans";
+import { profileScoringGate } from "@/lib/scoring/profile-gate";
 import {
   buildOpportunityContentHash,
   buildOpportunityCriteriaHash,
@@ -108,16 +109,26 @@ function groupExperienceSummaries(rows: ExperienceSummaryRow[]) {
   return grouped;
 }
 
+/**
+ * Privacy boundary: what the scoring model is allowed to see. Demographic
+ * self-identification, disability status, and date of birth NEVER go to AI —
+ * they are matched deterministically in src/lib/matching/eligibility.ts.
+ * GPA and financial need are included because opportunities select on them.
+ */
 function compactProfileForScoring(profile: Record<string, unknown>) {
   return {
     education_level: profile.education_level,
+    class_standing: profile.class_standing || undefined,
     student_status: profile.student_status,
     opportunity_level: profile.opportunity_level,
     field_of_study: profile.field_of_study,
     field_of_study_other: profile.field_of_study_other,
+    field_of_study_secondary: profile.field_of_study_secondary || undefined,
     country_of_study: profile.country_of_study,
+    state_or_province: profile.state_or_province || undefined,
     nationality: profile.nationality,
     gpa: profile.gpa,
+    gpa_scale: profile.gpa_scale || "4.0",
     target_opportunity_types: profile.target_opportunity_types,
     preferred_regions: profile.preferred_regions,
     financial_need: profile.financial_need,
@@ -140,6 +151,7 @@ function compactOpportunityForScoring(opportunity: Record<string, unknown>) {
     effort_level: opportunity.effort_level,
     reward_level: opportunity.reward_level,
     competitiveness_factors: opportunity.competitiveness_factors,
+    eligibility_criteria: opportunity.eligibility_criteria || undefined,
     summary: opportunity.ai_summary,
     description: String(opportunity.description || "").slice(0, 700),
   };
@@ -198,6 +210,24 @@ Important:
 - Do not flatter.
 - Do not invent experiences, grades, awards, leadership, research, or projects.
 
+Score against EACH opportunity's OWN selection criteria — never a generic
+"how impressive is this student" measure:
+- Read competitiveness_factors, eligibility_criteria, and the description to
+  understand what THIS opportunity actually selects on.
+- A student with little or no experience is HIGHLY competitive for
+  opportunities that don't select on experience: need-based aid, essay
+  contests, first-generation programs, entrance awards, lottery-style or
+  beginner-oriented pipeline programs. Meeting the stated bar IS
+  competitiveness there.
+- The same student scores LOW for experience-heavy selective programs
+  (research fellowships, prestigious leadership cohorts).
+- Experience QUALITY moves scores, not existence: judge depth from the
+  summaries — duration (two years beats three weeks), responsibility,
+  concrete outcomes and metrics. A boolean "has research" is worth little;
+  sustained contribution with measurable results is worth a lot.
+- GPA is on the stated gpa_scale ("percentage" means 0-100; "4.3" is a
+  Canadian scale). Never treat an 85 on the percentage scale as impossible.
+
 fit_label must be one of:
 "Strong fit", "Competitive", "Developing fit", "Improve first"
 
@@ -233,7 +263,9 @@ ${JSON.stringify(scoringOpportunities, null, 2)}
               temperature: 0,
               topP: 0.8,
               topK: 20,
-              maxOutputTokens: 4096,
+              // Pro's thinking shares this budget with the ~20 score
+              // objects; 4096 risked silent chunk truncation.
+              maxOutputTokens: 16384,
             },
           }),
         120000,
@@ -330,6 +362,17 @@ export async function POST(request: NextRequest) {
     if (profileError || !profile) {
       return NextResponse.json(
         { error: "Complete your profile before generating competitiveness scores." },
+        { status: 400 }
+      );
+    }
+
+    const gate = profileScoringGate(profile as Record<string, unknown>);
+    if (!gate.complete) {
+      return NextResponse.json(
+        {
+          error: `Complete your profile to unlock scores. Missing: ${gate.missing.join(", ")}.`,
+          missingFields: gate.missing,
+        },
         { status: 400 }
       );
     }

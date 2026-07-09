@@ -15,6 +15,7 @@ import {
   evaluateEligibility,
   shortBlockerLabel,
 } from "@/lib/matching/eligibility";
+import { profileScoringGate } from "@/lib/scoring/profile-gate";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimits } from "@/lib/billing/plans";
 
@@ -370,6 +371,38 @@ function OpportunitiesBrowse() {
           hasAiSearch={getPlanLimits(String(profileRow?.subscription_plan || "")).hasAiSearch}
         />
       )}
+
+      {isLoggedIn && hasProfile && profileRow && (() => {
+        const gate = profileScoringGate(profileRow);
+        if (!gate.complete) {
+          return (
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3">
+              <p className="text-sm text-neutral-800 dark:text-neutral-200">
+                Complete your profile to unlock match scores. Still needed:{" "}
+                <span className="font-medium">{gate.missing.join(", ")}</span>.
+              </p>
+              <Link
+                href="/profile/edit"
+                className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Finish profile
+              </Link>
+            </div>
+          );
+        }
+        if (gate.experienceNudge) {
+          return (
+            <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
+              Tip: adding experiences to your{" "}
+              <Link href="/profile/edit" className="underline underline-offset-2">
+                profile
+              </Link>{" "}
+              makes your scores more accurate.
+            </p>
+          );
+        }
+        return null;
+      })()}
 
       {!loading && !isLoggedIn && (
         <div className="rounded-lg border border-neutral-200 p-8 text-center dark:border-neutral-800">

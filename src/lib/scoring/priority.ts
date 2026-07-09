@@ -439,6 +439,37 @@ export function criteriaPriorityScore({
   if (normalizeText(opportunity.reward_level) === "high") priority += 3;
   if (normalizeText(opportunity.effort_level) === "low") priority += 2;
 
+  // Sparse profiles: a student with no recorded experiences should spend
+  // their limited slots where experience is NOT the deciding factor — the
+  // opportunities they are genuinely competitive for right now.
+  const experienceCount = [
+    profile.leadership_experiences,
+    profile.research_experiences,
+    profile.volunteer_experiences,
+    profile.work_project_experiences,
+  ].reduce<number>(
+    (sum, list) => sum + (Array.isArray(list) ? list.length : 0),
+    0
+  );
+  if (experienceCount === 0) {
+    const LOW_BARRIER_SIGNALS = [
+      "essay", "need-based", "financial need", "first generation",
+      "first-generation", "entrance", "no experience", "open to all",
+      "lottery", "random draw", "minimum gpa", "enrolled students",
+    ];
+    const EXPERIENCE_HEAVY_SIGNALS = [
+      "research experience", "publication", "portfolio", "track record",
+      "demonstrated leadership", "prior experience", "cv", "resume required",
+      "letters of recommendation", "nomination",
+    ];
+    if (LOW_BARRIER_SIGNALS.some((signal) => criteriaText.includes(signal))) {
+      priority += 10;
+    }
+    if (EXPERIENCE_HEAVY_SIGNALS.some((signal) => criteriaText.includes(signal))) {
+      priority -= 10;
+    }
+  }
+
   // Confirmed structured eligibility is a strong signal the slot pays off —
   // a scholarship whose citizenship, school, and GPA checks all pass is a
   // far better bet than one we merely can't rule out.

@@ -47,6 +47,15 @@ export async function POST(request: NextRequest) {
 
     const service = createServiceSupabase();
 
+    // Presence beacon: the browse page calls this route on arrival, so it
+    // doubles as "user is active" — which is what resumes paused auto-refresh
+    // for dormant accounts. Fails silently until the column exists.
+    await service
+      .from("profiles")
+      .update({ last_active_at: new Date().toISOString() })
+      .eq("id", user.id)
+      .then(() => {});
+
     const { data: job } = await service
       .from("user_scoring_jobs")
       .select("id, user_id, attempts, scheduled_for")

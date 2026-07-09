@@ -1,5 +1,6 @@
 import { getPlanLimits } from "@/lib/billing/plans";
 import { buildProfileScoringHash } from "@/lib/scoring/hashes";
+import { profileScoringGate } from "@/lib/scoring/profile-gate";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -57,6 +58,16 @@ export async function scheduleScoringJobForUser({
       scheduled: false,
       mode: "plan_without_ranking",
       message: "This plan does not include competitiveness ranking.",
+    };
+  }
+
+  const gate = profileScoringGate(profile as Record<string, unknown>);
+  if (!gate.complete) {
+    return {
+      scheduled: false,
+      mode: "profile_incomplete",
+      message: `Scoring unlocks when the profile is complete. Missing: ${gate.missing.join(", ")}.`,
+      missingFields: gate.missing,
     };
   }
 

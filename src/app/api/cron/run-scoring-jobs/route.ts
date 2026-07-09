@@ -112,14 +112,29 @@ async function scheduleFreshContentJobs(supabase: SupabaseClient) {
 
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, subscription_plan")
+    .select("*")
     .neq("subscription_plan", "free");
+
+  // Dormancy: auto-refresh is paid platform work, so it pauses for users who
+  // haven't shown up in 21 days. The browse page's presence beacon flips
+  // last_active_at the moment they return, and the on-arrival run-due call
+  // gives them fresh scores immediately — pausing costs them nothing.
+  const DORMANT_AFTER_DAYS = 21;
+  const dormancyCutoff = Date.now() - DORMANT_AFTER_DAYS * 86400000;
 
   let scheduled = 0;
 
   for (const profile of profiles || []) {
     const planLimits = getPlanLimits(profile.subscription_plan);
     if (!planLimits.hasCompetitivenessRanking) continue;
+
+    const lastActive = (profile as Record<string, unknown>).last_active_at;
+    if (
+      typeof lastActive === "string" &&
+      new Date(lastActive).getTime() < dormancyCutoff
+    ) {
+      continue;
+    }
 
     const { data: latestScore } = await supabase
       .from("opportunity_competitiveness_scores")
