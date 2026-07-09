@@ -51,10 +51,12 @@ export default function OnboardingPage() {
 
   // Step 2 — education
   const [educationLevel, setEducationLevel] = useState("");
+  const [classStanding, setClassStanding] = useState("");
   const [school, setSchool] = useState("");
   const [schoolOther, setSchoolOther] = useState("");
   const [fieldOfStudy, setFieldOfStudy] = useState("");
   const [gpa, setGpa] = useState("");
+  const [gpaScale, setGpaScale] = useState("4.0");
 
   // Step 3 — experience (simplified single entry per section)
   const [experience, setExperience] = useState<ExperienceDraft>({});
@@ -119,9 +121,17 @@ export default function OnboardingPage() {
     // on their absence.
     if (upsertError && /column|schema/i.test(upsertError.message)) {
       const fallback = { ...fields };
-      delete fallback.state_or_province;
-      delete fallback.first_generation;
-      delete fallback.demographic_tags;
+      for (const key of [
+        "state_or_province",
+        "first_generation",
+        "demographic_tags",
+        "class_standing",
+        "gpa_scale",
+        "citizenships",
+        "date_of_birth",
+      ]) {
+        delete fallback[key];
+      }
       ({ error: upsertError } = await supabase
         .from("profiles")
         .upsert({ id: userId, ...fallback, updated_at: new Date().toISOString() }));
@@ -147,10 +157,13 @@ export default function OnboardingPage() {
     } else if (step === 1) {
       ok = await savePartial({
         education_level: educationLevel || null,
+        class_standing:
+          educationLevel === "Undergraduate" ? classStanding || null : null,
         school: school || null,
         school_other: school === "Other" ? schoolOther || null : null,
         field_of_study: fieldOfStudy || null,
         gpa: gpa ? Number(gpa) : null,
+        gpa_scale: gpaScale,
       });
     } else if (step === 2) {
       const fields: Record<string, unknown> = {};
@@ -354,6 +367,36 @@ export default function OnboardingPage() {
                 </select>
               </div>
 
+              {educationLevel === "Undergraduate" && (
+                <div>
+                  <label htmlFor="classStanding" className={labelClass}>
+                    Class standing
+                  </label>
+                  <select
+                    id="classStanding"
+                    value={classStanding}
+                    onChange={(event) => setClassStanding(event.target.value)}
+                    className={`${inputClass} mt-2`}
+                  >
+                    <option value="">Select your year</option>
+                    {[
+                      "Freshman / First year",
+                      "Sophomore / Second year",
+                      "Junior / Third year",
+                      "Senior / Fourth year",
+                      "Fifth year or beyond",
+                    ].map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-xs text-neutral-500">
+                    Many awards are year-specific, so this unlocks more matches.
+                  </p>
+                </div>
+              )}
+
               <div className="[&_label]:text-sm [&_label]:font-medium">
                 <UniversityCombobox
                   label="School or university"
@@ -388,14 +431,26 @@ export default function OnboardingPage() {
                   <label htmlFor="gpa" className={labelClass}>
                     GPA <span className="font-normal text-neutral-400">(optional)</span>
                   </label>
-                  <input
-                    id="gpa"
-                    value={gpa}
-                    onChange={(event) => setGpa(event.target.value)}
-                    placeholder="e.g. 3.7"
-                    inputMode="decimal"
-                    className={`${inputClass} mt-2`}
-                  />
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      id="gpa"
+                      value={gpa}
+                      onChange={(event) => setGpa(event.target.value)}
+                      placeholder={gpaScale === "percentage" ? "e.g. 86" : "e.g. 3.7"}
+                      inputMode="decimal"
+                      className={`${inputClass} flex-1`}
+                    />
+                    <select
+                      value={gpaScale}
+                      onChange={(event) => setGpaScale(event.target.value)}
+                      className={`${inputClass} w-32`}
+                      aria-label="GPA scale"
+                    >
+                      <option value="4.0">4.0 scale</option>
+                      <option value="4.3">4.3 scale</option>
+                      <option value="percentage">Percentage</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>

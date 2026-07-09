@@ -53,6 +53,19 @@ export function buildProfileScoringFingerprint({
     return left.localeCompare(right);
   });
 
+  // Newer scoring-relevant fields join the fingerprint only when set, so
+  // profiles created before they existed hash identically to before and no
+  // cached score is invalidated by a schema addition alone.
+  const optionalField = (key: string) => {
+    const value = profile[key];
+    const empty =
+      value === null ||
+      value === undefined ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0);
+    return empty ? {} : { [key]: value };
+  };
+
   return {
     basic_profile: {
       education_level: profile.education_level,
@@ -66,6 +79,20 @@ export function buildProfileScoringFingerprint({
       target_opportunity_types: profile.target_opportunity_types,
       preferred_regions: profile.preferred_regions,
       financial_need: profile.financial_need,
+      ...optionalField("field_of_study_secondary"),
+      ...optionalField("undergraduate_field_of_study"),
+      ...optionalField("intended_school"),
+      ...optionalField("class_standing"),
+      ...optionalField("state_or_province"),
+      ...optionalField("citizenships"),
+      ...optionalField("demographic_tags"),
+      ...optionalField("first_generation"),
+      // gpa_scale only matters when non-default; school was missing from the
+      // fingerprint entirely (school changes never triggered rescoring).
+      ...(profile.gpa_scale && profile.gpa_scale !== "4.0"
+        ? { gpa_scale: profile.gpa_scale }
+        : {}),
+      ...optionalField("school"),
     },
     experience_summary_versions: sortedExperienceSummaries.map((item) => ({
       section_key: item.section_key,

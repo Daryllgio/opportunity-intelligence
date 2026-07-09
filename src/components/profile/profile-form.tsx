@@ -88,15 +88,23 @@ const EXPERIENCE_KIND_TO_COLUMN: Record<
 
 type ProfileFormState = {
   nationality: string;
+  citizenships: string[];
   country_of_study: string;
   state_or_province: string;
   student_status: string;
   school: string;
   school_other: string;
+  intended_school: string;
+  planning_transfer: boolean;
   education_level: string;
+  class_standing: string;
   field_of_study: string;
   field_of_study_other: string;
+  field_of_study_secondary: string;
+  undergraduate_field_of_study: string;
   gpa: string;
+  gpa_scale: string;
+  date_of_birth: string;
   languages: string[];
   target_opportunity_types: string[];
   subscription_plan: "free" | "pro" | "premium";
@@ -104,8 +112,25 @@ type ProfileFormState = {
   awards: AwardEntry[];
   first_generation: boolean;
   financial_need: boolean;
+  has_disability: boolean;
   demographic_tags: string[];
 };
+
+const CLASS_STANDINGS = [
+  "Freshman / First year",
+  "Sophomore / Second year",
+  "Junior / Third year",
+  "Senior / Fourth year",
+  "Fifth year or beyond",
+];
+
+const GPA_SCALES = [
+  { value: "4.0", label: "4.0 scale" },
+  { value: "4.3", label: "4.3 scale" },
+  { value: "percentage", label: "Percentage" },
+];
+
+const GRADUATE_LEVELS = new Set(["Master's", "PhD", "Professional Degree"]);
 
 // Nationality can be anywhere in the world; study country is US/Canada — the
 // two markets the catalog covers.
@@ -143,6 +168,7 @@ const educationLevels = [
 ];
 
 const fieldsOfStudy = [
+  "Undeclared / Undecided",
   "Accounting",
   "Actuarial Science",
   "Agriculture",
@@ -279,15 +305,23 @@ const emptyAward: AwardEntry = {
 
 const initialState: ProfileFormState = {
   nationality: "",
+  citizenships: [],
   country_of_study: "",
   state_or_province: "",
   student_status: "",
   school: "",
   school_other: "",
+  intended_school: "",
+  planning_transfer: false,
   education_level: "",
+  class_standing: "",
   field_of_study: "",
   field_of_study_other: "",
+  field_of_study_secondary: "",
+  undergraduate_field_of_study: "",
   gpa: "",
+  gpa_scale: "4.0",
+  date_of_birth: "",
   languages: [],
   target_opportunity_types: [],
   subscription_plan: "free",
@@ -295,6 +329,7 @@ const initialState: ProfileFormState = {
   awards: [],
   first_generation: false,
   financial_need: false,
+  has_disability: false,
   demographic_tags: [],
 };
 
@@ -544,17 +579,28 @@ export function ProfileForm() {
 
       if (data) {
         const record = data as Record<string, unknown>;
+        const stringField = (key: string) => String(record[key] || "");
+        const listField = (key: string) =>
+          Array.isArray(record[key]) ? (record[key] as string[]) : [];
         setForm({
           nationality: data.nationality || "",
+          citizenships: listField("citizenships"),
           country_of_study: data.country_of_study || "",
-          state_or_province: String(record.state_or_province || ""),
+          state_or_province: stringField("state_or_province"),
           student_status: data.student_status || "",
           school: data.school || "",
           school_other: data.school_other || "",
+          intended_school: stringField("intended_school"),
+          planning_transfer: Boolean(record.intended_school),
           education_level: data.education_level || "",
+          class_standing: stringField("class_standing"),
           field_of_study: data.field_of_study || "",
           field_of_study_other: data.field_of_study_other || "",
+          field_of_study_secondary: stringField("field_of_study_secondary"),
+          undergraduate_field_of_study: stringField("undergraduate_field_of_study"),
           gpa: data.gpa ? String(data.gpa) : "",
+          gpa_scale: stringField("gpa_scale") || "4.0",
+          date_of_birth: stringField("date_of_birth").slice(0, 10),
           languages: data.languages || [],
           target_opportunity_types: canonicalToTypeLabels(
             data.target_opportunity_types || []
@@ -565,12 +611,13 @@ export function ProfileForm() {
           experiences: mergeExperienceBuckets(record),
           awards: (data.awards as unknown as AwardEntry[] | null) || [],
           first_generation: record.first_generation === true,
-          financial_need: ["yes", "true", "high"].includes(
-            String(record.financial_need || "").toLowerCase()
-          ),
-          demographic_tags: Array.isArray(record.demographic_tags)
-            ? (record.demographic_tags as string[])
-            : [],
+          financial_need:
+            record.financial_need === true ||
+            ["yes", "true", "high"].includes(
+              String(record.financial_need || "").toLowerCase()
+            ),
+          has_disability: record.has_disability === true,
+          demographic_tags: listField("demographic_tags"),
         });
       }
 
@@ -677,12 +724,18 @@ export function ProfileForm() {
     }
 
     const gpaNumber = form.gpa ? Number(form.gpa) : null;
+    const gpaMax =
+      form.gpa_scale === "percentage" ? 100 : form.gpa_scale === "4.3" ? 4.3 : 4.0;
 
     if (
       gpaNumber !== null &&
-      (Number.isNaN(gpaNumber) || gpaNumber < 0 || gpaNumber > 4)
+      (Number.isNaN(gpaNumber) || gpaNumber < 0 || gpaNumber > gpaMax)
     ) {
-      setMessage("GPA must be between 0 and 4.00 for now.");
+      setMessage(
+        `GPA must be between 0 and ${gpaMax} on the ${
+          form.gpa_scale === "percentage" ? "percentage" : form.gpa_scale
+        } scale.`
+      );
       setLoading(false);
       return;
     }
@@ -704,7 +757,7 @@ export function ProfileForm() {
       ),
       ...bucketExperiences(form.experiences),
       awards: form.awards,
-      financial_need: form.financial_need ? "yes" : "no",
+      financial_need: form.financial_need,
       updated_at: new Date().toISOString(),
     };
 
@@ -715,6 +768,16 @@ export function ProfileForm() {
       state_or_province: form.state_or_province,
       first_generation: form.first_generation,
       demographic_tags: form.demographic_tags,
+      citizenships: form.citizenships,
+      intended_school: form.planning_transfer ? form.intended_school : null,
+      class_standing: form.class_standing || null,
+      field_of_study_secondary: form.field_of_study_secondary || null,
+      undergraduate_field_of_study: GRADUATE_LEVELS.has(form.education_level)
+        ? form.undergraduate_field_of_study || null
+        : null,
+      gpa_scale: form.gpa_scale || "4.0",
+      date_of_birth: form.date_of_birth || null,
+      has_disability: form.has_disability || null,
     };
 
     let { error } = await supabase
@@ -894,6 +957,14 @@ export function ProfileForm() {
                 searchPlaceholder="Search nationality..."
               />
 
+              <SearchableMultiSelect
+                label="Other citizenships (optional)"
+                selected={form.citizenships.filter((c) => c !== form.nationality)}
+                onChange={(values) => updateField("citizenships", values)}
+                options={countries.filter((c) => c !== "Other")}
+                placeholder="Search country..."
+              />
+
               <SearchableSelect
                 label="Country of study"
                 value={form.country_of_study}
@@ -953,12 +1024,48 @@ export function ProfileForm() {
                 options={educationLevels}
               />
 
+              {form.education_level === "Undergraduate" && (
+                <SearchableSelect
+                  label="Class standing"
+                  value={form.class_standing}
+                  onChange={(value) => updateField("class_standing", value)}
+                  options={CLASS_STANDINGS}
+                  placeholder="Select your year"
+                />
+              )}
+
+              {GRADUATE_LEVELS.has(form.education_level) && (
+                <SearchableSelect
+                  label="Undergraduate field (for matching)"
+                  value={form.undergraduate_field_of_study}
+                  onChange={(value) =>
+                    updateField("undergraduate_field_of_study", value)
+                  }
+                  options={fieldsOfStudy}
+                  searchPlaceholder="Search field..."
+                />
+              )}
+
               <SearchableSelect
                 label="Field of study / major"
                 value={form.field_of_study}
                 onChange={(value) => updateField("field_of_study", value)}
                 options={fieldsOfStudy}
                 searchPlaceholder="Search major..."
+              />
+
+              <SearchableSelect
+                label="Second major / minor (optional)"
+                value={form.field_of_study_secondary}
+                onChange={(value) =>
+                  updateField(
+                    "field_of_study_secondary",
+                    value === form.field_of_study_secondary ? "" : value
+                  )
+                }
+                options={fieldsOfStudy.filter((f) => f !== "Other")}
+                placeholder="None"
+                searchPlaceholder="Search field..."
               />
 
               {form.field_of_study === "Other" && (
@@ -976,15 +1083,71 @@ export function ProfileForm() {
 
               <div className="space-y-2">
                 <Label>GPA</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={form.gpa_scale === "percentage" ? 100 : form.gpa_scale === "4.3" ? 4.3 : 4}
+                    value={form.gpa}
+                    onChange={(event) => updateField("gpa", event.target.value)}
+                    placeholder={form.gpa_scale === "percentage" ? "Example: 86" : "Example: 3.70"}
+                    className="flex-1"
+                  />
+                  <select
+                    value={form.gpa_scale}
+                    onChange={(event) => updateField("gpa_scale", event.target.value)}
+                    className="h-10 rounded-md border border-neutral-200 bg-white px-2 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+                    aria-label="GPA scale"
+                  >
+                    {GPA_SCALES.map((scale) => (
+                      <option key={scale.value} value={scale.value}>
+                        {scale.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Date of birth (optional)</Label>
                 <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="4"
-                  value={form.gpa}
-                  onChange={(event) => updateField("gpa", event.target.value)}
-                  placeholder="Example: 3.70"
+                  type="date"
+                  value={form.date_of_birth}
+                  onChange={(event) => updateField("date_of_birth", event.target.value)}
                 />
+                <p className="text-xs text-neutral-500">
+                  Used only to match age-eligible opportunities. Skip it and
+                  age-restricted ones simply show a flag instead.
+                </p>
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={form.planning_transfer}
+                    onChange={(event) =>
+                      updateField("planning_transfer", event.target.checked)
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-neutral-300 accent-[var(--primary)]"
+                  />
+                  <span className="text-sm text-neutral-800 dark:text-neutral-200">
+                    I&apos;m planning to transfer to another school
+                    <span className="block text-neutral-500">
+                      We&apos;ll match you against your intended school&apos;s
+                      opportunities too.
+                    </span>
+                  </span>
+                </label>
+                {form.planning_transfer && (
+                  <UniversityCombobox
+                    label="Intended school"
+                    country={form.country_of_study}
+                    value={form.intended_school}
+                    onChange={(value) => updateField("intended_school", value)}
+                  />
+                )}
               </div>
             </div>
           </section>
@@ -1055,6 +1218,24 @@ export function ProfileForm() {
                   I want to see need-based opportunities
                   <span className="block text-neutral-500">
                     Surfaces awards that consider financial need.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={form.has_disability}
+                  onChange={(event) =>
+                    updateField("has_disability", event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 rounded border-neutral-300 accent-[var(--primary)]"
+                />
+                <span className="text-sm text-neutral-800 dark:text-neutral-200">
+                  I identify as a student with a disability
+                  <span className="block text-neutral-500">
+                    Only used to surface disability-specific opportunities.
+                    Never shared, never used to exclude you from anything.
                   </span>
                 </span>
               </label>

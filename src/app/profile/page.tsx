@@ -24,15 +24,20 @@ type AwardEntry = {
 
 type Profile = {
   nationality: string | null;
+  citizenships?: string[] | null;
   country_of_study: string | null;
   state_or_province?: string | null;
   student_status: string | null;
   school: string | null;
   school_other: string | null;
+  intended_school?: string | null;
   education_level: string | null;
+  class_standing?: string | null;
   field_of_study: string | null;
   field_of_study_other: string | null;
+  field_of_study_secondary?: string | null;
   gpa: number | null;
+  gpa_scale?: string | null;
   languages: string[] | null;
   first_generation?: boolean | null;
   demographic_tags?: string[] | null;
@@ -197,7 +202,18 @@ export default function ProfilePage() {
             </header>
 
             <dl className="mt-10 grid grid-cols-2 gap-x-8 gap-y-6 border-y border-neutral-100 py-8 sm:grid-cols-3 dark:border-neutral-900">
-              <Field label="Nationality" value={profile.nationality} />
+              <Field
+                label="Citizenship"
+                value={
+                  Array.from(
+                    new Set(
+                      [profile.nationality, ...(profile.citizenships || [])].filter(
+                        Boolean
+                      )
+                    )
+                  ).join(", ") || null
+                }
+              />
               <Field
                 label="Studying in"
                 value={
@@ -207,12 +223,47 @@ export default function ProfilePage() {
                 }
               />
               <Field label="Status" value={profile.student_status} />
-              <Field label="Level" value={profile.education_level} />
-              <Field label="GPA" value={profile.gpa ? profile.gpa.toFixed(2) : null} />
+              <Field
+                label="Level"
+                value={
+                  [profile.education_level, profile.class_standing]
+                    .filter(Boolean)
+                    .join(" · ") || null
+                }
+              />
+              <Field
+                label="GPA"
+                value={
+                  profile.gpa
+                    ? `${profile.gpa_scale === "percentage" ? `${profile.gpa}%` : profile.gpa.toFixed(2)}${
+                        profile.gpa_scale && profile.gpa_scale !== "4.0" && profile.gpa_scale !== "percentage"
+                          ? ` (${profile.gpa_scale} scale)`
+                          : ""
+                      }`
+                    : null
+                }
+              />
               <Field
                 label="Languages"
                 value={profile.languages?.length ? profile.languages.join(", ") : null}
               />
+              <Field
+                label="Major"
+                value={
+                  [
+                    profile.field_of_study === "Other"
+                      ? profile.field_of_study_other
+                      : profile.field_of_study,
+                    profile.field_of_study_secondary,
+                  ]
+                    .filter(Boolean)
+                    .join(" + ") || null
+                }
+              />
+              <Field label="School" value={getSchool(profile)} />
+              {profile.intended_school && (
+                <Field label="Transferring to" value={profile.intended_school} />
+              )}
             </dl>
 
             {(profile.first_generation || (profile.demographic_tags || []).length > 0) && (
