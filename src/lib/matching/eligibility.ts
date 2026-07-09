@@ -131,6 +131,37 @@ const OPEN_VALUES = new Set([
   "none",
 ]);
 
+// Kept in sync with src/lib/data/regions.ts (duplicated here so this module
+// stays dependency-free for server and client use alike).
+const US_STATE_SET = new Set(
+  [
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "district of columbia", "florida", "georgia",
+    "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky",
+    "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota",
+    "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire",
+    "new jersey", "new mexico", "new york", "north carolina", "north dakota",
+    "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island",
+    "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont",
+    "virginia", "washington", "west virginia", "wisconsin", "wyoming",
+    "puerto rico",
+  ]
+);
+
+const CA_PROVINCE_SET = new Set([
+  "alberta", "british columbia", "manitoba", "new brunswick",
+  "newfoundland and labrador", "northwest territories", "nova scotia",
+  "nunavut", "ontario", "prince edward island", "quebec", "saskatchewan",
+  "yukon",
+]);
+
+/** Which country a required region implies, when we can tell. */
+function regionCountry(place: string): string | null {
+  if (US_STATE_SET.has(place)) return "united states";
+  if (CA_PROVINCE_SET.has(place)) return "canada";
+  return null;
+}
+
 function isOpenValueList(values: string[]): boolean {
   return (
     values.length === 0 ||
@@ -150,6 +181,95 @@ function profilePlaces(profile: ProfileLike): string[] {
     normalizeLoose(profile.country_of_study),
     normalizeLoose(profile.nationality),
   ].filter(Boolean);
+}
+
+/** Every nationality the student holds — dual citizens qualify through any. */
+function profileCitizenships(profile: ProfileLike): string[] {
+  const list = Array.isArray(profile.citizenships)
+    ? (profile.citizenships as unknown[]).map(normalizeLoose)
+    : [];
+  const primary = normalizeLoose(profile.nationality);
+  if (primary) list.push(primary);
+  return Array.from(new Set(list.filter(Boolean)));
+}
+
+/** Fields the student can claim: major, double major, and (for grad students)
+ * their undergraduate field. Undeclared majors match nothing but are never
+ * excluded — field checks only ever return met or unknown. */
+function profileFields(profile: ProfileLike): string[] {
+  return [
+    normalizeLoose(profile.field_of_study),
+    normalizeLoose(profile.field_of_study_other),
+    normalizeLoose(profile.field_of_study_secondary),
+    normalizeLoose(profile.undergraduate_field_of_study),
+  ].filter((field) => field && field !== "other" && field !== "undeclared");
+}
+
+/** Schools the student can claim: current plus (for transfers) intended. */
+function profileSchools(profile: ProfileLike): string[] {
+  return [
+    normalizeLoose(profile.school === "Other" ? profile.school_other : profile.school),
+    normalizeLoose(profile.intended_school),
+  ].filter(Boolean);
+}
+
+function ageFromDateOfBirth(profile: ProfileLike): number | null {
+  const raw = String(profile.date_of_birth || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const dob = new Date(raw);
+  if (Number.isNaN(dob.getTime())) return null;
+  const now = new Date();
+  let age = now.getUTCFullYear() - dob.getUTCFullYear();
+  const hadBirthday =
+    now.getUTCMonth() > dob.getUTCMonth() ||
+    (now.getUTCMonth() === dob.getUTCMonth() && now.getUTCDate() >= dob.getUTCDate());
+  if (!hadBirthday) age -= 1;
+  return age >= 5 && age <= 100 ? age : null;
+}
+
+/** Parse an age requirement into [min, max]. Handles "16-18", "25+",
+ * "25 and older", "under 30", "at least 21", plain "18". */
+function parseAgeRequirement(values: string[]): { min: number | null; max: number | null } | null {
+  for (const raw of values) {
+    const text = normalizeLoose(raw);
+    let match = text.match(/(\d{1,2})\s*(?:-|to|through)\s*(\d{1,2})/);
+    if (match) return { min: Number(match[1]), max: Number(match[2]) };
+    match = text.match(/(?:under|younger than|below)\s*(\d{1,2})/);
+    if (match) return { min: null, max: Number(match[1]) - 1 };
+    match = text.match(/(\d{1,2})\s*(?:\+|and (?:older|above|up)|or older)/);
+    if (match) return { min: Number(match[1]), max: null };
+    match = text.match(/(?:at least|minimum(?: age)?(?: of)?)\s*(\d{1,2})/);
+    if (match) return { min: Number(match[1]), max: null };
+    match = text.match(/^(\d{1,2})$/);
+    if (match) return { min: Number(match[1]), max: Number(match[1]) };
+  }
+  return null;
+}
+
+/**
+ * GPA comparison across scales. The profile records which scale its GPA is
+ * on; requirements are almost always stated on 4.0. Conversions between
+ * scales are institution-specific and lossy, so we only return met/not_met
+ * when the answer holds under BOTH a generous and a conservative conversion
+ * — anything in between is unknown, never exclusion.
+ */
+function compareGpa(
+  gpa: number,
+  scale: string,
+  required: number
+): CriterionVerdict {
+  if (scale === "4.3") {
+    const converted = gpa * (4.0 / 4.3);
+    if (converted >= required) return "met";
+    if (gpa < required) return "not_met"; // below even unconverted
+    return "unknown";
+  }
+  if (scale === "percentage") {
+    if (gpa / 25 >= required) return "met"; // 90% clears 3.6 on any mapping
+    if (gpa / 20 < required) return "not_met"; // 3.5 needs at least 70% anywhere
+    return "unknown";
+  }
+  return gpa >= required ? "met" : "not_met"; // native 4.0
 }
 
 function matchAnyValue(
@@ -173,14 +293,26 @@ function evaluateCriterion(
   switch (criterion.kind) {
     case "citizenship": {
       if (isOpenValueList(criterion.values)) return { verdict: "met", note: null };
-      const nationality = normalizeLoose(profile.nationality);
-      if (!nationality) {
+      const citizenships = profileCitizenships(profile);
+      if (citizenships.length === 0) {
         return { verdict: "unknown", note: "Add your nationality to your profile to check this." };
       }
-      const met = matchAnyValue(values, [nationality], sameCountry);
-      return met
-        ? { verdict: "met", note: null }
-        : { verdict: "not_met", note: `Your profile lists a different nationality.` };
+      const met = matchAnyValue(values, citizenships, sameCountry);
+      // Permanent-resident clauses widen the door: a "citizens or permanent
+      // residents" requirement can be satisfied by residency we may not know
+      // about, so a citizenship miss downgrades to unknown instead of
+      // exclusion when PR is an accepted route.
+      if (met) return { verdict: "met", note: null };
+      const acceptsPermanentResidents = /permanent resident|green card|landed immigrant/i.test(
+        criterion.requirement
+      );
+      if (acceptsPermanentResidents) {
+        return {
+          verdict: "unknown",
+          note: "Open to permanent residents too. Met if you hold PR status.",
+        };
+      }
+      return { verdict: "not_met", note: "Your citizenship does not match this requirement." };
     }
 
     case "residency":
@@ -193,10 +325,27 @@ function evaluateCriterion(
       const met = matchAnyValue(values, places, (value, place) =>
         sameCountry(value, place) || value.includes(place) || place.includes(value)
       );
-      // A location miss is only a real contradiction when the profile has a
-      // state/province set; country-level data alone can't rule out a city or
-      // state requirement inside that country.
       if (met) return { verdict: "met", note: null };
+
+      // A required place that is a known US state (or Canadian province)
+      // positively contradicts a profile based in the OTHER country, even
+      // without state-level profile data: a student studying in Canada
+      // cannot be a Kansas resident.
+      const userCountry = normalizeLoose(profile.country_of_study);
+      const requiredRegionCountry = values
+        .map((value) => regionCountry(normalizeLoose(value)))
+        .find(Boolean);
+      if (
+        requiredRegionCountry &&
+        userCountry &&
+        !sameCountry(userCountry, requiredRegionCountry)
+      ) {
+        return { verdict: "not_met", note: "Your location does not match this requirement." };
+      }
+
+      // Otherwise a location miss is only a real contradiction when the
+      // profile has a state/province set; country-level data alone can't
+      // rule out a city or state requirement inside that country.
       const hasStateData = Boolean(normalizeLoose(profile.state_or_province));
       const valuesLookSubNational = values.some(
         (value) => !sameCountry(normalizeLoose(value), "united states") && !sameCountry(normalizeLoose(value), "canada")
@@ -208,11 +357,11 @@ function evaluateCriterion(
     }
 
     case "specific_school": {
-      const school = normalizeLoose(profile.school || profile.school_other);
-      if (!school) {
+      const schools = profileSchools(profile);
+      if (schools.length === 0) {
         return { verdict: "unknown", note: "Add your school to your profile to check this." };
       }
-      const met = matchAnyValue(values, [school], (value, candidate) =>
+      const met = matchAnyValue(values, schools, (value, candidate) =>
         value.includes(candidate) || candidate.includes(value)
       );
       return met
@@ -232,28 +381,81 @@ function evaluateCriterion(
       if (Number.isNaN(gpa) || gpa <= 0) {
         return { verdict: "unknown", note: "Add your GPA to your profile to check this." };
       }
-      return gpa >= requiredRaw
-        ? { verdict: "met", note: null }
-        : { verdict: "not_met", note: `Requires a GPA of ${requiredRaw}+.` };
+      const scale = normalizeLoose(profile.gpa_scale) || "4.0";
+      const verdict = compareGpa(gpa, scale, requiredRaw);
+      return {
+        verdict,
+        note:
+          verdict === "not_met"
+            ? `Requires a GPA of ${requiredRaw}+.`
+            : verdict === "unknown"
+              ? "GPA scales differ; check the exact conversion with the provider."
+              : null,
+      };
     }
 
     case "education_level":
-    case "grade_level": {
-      const level = normalizeLoose(profile.education_level || profile.student_status).replace(/_/g, " ");
-      if (!level) return { verdict: "unknown", note: null };
-      const met = matchAnyValue(values, [level], (value, candidate) =>
+    case "grade_level":
+    case "class_standing": {
+      const candidates = [
+        normalizeLoose(profile.education_level).replace(/_/g, " "),
+        normalizeLoose(profile.class_standing).replace(/_/g, " "),
+        normalizeLoose(profile.student_status).replace(/_/g, " "),
+      ].filter(Boolean);
+      if (candidates.length === 0) return { verdict: "unknown", note: null };
+      const met = matchAnyValue(values, candidates, (value, candidate) =>
         value.includes(candidate) || candidate.includes(value)
       );
       return met ? { verdict: "met", note: null } : { verdict: "unknown", note: null };
     }
 
     case "field_of_study": {
-      const field = normalizeLoose(profile.field_of_study || profile.field_of_study_other);
-      if (!field) return { verdict: "unknown", note: null };
-      const met = matchAnyValue(values, [field], (value, candidate) =>
+      const fields = profileFields(profile);
+      if (fields.length === 0) return { verdict: "unknown", note: null };
+      const met = matchAnyValue(values, fields, (value, candidate) =>
         value.includes(candidate) || candidate.includes(value)
       );
       return met ? { verdict: "met", note: null } : { verdict: "unknown", note: null };
+    }
+
+    case "age": {
+      const requirement = parseAgeRequirement(values);
+      if (!requirement) return { verdict: "unknown", note: null };
+      const age = ageFromDateOfBirth(profile);
+      if (age === null) {
+        return {
+          verdict: "unknown",
+          note: "Has an age requirement. Add your date of birth to check it automatically.",
+        };
+      }
+      const met =
+        (requirement.min === null || age >= requirement.min) &&
+        (requirement.max === null || age <= requirement.max);
+      return met
+        ? { verdict: "met", note: null }
+        : { verdict: "not_met", note: "Your age is outside this requirement." };
+    }
+
+    case "language":
+    case "language_proficiency": {
+      const languages = Array.isArray(profile.languages)
+        ? (profile.languages as unknown[]).map(normalizeLoose)
+        : [];
+      if (languages.length === 0) return { verdict: "unknown", note: null };
+      const met = matchAnyValue(values, languages, (value, lang) =>
+        value.includes(lang) || lang.includes(value)
+      );
+      // Speaking a language can be confirmed; proficiency LEVELS can't, so a
+      // miss stays unknown.
+      return met ? { verdict: "met", note: null } : { verdict: "unknown", note: null };
+    }
+
+    case "disability": {
+      // Like demographics: optional self-identification confirms, never excludes.
+      const disclosed = profile.has_disability === true;
+      return disclosed
+        ? { verdict: "met", note: null }
+        : { verdict: "unknown", note: null };
     }
 
     case "financial_need": {
@@ -292,7 +494,7 @@ function evaluateCriterion(
     }
 
     default:
-      // Age and anything we didn't anticipate: display, don't judge.
+      // Anything we didn't anticipate: display, don't judge.
       return { verdict: "unknown", note: null };
   }
 }
@@ -319,18 +521,50 @@ export function evaluateEligibility({
     return { criterion, verdict, note };
   });
 
-  const blockers = checks.filter(
-    (check) => check.verdict === "not_met" && check.criterion.strict
-  );
+  // Conflict resolution: pages sometimes state contradictory criteria of the
+  // same kind ("open to all majors" boilerplate next to "engineering
+  // students only"). A kind only ever blocks when EVERY strict criterion of
+  // that kind is positively contradicted — if any alternative is met or
+  // unknown, the student may qualify through it, so we never exclude.
+  const strictNotMetByKind = new Map<string, EligibilityCheck[]>();
+  const kindHasEscape = new Set<string>();
+  for (const check of checks) {
+    if (!check.criterion.strict) continue;
+    if (check.verdict === "not_met") {
+      const list = strictNotMetByKind.get(check.criterion.kind) || [];
+      list.push(check);
+      strictNotMetByKind.set(check.criterion.kind, list);
+    } else {
+      kindHasEscape.add(check.criterion.kind);
+    }
+  }
+
+  const blockers: EligibilityCheck[] = [];
+  for (const [kind, kindChecks] of strictNotMetByKind) {
+    if (!kindHasEscape.has(kind)) blockers.push(...kindChecks);
+  }
 
   if (blockers.length > 0) {
     return { status: "ineligible", checks, blockers };
   }
 
-  const strictChecks = checks.filter((check) => check.criterion.strict);
+  // Status rolls up per KIND (an "or" within a kind, an "and" across kinds),
+  // so a conflicted pair like all-majors + engineering-only counts as
+  // satisfied when either alternative is met.
+  const strictKinds = new Map<string, "met" | "unknown">();
+  for (const check of checks) {
+    if (!check.criterion.strict) continue;
+    const current = strictKinds.get(check.criterion.kind);
+    if (check.verdict === "met") strictKinds.set(check.criterion.kind, "met");
+    else if (!current) strictKinds.set(check.criterion.kind, "unknown");
+  }
+
   const metCount = checks.filter((check) => check.verdict === "met").length;
 
-  if (strictChecks.length > 0 && strictChecks.every((check) => check.verdict === "met")) {
+  if (
+    strictKinds.size > 0 &&
+    Array.from(strictKinds.values()).every((state) => state === "met")
+  ) {
     return { status: "eligible", checks, blockers: [] };
   }
 
@@ -378,6 +612,10 @@ export function criterionKindLabel(kind: string): string {
     financial_need: "Financial need",
     enrollment_status: "Enrollment",
     grade_level: "Grade level",
+    class_standing: "Class standing",
+    language: "Language",
+    language_proficiency: "Language",
+    disability: "Eligibility group",
   };
   return labels[kind] || "Requirement";
 }

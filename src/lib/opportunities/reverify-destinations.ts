@@ -26,6 +26,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { verifyApplicationDestination } from "@/lib/discovery/verify-destination";
 import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
+import { extractEligibilityFromText } from "@/lib/discovery/extract-eligibility-only";
 import { looksLikeDegreeProgramRecord } from "@/lib/discovery/opportunity-scope";
 import { fetchAndHashOpportunityPage } from "@/lib/opportunities/page-recheck";
 import { tableHasColumn } from "@/lib/utils/schema-features";
@@ -39,6 +40,7 @@ export type ReverifySummary = {
   expired: number;
   pulledForReview: number;
   unverifiable: number;
+  criteriaEnriched: number;
   deferredBudget: number;
   details: string[];
 };
@@ -92,10 +94,14 @@ export async function reverifyPublishedDestinations({
   supabase,
   aiBudget = 15,
   sweepLimit = 120,
+  enrichBudget = 10,
 }: {
   supabase: SupabaseClient;
   aiBudget?: number;
   sweepLimit?: number;
+  /** Max cheap Flash calls per run for filling in missing eligibility
+   * criteria on rows published before criteria capture existed. */
+  enrichBudget?: number;
 }): Promise<ReverifySummary> {
   const summary: ReverifySummary = {
     swept: 0,
@@ -106,11 +112,51 @@ export async function reverifyPublishedDestinations({
     expired: 0,
     pulledForReview: 0,
     unverifiable: 0,
+    criteriaEnriched: 0,
     deferredBudget: 0,
     details: [],
   };
 
   const hasVerifiedAt = await tableHasColumn(supabase, "opportunities", "last_verified_at");
+  const hasCriteriaColumn = await tableHasColumn(
+    supabase,
+    "opportunities",
+    "eligibility_criteria"
+  );
+  let enrichCallsUsed = 0;
+
+  // The page was fetched anyway for the hash check — if this row has no
+  // stored eligibility criteria yet (published before capture existed, or
+  // the page changed), one cheap Flash call fills them in. Self-healing:
+  // the whole catalog converges to full criteria coverage within days of
+  // the migration landing, and stays covered forever.
+  async function maybeEnrichCriteria(
+    row: ReverifyRow,
+    pageText: string | null | undefined
+  ) {
+    if (!hasCriteriaColumn || enrichCallsUsed >= enrichBudget) return;
+    if (Array.isArray(row.eligibility_criteria) && row.eligibility_criteria.length > 0) {
+      return;
+    }
+    if (!pageText || pageText.length < 300) return;
+    enrichCallsUsed += 1;
+    try {
+      const criteria = await extractEligibilityFromText({
+        title: String(row.title || ""),
+        pageText,
+      });
+      await supabase
+        .from("opportunities")
+        .update({
+          eligibility_criteria: criteria,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+      summary.criteriaEnriched += 1;
+    } catch {
+      // Enrichment is opportunistic; the next sweep retries.
+    }
+  }
 
   const { data: rows, error } = await supabase
     .from("opportunities")
@@ -193,6 +239,7 @@ export async function reverifyPublishedDestinations({
         })
         .eq("id", row.id);
       summary.cheapConfirmed += 1;
+      await maybeEnrichCriteria(row, probe.cleanText);
       continue;
     }
 
@@ -229,6 +276,7 @@ export async function reverifyPublishedDestinations({
         })
         .eq("id", row.id);
       summary.confirmed += 1;
+      await maybeEnrichCriteria(row, probe.ok ? probe.cleanText : null);
       continue;
     }
 
