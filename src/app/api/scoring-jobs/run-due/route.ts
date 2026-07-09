@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { processScoringJob } from "@/lib/scoring/process-scoring-job";
+import { resolvePlanTransitions } from "@/lib/billing/subscription";
 
 function createSupabaseForRequest(request: NextRequest) {
   const authHeader = request.headers.get("authorization") || "";
@@ -49,12 +50,23 @@ export async function POST(request: NextRequest) {
 
     // Presence beacon: the browse page calls this route on arrival, so it
     // doubles as "user is active" — which is what resumes paused auto-refresh
-    // for dormant accounts. Fails silently until the column exists.
+    // for dormant accounts. Fails silently until the column exists. It also
+    // lazily persists any due subscription transition (trial/grace expiry,
+    // scheduled downgrade) so billing state converges without its own cron.
     await service
       .from("profiles")
       .update({ last_active_at: new Date().toISOString() })
       .eq("id", user.id)
       .then(() => {});
+
+    const { data: profileForBilling } = await service
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profileForBilling) {
+      await resolvePlanTransitions(service, profileForBilling);
+    }
 
     const { data: job } = await service
       .from("user_scoring_jobs")

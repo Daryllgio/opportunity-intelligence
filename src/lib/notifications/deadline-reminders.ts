@@ -13,7 +13,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
-import { getPlanLimits } from "@/lib/billing/plans";
+import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 
 const REMINDER_MILESTONES = [
   { daysBefore: 7, type: "deadline_7d", label: "in one week" },
@@ -138,7 +138,7 @@ export async function runDeadlineReminders({
         .eq("id", row.user_id)
         .maybeSingle();
 
-      const planLimits = getPlanLimits(profile?.subscription_plan);
+      const planLimits = getPlanLimitsForProfile(profile as Record<string, unknown> | null);
       if (!planLimits.hasDeadlineReminders) {
         summary.skippedPlan++;
         continue;

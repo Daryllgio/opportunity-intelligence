@@ -177,3 +177,10 @@ create table if not exists credit_ledger (
 
 create index if not exists idx_credit_ledger_user
   on credit_ledger (user_id, created_at desc);
+
+-- Backfill: accounts that already had a paid plan before the state machine
+-- existed become 'active' so their access is uninterrupted.
+update profiles
+  set subscription_status = 'active'
+  where subscription_plan in ('basic', 'pro', 'premium')
+    and (subscription_status is null or subscription_status = 'none');

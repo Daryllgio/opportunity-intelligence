@@ -4,8 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   AI_SEARCH_TOKENS_PER_CREDIT,
   getCurrentUsageMonth,
-  getPlanLimits,
 } from "@/lib/billing/plans";
+import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
+import { consumeCredit } from "@/lib/billing/credits";
 import { tableHasColumn } from "@/lib/utils/schema-features";
 import { safeParseJson } from "@/lib/utils/safe-json";
 import { withTimeout } from "@/lib/utils/timeout";
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .maybeSingle();
 
-    const planLimits = getPlanLimits(profile?.subscription_plan);
+    const planLimits = getPlanLimitsForProfile(profile as Record<string, unknown> | null);
     if (!planLimits.hasAiSearch) {
       return NextResponse.json(
         { error: "AI search is a Premium feature.", upgrade: true },
@@ -118,13 +119,26 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const tokensUsed = Number(usageRow?.ai_search_tokens_used || 0);
+    let usedOverflowCredit = false;
     if (tokensUsed >= planLimits.aiSearchMonthlyTokens) {
-      return NextResponse.json(
-        {
-          error: "You've used this month's AI search budget. It resets on the 1st.",
-        },
-        { status: 403 }
+      // Budget exhausted: one overflow credit buys one search. No balance ->
+      // surface the purchase path.
+      usedOverflowCredit = await consumeCredit(
+        service,
+        user.id,
+        "ai_search_credit",
+        query.slice(0, 60)
       );
+      if (!usedOverflowCredit) {
+        return NextResponse.json(
+          {
+            error: "You've used this month's AI search budget. It resets on the 1st.",
+            overflowAvailable: true,
+            purchasePath: "/api/billing/credits",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const { data: rows, error: rowsError } = await service

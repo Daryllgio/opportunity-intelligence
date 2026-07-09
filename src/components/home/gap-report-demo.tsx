@@ -76,7 +76,7 @@ export function GapReportDemo() {
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
-            Gap report
+            Competitiveness report
           </p>
           <p className="mt-0.5 truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
             National STEM Leaders Fellowship

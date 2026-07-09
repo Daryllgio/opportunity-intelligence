@@ -177,7 +177,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Gap reports — the coaching layer */}
+      {/* Competitiveness reports — the coaching layer */}
       <section className="border-y border-neutral-100 bg-neutral-50/60 dark:border-neutral-900 dark:bg-neutral-900/40">
         <div className="mx-auto grid max-w-5xl grid-cols-1 items-center gap-10 px-6 py-20 md:grid-cols-[340px_1fr] lg:grid-cols-[420px_1fr]">
           <Reveal>
@@ -188,7 +188,7 @@ export default async function HomePage() {
               Know exactly why, and what to do about it
             </h2>
             <p className="mt-4 max-w-xl text-[15px] leading-7 text-neutral-700 dark:text-neutral-400">
-              A match score tells you where you stand. A gap report tells you
+              A match score tells you where you stand. A competitiveness report tells you
               why: which parts of your profile carry your application, which
               gaps a selection committee will notice, and the specific move
               that raises your odds before you apply.

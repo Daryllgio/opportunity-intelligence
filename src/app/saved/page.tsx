@@ -281,7 +281,7 @@ export default function SavedPage() {
           {(
             [
               { key: "applications", label: "Applications" },
-              { key: "reports", label: "Gap reports" },
+              { key: "reports", label: "Reports" },
             ] as const
           ).map((item) => (
             <button
@@ -305,9 +305,9 @@ export default function SavedPage() {
         {view === "reports" && !loading ? (
           reports.length === 0 ? (
             <div className="mt-10 rounded-lg border border-dashed border-neutral-200 p-10 text-center dark:border-neutral-800">
-              <h2 className="text-lg font-semibold">No gap reports yet</h2>
+              <h2 className="text-lg font-semibold">No competitiveness reports yet</h2>
               <p className="mx-auto mt-2 max-w-sm text-sm text-neutral-600 dark:text-neutral-400">
-                Open any opportunity and run a gap report to see exactly what
+                Open any opportunity and run a competitiveness report to see exactly what
                 strengthens your application. Your reports collect here.
               </p>
               <Link

@@ -4,7 +4,11 @@ import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUsageMonth, getPlanLimits } from "@/lib/billing/plans";
+import { getCurrentUsageMonth } from "@/lib/billing/plans";
+import {
+  getPlanLimitsForProfile,
+  getSubscriptionState,
+} from "@/lib/billing/subscription";
 import { profileScoringGate } from "@/lib/scoring/profile-gate";
 import {
   buildOpportunityContentHash,
@@ -377,8 +381,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const plan = profile.subscription_plan || "free";
-    const planLimits = getPlanLimits(plan);
+    const planLimits = getPlanLimitsForProfile(profile as Record<string, unknown>);
+    const plan = getSubscriptionState(profile as Record<string, unknown>).effectivePlan || "none";
     const usageMonth = getCurrentUsageMonth();
 
     if (planLimits.competitivenessScores <= 0) {
@@ -536,7 +540,7 @@ export async function POST(request: NextRequest) {
           competitivenessScoresUsed: scoresUsed,
           competitivenessScoresLimit: planLimits.competitivenessScores,
           gapReportsUsed: existingUsage?.gap_reports_used || 0,
-          gapReportsLimit: planLimits.gapReports,
+          gapReportsLimit: planLimits.competitivenessReports,
         },
         message:
           "No unscored opportunities matched this profile and preference filter.",
@@ -662,7 +666,7 @@ export async function POST(request: NextRequest) {
         competitivenessScoresUsed: newScoresUsed,
         competitivenessScoresLimit: planLimits.competitivenessScores,
         gapReportsUsed: existingUsage?.gap_reports_used || 0,
-        gapReportsLimit: planLimits.gapReports,
+        gapReportsLimit: planLimits.competitivenessReports,
       },
     });
   } catch (error) {

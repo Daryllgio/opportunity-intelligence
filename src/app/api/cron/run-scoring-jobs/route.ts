@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { getPlanLimits } from "@/lib/billing/plans";
+import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 import { processScoringJob } from "@/lib/scoring/process-scoring-job";
 import { scheduleScoringJobForUser } from "@/lib/scoring/schedule-scoring-job";
 
@@ -125,7 +125,7 @@ async function scheduleFreshContentJobs(supabase: SupabaseClient) {
   let scheduled = 0;
 
   for (const profile of profiles || []) {
-    const planLimits = getPlanLimits(profile.subscription_plan);
+    const planLimits = getPlanLimitsForProfile(profile as Record<string, unknown>);
     if (!planLimits.hasCompetitivenessRanking) continue;
 
     const lastActive = (profile as Record<string, unknown>).last_active_at;

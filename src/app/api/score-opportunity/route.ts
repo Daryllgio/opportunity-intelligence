@@ -5,7 +5,19 @@ import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUsageMonth, getPlanLimits } from "@/lib/billing/plans";
+import { getCurrentUsageMonth } from "@/lib/billing/plans";
+import {
+  getPlanLimitsForProfile,
+  getSubscriptionState,
+} from "@/lib/billing/subscription";
+import { consumeCredit } from "@/lib/billing/credits";
+
+function createServiceSupabaseForCredits() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // Gap reports are the premium feature: Claude Sonnet gives the most nuanced,
 // actionable positioning advice. Gemini remains as an automatic fallback so
@@ -85,7 +97,7 @@ async function generateGapReport(prompt: string) {
       withTimeout(
         () => (useClaude ? generateWithClaude(prompt) : generateWithGemini(prompt)),
         60000,
-        "Gap report generation"
+        "Competitiveness report generation"
       ),
     {
       maxRetries: 2,
@@ -107,7 +119,7 @@ export async function POST(request: NextRequest) {
   try {
     if (!process.env.ANTHROPIC_API_KEY && !process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: "Gap report generation is not configured." },
+        { error: "Report generation is not configured." },
         { status: 500 }
       );
     }
@@ -149,15 +161,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const plan = profile.subscription_plan || "free";
-    const planLimits = getPlanLimits(plan);
+    const planLimits = getPlanLimitsForProfile(profile as Record<string, unknown>);
+    const plan = getSubscriptionState(profile as Record<string, unknown>).effectivePlan || "none";
     const usageMonth = getCurrentUsageMonth();
 
-    if (planLimits.gapReports <= 0) {
+    if (planLimits.competitivenessReports <= 0) {
       return NextResponse.json(
         {
           error:
-            "AI gap reports are available on paid plans. Upgrade to generate this report.",
+            "Competitiveness reports are part of every paid plan. Start a free trial to generate this one.",
         },
         { status: 403 }
       );
@@ -172,15 +184,8 @@ export async function POST(request: NextRequest) {
 
     const gapReportsUsed = existingUsage?.gap_reports_used || 0;
 
-    if (gapReportsUsed >= planLimits.gapReports) {
-      return NextResponse.json(
-        {
-          error: `You have used all ${planLimits.gapReports} gap reports for this month.`,
-        },
-        { status: 403 }
-      );
-    }
-
+    // Cached reports were already paid for — re-reading one must never touch
+    // quota or credits, so this check comes before ALL spend logic.
     const { data: existingReport } = await supabase
       .from("opportunity_score_reports")
       .select("id, overall_score, fit_label, eligibility_status, strengths, gaps, recommended_actions, ai_explanation, model_used, updated_at")
@@ -194,12 +199,36 @@ export async function POST(request: NextRequest) {
         usage: {
           plan,
           gapReportsUsed,
-          gapReportsLimit: planLimits.gapReports,
+          gapReportsLimit: planLimits.competitivenessReports,
           competitivenessScoresUsed:
             existingUsage?.competitiveness_scores_used || 0,
           competitivenessScoresLimit: planLimits.competitivenessScores,
         },
       });
+    }
+
+    let usedOverflowCredit = false;
+
+    if (gapReportsUsed >= planLimits.competitivenessReports) {
+      // Plan quota exhausted: pay-per-use overflow credits keep the user
+      // moving. No balance -> surface the purchase path.
+      const service = createServiceSupabaseForCredits();
+      usedOverflowCredit = await consumeCredit(
+        service,
+        user.id,
+        "competitiveness_report",
+        opportunityId
+      );
+      if (!usedOverflowCredit) {
+        return NextResponse.json(
+          {
+            error: `You've used all ${planLimits.competitivenessReports} competitiveness reports this month.`,
+            overflowAvailable: true,
+            purchasePath: "/api/billing/credits",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const { data: opportunity, error: opportunityError } = await supabase
@@ -327,7 +356,7 @@ ${JSON.stringify(opportunity, null, 2)}
 
     const parsedResult = safeParseJson<Record<string, unknown>>(
       responseText,
-      "Gap report"
+      "Competitiveness report"
     );
 
     if (!parsedResult.success) {
@@ -371,39 +400,44 @@ ${JSON.stringify(opportunity, null, 2)}
       );
     }
 
-    if (existingUsage?.id) {
-      const { error: usageError } = await supabase
-        .from("user_ai_usage")
-        .update({
-          gap_reports_used: gapReportsUsed + 1,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingUsage.id);
+    // Overflow reports were paid with a credit — they never touch the
+    // monthly plan quota.
+    if (!usedOverflowCredit) {
+      if (existingUsage?.id) {
+        const { error: usageError } = await supabase
+          .from("user_ai_usage")
+          .update({
+            gap_reports_used: gapReportsUsed + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingUsage.id);
 
-      if (usageError) {
-        console.error("gap report usage update error:", usageError.message);
-      }
-    } else {
-      const { error: usageError } = await supabase
-        .from("user_ai_usage")
-        .insert({
-          user_id: user.id,
-          usage_month: usageMonth,
-          gap_reports_used: 1,
-          competitiveness_scores_used: 0,
-        });
+        if (usageError) {
+          console.error("report usage update error:", usageError.message);
+        }
+      } else {
+        const { error: usageError } = await supabase
+          .from("user_ai_usage")
+          .insert({
+            user_id: user.id,
+            usage_month: usageMonth,
+            gap_reports_used: 1,
+            competitiveness_scores_used: 0,
+          });
 
-      if (usageError) {
-        console.error("gap report usage insert error:", usageError.message);
+        if (usageError) {
+          console.error("report usage insert error:", usageError.message);
+        }
       }
     }
 
     return NextResponse.json({
       report: savedReport,
+      usedOverflowCredit,
       usage: {
         plan,
-        gapReportsUsed: gapReportsUsed + 1,
-        gapReportsLimit: planLimits.gapReports,
+        gapReportsUsed: usedOverflowCredit ? gapReportsUsed : gapReportsUsed + 1,
+        gapReportsLimit: planLimits.competitivenessReports,
         competitivenessScoresUsed:
           existingUsage?.competitiveness_scores_used || 0,
         competitivenessScoresLimit: planLimits.competitivenessScores,

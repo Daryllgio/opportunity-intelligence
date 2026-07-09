@@ -14,7 +14,7 @@ import { SourceTrustBadge } from "@/components/ui/source-trust-badge";
 import { DestinationConfidenceBadge } from "@/components/ui/destination-confidence-badge";
 import { FreshnessLabel } from "@/components/ui/freshness-label";
 import { supabase } from "@/lib/supabase";
-import { getPlanLimits } from "@/lib/billing/plans";
+import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 import { evaluateEligibility } from "@/lib/matching/eligibility";
 
 type Opportunity = {
@@ -125,7 +125,7 @@ export default function OpportunityDetailPage() {
   const [scoreReport, setScoreReport] = useState<ScoreReport | null>(null);
   const [matchScore, setMatchScore] = useState<number | null>(null);
   const [hasFullDetails, setHasFullDetails] = useState(true);
-  const [hasGapReports, setHasGapReports] = useState(false);
+  const [hasCompetitivenessReports, setHasGapReports] = useState(false);
   const [profileRow, setProfileRow] = useState<Record<string, unknown> | null>(null);
   const [message, setMessage] = useState("");
   const [scoreMessage, setScoreMessage] = useState("");
@@ -148,9 +148,9 @@ export default function OpportunityDetailPage() {
         .eq("id", user.id)
         .maybeSingle();
 
-      const planLimits = getPlanLimits(profile?.subscription_plan);
+      const planLimits = getPlanLimitsForProfile(profile as Record<string, unknown> | null);
       setHasFullDetails(planLimits.hasFullDetails);
-      setHasGapReports(planLimits.hasGapReports);
+      setHasGapReports(planLimits.hasCompetitivenessReports);
       setProfileRow((profile as Record<string, unknown> | null) || null);
 
       const { data: opportunityData, error } = await supabase
@@ -490,7 +490,7 @@ export default function OpportunityDetailPage() {
                   </dl>
                 </section>
 
-                {/* ── Gap report ── */}
+                {/* ── Competitiveness report ── */}
                 <section className="mt-12 border-t border-neutral-100 pt-10 dark:border-neutral-900">
                   <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                     <div>
@@ -502,7 +502,7 @@ export default function OpportunityDetailPage() {
                         position your application for this specific opportunity.
                       </p>
                     </div>
-                    {!scoreReport && hasGapReports && (
+                    {!scoreReport && hasCompetitivenessReports && (
                       <button
                         type="button"
                         onClick={generateScoreReport}
@@ -518,7 +518,7 @@ export default function OpportunityDetailPage() {
                     <p className="mt-4 text-sm text-neutral-500">{scoreMessage}</p>
                   )}
 
-                  {!hasGapReports && !scoreReport && (
+                  {!hasCompetitivenessReports && !scoreReport && (
                     <p className="mt-4 rounded-lg bg-neutral-50 p-4 text-sm text-neutral-500 dark:bg-neutral-900">
                       Competitiveness reports are part of paid plans.{" "}
                       <Link href="/pricing" className="font-medium underline underline-offset-2">

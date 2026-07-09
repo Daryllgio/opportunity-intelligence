@@ -253,7 +253,7 @@ export default function SettingsPage() {
                       planLimits.rankedCategoryLimit === "all"
                         ? "all"
                         : planLimits.rankedCategoryLimit
-                    } categor${planLimits.rankedCategoryLimit === 1 ? "y" : "ies"} · ${planLimits.gapReports} reports per month`
+                    } categor${planLimits.rankedCategoryLimit === 1 ? "y" : "ies"} · ${planLimits.competitivenessReports} reports per month`
                   : "Browse-only. Upgrade for matching, saving, and reports."}
               </p>
               <Link

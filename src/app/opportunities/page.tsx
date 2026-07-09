@@ -17,7 +17,7 @@ import {
 } from "@/lib/matching/eligibility";
 import { profileScoringGate } from "@/lib/scoring/profile-gate";
 import { supabase } from "@/lib/supabase";
-import { getPlanLimits } from "@/lib/billing/plans";
+import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 
 const PAGE_SIZE = 24;
 const FETCH_CAP = 600;
@@ -145,7 +145,7 @@ function OpportunitiesBrowse() {
       setHasProfile(true);
       setProfileRow(profileData as Record<string, unknown>);
 
-      const planLimits = getPlanLimits(profileData.subscription_plan);
+      const planLimits = getPlanLimitsForProfile(profileData as Record<string, unknown>);
       setHasRanking(planLimits.hasCompetitivenessRanking);
 
       let query = supabase
@@ -368,7 +368,7 @@ function OpportunitiesBrowse() {
 
       {isLoggedIn && hasProfile && (
         <AiSearch
-          hasAiSearch={getPlanLimits(String(profileRow?.subscription_plan || "")).hasAiSearch}
+          hasAiSearch={getPlanLimitsForProfile(profileRow).hasAiSearch}
         />
       )}
 

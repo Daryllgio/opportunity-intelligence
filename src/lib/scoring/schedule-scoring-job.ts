@@ -1,4 +1,4 @@
-import { getPlanLimits } from "@/lib/billing/plans";
+import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 import { buildProfileScoringHash } from "@/lib/scoring/hashes";
 import { profileScoringGate } from "@/lib/scoring/profile-gate";
 
@@ -50,8 +50,7 @@ export async function scheduleScoringJobForUser({
     };
   }
 
-  const plan = profile.subscription_plan || "free";
-  const planLimits = getPlanLimits(plan);
+  const planLimits = getPlanLimitsForProfile(profile as Record<string, unknown>);
 
   if (!planLimits.hasCompetitivenessRanking) {
     return {
