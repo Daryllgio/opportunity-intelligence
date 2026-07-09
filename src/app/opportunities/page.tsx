@@ -16,6 +16,7 @@ import {
   shortBlockerLabel,
 } from "@/lib/matching/eligibility";
 import { profileScoringGate } from "@/lib/scoring/profile-gate";
+import { educationExcludes } from "@/lib/scoring/priority";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 
@@ -44,13 +45,6 @@ const typeLabel = (value: string) =>
 
 function sanitize(value: string) {
   return value.replace(/[%,()]/g, " ").trim();
-}
-
-function normalizeEducationLevel(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[\s-]+/g, "_")
-    .replace(/[^a-z_]/g, "");
 }
 
 function OpportunitiesBrowse() {
@@ -170,16 +164,11 @@ function OpportunitiesBrowse() {
       const type = searchParams.get("type");
       if (type) query = query.in("type", type.split(",").filter(Boolean));
 
-      // Education level comes from the profile, not a filter control. Rows
-      // with no recorded eligibility stay visible.
-      const level = normalizeEducationLevel(
-        String(profileData.education_level || "")
-      );
-      if (level) {
-        query = query.or(
-          `eligible_education_levels.is.null,eligible_education_levels.eq.{},eligible_education_levels.cs.{${level}}`
-        );
-      }
+      // Education-level filtering happens CLIENT-SIDE with the alias-aware
+      // matcher shared with scoring (educationExcludes below). The old SQL
+      // exact-containment filter (cs.{undergraduate}) silently hid rows
+      // whose free-text levels said 'bachelors', 'post-secondary',
+      // 'college', or 'undergraduate (second year or higher)'.
 
       const country = searchParams.get("country");
       if (country) {
@@ -209,7 +198,15 @@ function OpportunitiesBrowse() {
         return;
       }
 
-      const opportunities = (data || []) as unknown as Opportunity[];
+      // Hide only recognized-level mismatches (PhD-only rows for an
+      // undergraduate); unknown level vocabulary stays visible.
+      const opportunities = ((data || []) as unknown as Opportunity[]).filter(
+        (row) =>
+          !educationExcludes(
+            profileData as Record<string, unknown>,
+            row as unknown as Record<string, unknown>
+          )
+      );
       if (!active) return;
       setRows(opportunities);
 

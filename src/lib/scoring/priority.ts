@@ -23,8 +23,16 @@ export type ExperienceSummaryLike = {
   notable_metrics?: string[] | null;
 };
 
+// Underscores become spaces so canonical tokens ("all_fields",
+// "high_school_senior") compare equal to their prose forms ("all fields").
+// This mismatch made every open-to-all-majors row unscoreable for anyone
+// with a declared major — the research/research_program bug class again.
 function normalizeText(value: unknown) {
-  return String(value || "").toLowerCase().trim();
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeList(value: unknown): string[] {
@@ -62,19 +70,33 @@ export function getRankedCategories(profile: Row, planLimits: PlanLimits): strin
 // Eligibility checks (hard gates — an ineligible opportunity never spends quota)
 // ---------------------------------------------------------------------------
 
+// Aliases reflect the REAL vocabulary extraction produces (it is free text):
+// 'bachelors', 'post-secondary', 'university_students', 'college',
+// 'undergraduate (second year or higher)', 'graduating_senior'... Exact
+// matching against this vocabulary is how valid rows silently disappear.
 const EDUCATION_ALIASES: Record<string, string[]> = {
   high_school: ["high school", "high_school", "secondary"],
-  undergraduate: ["undergraduate", "undergrad", "college", "university student", "bachelor"],
+  undergraduate: [
+    "undergraduate", "undergrad", "college", "university student",
+    "university students", "bachelor", "bachelors", "associate",
+    "post secondary", "post-secondary", "postsecondary",
+    "graduating senior", "graduating_senior", "freshman", "sophomore",
+    "junior", "senior",
+  ],
   transfer_student: ["transfer"],
   masters: ["masters", "master's", "master", "graduate"],
   phd: ["phd", "doctoral", "doctorate", "graduate"],
   medical_student: ["medical", "md", "medical student"],
-  law_student: ["law", "jd", "law student"],
+  law_student: ["law", "jd", "law student", "juris doctor", "llb", "llm", "master of laws"],
   mba: ["mba", "business school"],
   professional_student: ["professional"],
   recent_graduate: ["recent graduate", "alumni", "early career"],
   early_career: ["early career", "young professional"],
 };
+
+// Every alias across all levels — used to tell "recognized level that
+// excludes this user" apart from "vocabulary we've never seen".
+const ALL_KNOWN_LEVEL_ALIASES = Object.values(EDUCATION_ALIASES).flat();
 
 function normalizeEducationLevel(value: unknown) {
   return normalizeText(value).replace(/[\s-]+/g, "_").replace(/[^a-z_]/g, "");
@@ -93,6 +115,37 @@ export function educationMatches(profile: Row, opportunity: Row) {
   return eligible.some((item) =>
     aliases.some((alias) => item.includes(alias) || alias.includes(item))
   );
+}
+
+/**
+ * Should the BROWSE page hide this row for this user's level?
+ *
+ * Hide only when the row's stated levels are RECOGNIZED vocabulary and none
+ * of them include the user (a PhD-only fellowship for an undergraduate).
+ * Unrecognized vocabulary fails OPEN — visible — because free-text level
+ * values the aliases don't know yet must never silently vanish rows. This
+ * replaced an exact-containment SQL filter (`cs.{undergraduate}`) that hid
+ * 'bachelors', 'post-secondary', 'college', and 'undergraduate (second year
+ * or higher)' rows from undergraduates.
+ */
+export function educationExcludes(profile: Row, opportunity: Row): boolean {
+  const eligible = normalizeList(opportunity.eligible_education_levels);
+  if (eligible.length === 0 || isOpenList(eligible)) return false;
+  if (educationMatches(profile, opportunity)) return false;
+
+  const level = normalizeEducationLevel(
+    profile.education_level || profile.student_status
+  );
+  if (!level) return false;
+
+  // Only exclude when every stated level maps to vocabulary we know —
+  // meaning the mismatch is real, not a dialect we haven't learned.
+  const allRecognized = eligible.every((item) =>
+    ALL_KNOWN_LEVEL_ALIASES.some(
+      (alias) => item.includes(alias) || alias.includes(item)
+    )
+  );
+  return allRecognized;
 }
 
 export function educationMatchStrength(profile: Row, opportunity: Row): number {

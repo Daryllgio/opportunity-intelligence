@@ -4,7 +4,15 @@
  * record the outcome. Shared by the daily cron and the on-browse runner so
  * a profile edit is reflected the next time the user looks at their matches
  * instead of waiting for tomorrow's cron.
+ *
+ * Scoring runs IN-PROCESS via runBatchScoringForUser. It used to self-fetch
+ * the API route over HTTP, which Vercel deployment protection intercepted
+ * with an HTML page — nightly scoring failed silently for days with
+ * "Unexpected token '<'". Never reintroduce the fetch.
  */
+import { runBatchScoringForUser } from "@/lib/scoring/run-batch-scoring";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 type SupabaseClientLike = {
   from: (table: string) => any;
 };
@@ -18,11 +26,11 @@ export type ScoringJobRow = {
 export async function processScoringJob({
   supabase,
   job,
-  origin,
 }: {
   supabase: SupabaseClientLike;
   job: ScoringJobRow;
-  origin: string;
+  /** Unused since scoring became in-process; kept for caller compatibility. */
+  origin?: string;
 }): Promise<{
   status: "completed" | "failed";
   created: number;
@@ -56,20 +64,14 @@ export async function processScoringJob({
   }
 
   try {
-    const scoreResponse = await fetch(`${origin}/api/score-opportunities-batch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        scoreAllEligible: true,
-        cronUserId: job.user_id,
-        cronSecret: process.env.CRON_SECRET,
-      }),
+    const scoreResult = await runBatchScoringForUser({
+      supabase: supabase as SupabaseClient,
+      userId: job.user_id,
+      scoreAllEligible: true,
     });
 
-    const scoreResult = await scoreResponse.json();
-
-    if (!scoreResponse.ok) {
-      throw new Error(scoreResult.error || "Scoring route failed.");
+    if (!scoreResult.ok) {
+      throw new Error(scoreResult.error || "Batch scoring failed.");
     }
 
     const created = scoreResult.counts?.created || 0;
@@ -90,7 +92,11 @@ export async function processScoringJob({
     return { status: "completed", created, refreshed };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Unknown scoring job error.";
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : JSON.stringify(error) || "Unknown scoring job error.";
 
     await supabase
       .from("user_scoring_jobs")
