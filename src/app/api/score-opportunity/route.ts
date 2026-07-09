@@ -260,16 +260,22 @@ export async function POST(request: NextRequest) {
       .eq("opportunity_id", opportunityId)
       .maybeSingle();
 
+    // Privacy boundary: same allowlist as batch scoring — demographic
+    // self-identification, disability status, and date of birth never go to
+    // AI; they are matched deterministically in the eligibility module.
     const profileContext = {
       basic_profile: {
         education_level: profile.education_level,
+        class_standing: profile.class_standing || undefined,
         student_status: profile.student_status,
         opportunity_level: profile.opportunity_level,
         field_of_study: profile.field_of_study,
         field_of_study_other: profile.field_of_study_other,
+        field_of_study_secondary: profile.field_of_study_secondary || undefined,
         country_of_study: profile.country_of_study,
         nationality: profile.nationality,
         gpa: profile.gpa,
+        gpa_scale: profile.gpa_scale || "4.0",
         target_opportunity_types: profile.target_opportunity_types,
         preferred_regions: profile.preferred_regions,
         financial_need: profile.financial_need,

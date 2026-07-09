@@ -43,19 +43,25 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Remove user-owned rows first, then the auth user.
-    await admin.from("saved_opportunities").delete().eq("user_id", user.id);
-    await admin
-      .from("opportunity_competitiveness_scores")
-      .delete()
-      .eq("user_id", user.id);
-    await admin.from("opportunity_score_reports").delete().eq("user_id", user.id);
-    await admin.from("user_ai_usage").delete().eq("user_id", user.id);
-    await admin.from("user_scoring_jobs").delete().eq("user_id", user.id);
-    await admin
-      .from("profile_experience_summaries")
-      .delete()
-      .eq("user_id", user.id);
+    // Remove user-owned rows first, then the auth user. Every table also
+    // carries ON DELETE CASCADE from auth.users, so this is belt-and-braces:
+    // the purge is complete even if a table is missing pre-migration (those
+    // errors no-op) or a new table is forgotten later (cascade catches it).
+    const userOwnedTables = [
+      "saved_opportunities",
+      "opportunity_competitiveness_scores",
+      "opportunity_score_reports",
+      "user_ai_usage",
+      "user_scoring_jobs",
+      "profile_experience_summaries",
+      "email_notification_log",
+      "email_digest_log",
+      "user_credit_balances",
+      "credit_ledger",
+    ];
+    for (const table of userOwnedTables) {
+      await admin.from(table).delete().eq("user_id", user.id);
+    }
     await admin.from("profiles").delete().eq("id", user.id);
 
     const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);

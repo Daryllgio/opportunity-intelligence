@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
+import { flagSuspiciousProfiles } from "@/lib/ops/maintenance";
 import { processScoringJob } from "@/lib/scoring/process-scoring-job";
 import { scheduleScoringJobForUser } from "@/lib/scoring/schedule-scoring-job";
 
@@ -38,6 +39,17 @@ export async function POST(request: NextRequest) {
     // separately (the profile save flow schedules its own job).
     const freshContentJobs = await scheduleFreshContentJobs(supabase);
 
+    // Integrity: flag (never block) accounts whose profiles swap
+    // scoring-relevant identity too often — the account-sharing signature.
+    let integrity;
+    try {
+      integrity = await flagSuspiciousProfiles(supabase);
+    } catch (error) {
+      integrity = {
+        error: error instanceof Error ? error.message : "integrity pass failed",
+      };
+    }
+
     const { data: jobs, error: jobsError } = await supabase
       .from("user_scoring_jobs")
       .select("*")
@@ -55,6 +67,7 @@ export async function POST(request: NextRequest) {
         ran: false,
         processed: 0,
         freshContentJobs,
+        integrity,
         message: "No due scoring jobs found.",
       });
     }
@@ -79,6 +92,7 @@ export async function POST(request: NextRequest) {
       ran: true,
       processed: results.length,
       freshContentJobs,
+      integrity,
       results,
     });
   } catch (error) {

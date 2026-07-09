@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/run-discovery",
-      "schedule": "0 2 * * *"
+      "schedule": "0 0-6/2 * * *"
     },
     {
       "path": "/api/cron/run-lifecycle",
