@@ -173,6 +173,9 @@ export async function POST(request: NextRequest) {
             ),
           }
         : {}),
+      ...((await tableHasColumn(supabase, "opportunities", "attributes"))
+        ? { attributes: draft.attributes || {} }
+        : {}),
       is_active: true,
       is_approved: true,
     };

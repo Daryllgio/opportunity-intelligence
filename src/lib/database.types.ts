@@ -97,6 +97,7 @@ export type OpportunityRow = {
   eligible_education_levels: string[] | null;
   eligible_fields: string[] | null;
   eligibility_criteria: Json | null;
+  attributes: Json | null;
   funding_amount: string | null;
   funding_type: string | null;
   deadline: string | null;

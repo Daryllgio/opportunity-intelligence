@@ -126,18 +126,20 @@ export async function reverifyPublishedDestinations({
   let enrichCallsUsed = 0;
 
   // The page was fetched anyway for the hash check — if this row has no
-  // stored eligibility criteria yet (published before capture existed, or
-  // the page changed), one cheap Flash call fills them in. Self-healing:
-  // the whole catalog converges to full criteria coverage within days of
-  // the migration landing, and stays covered forever.
+  // stored eligibility criteria yet (published before capture existed), or
+  // the page CONTENT CHANGED (eligibility can narrow after publish — a new
+  // citizenship requirement must reach users who no longer qualify), one
+  // cheap Flash call refreshes them. Self-healing: the whole catalog
+  // converges to full, current criteria coverage and stays there.
   async function maybeEnrichCriteria(
     row: ReverifyRow,
-    pageText: string | null | undefined
+    pageText: string | null | undefined,
+    contentChanged = false
   ) {
     if (!hasCriteriaColumn || enrichCallsUsed >= enrichBudget) return;
-    if (Array.isArray(row.eligibility_criteria) && row.eligibility_criteria.length > 0) {
-      return;
-    }
+    const hasCriteria =
+      Array.isArray(row.eligibility_criteria) && row.eligibility_criteria.length > 0;
+    if (hasCriteria && !contentChanged) return;
     if (!pageText || pageText.length < 300) return;
     enrichCallsUsed += 1;
     try {
@@ -276,7 +278,11 @@ export async function reverifyPublishedDestinations({
         })
         .eq("id", row.id);
       summary.confirmed += 1;
-      await maybeEnrichCriteria(row, probe.ok ? probe.cleanText : null);
+      // Reaching the AI path with a working probe means the hash was new or
+      // changed — refresh criteria so narrowed eligibility reaches users.
+      const contentChanged =
+        probe.ok && probe.cleanHash !== row.last_clean_content_hash;
+      await maybeEnrichCriteria(row, probe.ok ? probe.cleanText : null, contentChanged);
       continue;
     }
 

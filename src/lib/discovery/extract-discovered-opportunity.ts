@@ -7,6 +7,10 @@ import {
   normalizeEligibilityCriteria,
   type EligibilityCriterion,
 } from "@/lib/matching/eligibility";
+import {
+  normalizeOpportunityAttributes,
+  type OpportunityAttributes,
+} from "@/lib/discovery/opportunity-attributes";
 import { isRetryableError, withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
@@ -37,6 +41,7 @@ export type DiscoveredOpportunityExtraction = {
   reward_level: string | null;
   competitiveness_factors: string[];
   eligibility_criteria: EligibilityCriterion[];
+  attributes: OpportunityAttributes;
 };
 
 function stringOrNull(value: unknown) {
@@ -180,6 +185,28 @@ Important rules:
   Capture demographic eligibility factually as stated (e.g. "Open to women in
   engineering", "For first-generation college students"). Do not editorialize.
   If the page states no eligibility constraints, return [].
+- ATTRIBUTES: capture the practical application facts in "attributes" (omit
+  any key the page doesn't state — never guess):
+    - "nomination_required": true when applicants must be nominated (by a
+      school, professor, institution) rather than applying directly.
+    - "team_based": "individual" | "team" | "both".
+    - "renewable": true/false; "renewal_terms": e.g. "renewable for up to 4
+      years with a 3.0 GPA".
+    - "funding_period": "total" | "annual" | "monthly" | "per_semester" |
+      "one_time" — what the stated amount covers.
+    - "currency": 3-letter code of the stated amount (USD, CAD...). Never
+      convert amounts.
+    - "recommendation_letters": how many letters are required (number).
+    - "prerequisites": specific required courses, certifications, hours.
+    - "additional_deadlines": other rounds/stages as
+      [{"label": "Regional round", "date": "YYYY-MM-DD"}].
+    - "language_of_program": when the program operates in a non-English
+      language or states language requirements.
+    - "deadline_time" (e.g. "23:59") and "deadline_timezone" (e.g.
+      "America/New_York" or "ET") when the page states them.
+    - "exclusivity_note": when the award can't be combined with others.
+  Recommendation letters and nominations mean weeks of real work — factor
+  them into effort_level (at least "medium", usually "high").
 
 Discovery context:
 ${JSON.stringify(discoveryContext || {}, null, 2)}
@@ -211,7 +238,8 @@ Return this exact JSON shape:
   "competitiveness_factors": string[],
   "eligibility_criteria": [
     { "kind": string, "requirement": string, "values": string[], "strict": boolean }
-  ]
+  ],
+  "attributes": { }
 }
 
 Page text:
@@ -228,9 +256,9 @@ ${pageText.slice(0, 30000)}
             model,
             contents: prompt,
             config: {
-              // Pro is a thinking model: reasoning shares this budget, so it
-              // must be far larger than the JSON we expect back.
-              maxOutputTokens: 8192,
+              // Thinking shares this budget with a now-richer JSON
+              // (criteria + attributes); keep generous headroom.
+              maxOutputTokens: 12288,
             },
           }),
         90000,
@@ -286,5 +314,6 @@ ${pageText.slice(0, 30000)}
     reward_level: stringOrNull(parsed.reward_level),
     competitiveness_factors: arrayOrEmpty(parsed.competitiveness_factors),
     eligibility_criteria: normalizeEligibilityCriteria(parsed.eligibility_criteria),
+    attributes: normalizeOpportunityAttributes(parsed.attributes),
   };
 }

@@ -186,6 +186,10 @@ function mergeExtractedOpportunity({
       extractedEligibility.length > 0
         ? extractedEligibility
         : existing.eligibility_criteria || [],
+    attributes:
+      extracted.attributes && Object.keys(extracted.attributes as object).length > 0
+        ? extracted.attributes
+        : existing.attributes || {},
     funding_amount: extracted.funding_amount || existing.funding_amount,
     funding_type: extracted.funding_type || existing.funding_type,
     deadline: extracted.deadline || existing.deadline,
@@ -340,6 +344,9 @@ export async function recheckOpportunity({
 
   if (!(await tableHasColumn(supabase, "opportunities", "eligibility_criteria"))) {
     delete (mergedOpportunity as Record<string, unknown>).eligibility_criteria;
+  }
+  if (!(await tableHasColumn(supabase, "opportunities", "attributes"))) {
+    delete (mergedOpportunity as Record<string, unknown>).attributes;
   }
 
   const lifecycleFields = buildLifecycleFields(mergedOpportunity);

@@ -1,6 +1,7 @@
 import { normalizeUrl } from "@/lib/utils/url-normalizer";
 import { tableHasColumn } from "@/lib/utils/schema-features";
 import { normalizeEligibilityCriteria } from "@/lib/matching/eligibility";
+import { normalizeOpportunityAttributes } from "@/lib/discovery/opportunity-attributes";
 import { buildLifecycleFields } from "@/lib/opportunities/lifecycle";
 import { baselineVerifiedDestination } from "@/lib/opportunities/reverify-destinations";
 import { validateExtractedOpportunity } from "@/lib/discovery/validation";
@@ -151,18 +152,22 @@ export async function ingestExtractedOpportunity({
 
   opportunityPayload = normalizeOpportunityStatusByDeadline(opportunityPayload);
 
-  // eligibility_criteria rides along on every write, but only once the
-  // migration adding the column has been applied.
+  // eligibility_criteria and attributes ride along on every write, but only
+  // once the migration adding the columns has been applied.
   const eligibilityCriteria = normalizeEligibilityCriteria(
     extracted.eligibility_criteria
   );
-  const eligibilityFields = (await tableHasColumn(
-    supabase,
-    "opportunity_drafts",
-    "eligibility_criteria"
-  ))
-    ? { eligibility_criteria: eligibilityCriteria }
-    : {};
+  const opportunityAttributes = normalizeOpportunityAttributes(
+    extracted.attributes
+  );
+  const eligibilityFields = {
+    ...((await tableHasColumn(supabase, "opportunity_drafts", "eligibility_criteria"))
+      ? { eligibility_criteria: eligibilityCriteria }
+      : {}),
+    ...((await tableHasColumn(supabase, "opportunity_drafts", "attributes"))
+      ? { attributes: opportunityAttributes }
+      : {}),
+  };
 
   const scopeCheck = shouldRejectExtractedOpportunity({
     type: opportunityPayload.type,
@@ -591,6 +596,9 @@ export async function ingestExtractedOpportunity({
         ...trustMetadata,
         ...((await tableHasColumn(supabase, "opportunities", "eligibility_criteria"))
           ? { eligibility_criteria: eligibilityCriteria }
+          : {}),
+        ...((await tableHasColumn(supabase, "opportunities", "attributes"))
+          ? { attributes: opportunityAttributes }
           : {}),
         is_active: true,
         is_approved: true,

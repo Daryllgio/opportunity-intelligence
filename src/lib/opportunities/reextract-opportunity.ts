@@ -7,6 +7,10 @@ import {
   normalizeEligibilityCriteria,
   type EligibilityCriterion,
 } from "@/lib/matching/eligibility";
+import {
+  normalizeOpportunityAttributes,
+  type OpportunityAttributes,
+} from "@/lib/discovery/opportunity-attributes";
 import { withRetry } from "@/lib/utils/retry";
 import { withTimeout } from "@/lib/utils/timeout";
 import { safeParseJson } from "@/lib/utils/safe-json";
@@ -33,6 +37,7 @@ export type ReextractedOpportunity = {
   reward_level?: string | null;
   competitiveness_factors?: string[] | null;
   eligibility_criteria?: EligibilityCriterion[];
+  attributes?: OpportunityAttributes;
 };
 
 function arrayOrEmpty(value: unknown) {
@@ -89,6 +94,13 @@ Important:
   or a short snake_case word of your own; "requirement": short factual
   sentence; "values": normalized values ("United States" not "US citizens",
   "3.5" not "3.5 GPA"); "strict": true when must/required/only}.
+- attributes: practical application facts the page states (omit unstated
+  keys): nomination_required (bool), team_based ("individual"|"team"|"both"),
+  renewable (bool) + renewal_terms, funding_period
+  ("total"|"annual"|"monthly"|"per_semester"|"one_time"), currency (3-letter
+  code, never convert), recommendation_letters (number), prerequisites
+  (string[]), additional_deadlines ([{label, date}]), language_of_program,
+  deadline_time, deadline_timezone, exclusivity_note.
 
 Return this JSON shape:
 {
@@ -110,7 +122,8 @@ Return this JSON shape:
   "competitiveness_factors": string[],
   "eligibility_criteria": [
     { "kind": string, "requirement": string, "values": string[], "strict": boolean }
-  ]
+  ],
+  "attributes": { }
 }
 
 Existing opportunity:
@@ -172,5 +185,6 @@ ${pageText.slice(0, 25000)}
     reward_level: stringOrNull(parsed.reward_level),
     competitiveness_factors: arrayOrEmpty(parsed.competitiveness_factors),
     eligibility_criteria: normalizeEligibilityCriteria(parsed.eligibility_criteria),
+    attributes: normalizeOpportunityAttributes(parsed.attributes),
   };
 }
