@@ -98,6 +98,33 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Missed-cycle retirement: an expired row that has sat through two full
+    // renewal windows (~26 months) without ever reopening is presumed
+    // discontinued — archive it so the renewal heartbeat stops paying to
+    // re-read a dead program. Saved references keep working (archived rows
+    // are never deleted).
+    let archivedMissedCycles = 0;
+    try {
+      const twoCyclesAgo = new Date();
+      twoCyclesAgo.setUTCMonth(twoCyclesAgo.getUTCMonth() - 26);
+      const { data: deadRows } = await supabase
+        .from("opportunities")
+        .update({
+          lifecycle_status: "archived",
+          archived_at: new Date().toISOString(),
+          next_check_at: null,
+          check_reason: "no_recurring_check_needed",
+          cycle_notes: "Archived: no new cycle observed across two renewal windows.",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("lifecycle_status", "expired")
+        .lt("expired_at", twoCyclesAgo.toISOString())
+        .select("id");
+      archivedMissedCycles = deadRows?.length || 0;
+    } catch (error) {
+      console.error("missed-cycle archive failed:", error);
+    }
+
     // Renewal heartbeat: expired rows in their renewal window get re-read;
     // pages that came back with a new deadline republish as a verified
     // renewed cycle, reusing prior user scores when criteria are unchanged.
@@ -137,6 +164,7 @@ export async function GET(request: NextRequest) {
       expired,
       unchanged,
       scoresMarkedStale,
+      archivedMissedCycles,
       dueChecks,
       trackedDrafts,
       reverify,

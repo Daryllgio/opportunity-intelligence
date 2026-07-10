@@ -113,17 +113,42 @@ export async function recheckTrackedDrafts({
           !Number.isNaN(deadlineDate.getTime()) &&
           deadlineDate.getTime() >= Date.now()
       );
+      // A posted future deadline only implies "open" when the page's own
+      // status language doesn't say otherwise — closed pages post next
+      // cycle's deadline all year (the Boren failure).
       const looksOpen =
         extracted.application_status === "open" ||
         extracted.application_status === "rolling" ||
-        hasFutureDeadline;
+        (extracted.application_status === "unknown" && hasFutureDeadline);
 
       if (!looksOpen) {
+        // Count consecutive still-closed checks; after ~a year of misses
+        // (6 checks x 8 weeks) spanning two application cycles, the program
+        // is presumed discontinued and leaves the queue for good.
+        const missedSoFar =
+          Number(String(draft.review_notes || "").match(/missed checks: (\d+)/)?.[1]) || 0;
+        const missed = missedSoFar + 1;
+
+        if (missed >= 6) {
+          await supabase
+            .from("opportunity_drafts")
+            .update({
+              extraction_status: "rejected",
+              expected_next_check_at: null,
+              review_notes: `Presumed discontinued ${nowIso.slice(0, 10)}: still closed after ${missed} checks across 2+ cycles.`,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", draft.id);
+          summary.stillClosed += 1;
+          summary.details.push(`presumed discontinued: ${draft.title}`);
+          continue;
+        }
+
         await supabase
           .from("opportunity_drafts")
           .update({
             expected_next_check_at: addWeeks(new Date(), 8),
-            review_notes: `Next-cycle check ${nowIso.slice(0, 10)}: still closed; rechecking in 8 weeks.`,
+            review_notes: `Next-cycle check ${nowIso.slice(0, 10)}: still closed; rechecking in 8 weeks. (missed checks: ${missed})`,
             updated_at: new Date().toISOString(),
           })
           .eq("id", draft.id);
