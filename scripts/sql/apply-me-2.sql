@@ -64,7 +64,30 @@ begin
 exception when duplicate_object then null;
 end $$;
 
--- 3. Application open date ---------------------------------------------------
+-- 3. "processing" claim status for discovered pages ---------------------------
+-- The concurrency claim writes discovery_status='processing'; the original
+-- CHECK constraint predates it and silently rejected every claim, which
+-- halted the entire discovery pipeline (code now has an updated_at-CAS
+-- fallback, but the honest status is better).
+do $$
+begin
+  if exists (
+    select 1 from information_schema.table_constraints
+    where constraint_name = 'discovered_pages_discovery_status_check'
+      and table_name = 'discovered_pages'
+  ) then
+    alter table public.discovered_pages drop constraint discovered_pages_discovery_status_check;
+  end if;
+  alter table public.discovered_pages add constraint discovered_pages_discovery_status_check
+    check (discovery_status in (
+      'pending', 'candidate', 'processing', 'bundled', 'needs_more_pages',
+      'review', 'published', 'rejected', 'future_tracking',
+      'deferred_aggregator', 'already_known', 'failed'
+    ));
+exception when duplicate_object then null;
+end $$;
+
+-- 4. Application open date ---------------------------------------------------
 alter table public.opportunities
   add column if not exists application_opens_at date;
 alter table public.opportunity_drafts

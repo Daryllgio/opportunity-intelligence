@@ -80,9 +80,12 @@ const LEVEL_RULES: LevelRule[] = [
   { pattern: /ph\.?d\b|doctoral|doctorate/g, levels: ["phd"] },
   // Generic "graduate" AFTER the specific graduate flavors above.
   { pattern: /\bgrad(?:uate)?(?:\s*(?:students?|level|studies))?\b/g, levels: ["graduate"] },
+  // Bare "university"/"college" deliberately do NOT match — institution
+  // names ("University of Saskatchewan ... for PhD Students") would read as
+  // undergraduate. Only student-phrases count.
   {
     pattern:
-      /under[\s-]?grad\w*|bachelor'?s?\b|baccalaureate|associate'?s?(?:\s*degree)?|college\s+students?|university\s+students?|\buniversity\b|\bcollege\b/g,
+      /under[\s-]?grad\w*|bachelor'?s?\b|baccalaureate|associate'?s?(?:\s*degree)?|college\s+students?|university\s+students?|college\/university/g,
     levels: ["undergraduate"],
   },
   // Bare class standings imply an enrolled undergraduate.

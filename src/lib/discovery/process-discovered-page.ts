@@ -198,10 +198,17 @@ export async function processPendingDiscoveredPages({
   }
 
   for (const page of pages || []) {
-    // Claim before work: cron slots can overlap (peak season runs four), and
-    // a compare-and-swap on the status means a page is only ever processed
-    // by one run. Losing the race is not an error — someone else has it.
-    const { data: claimed } = await supabase
+    // Claim before work: cron slots can overlap, and a compare-and-swap
+    // means a page is only ever processed by one run. Losing the race is
+    // not an error — someone else has it.
+    //
+    // The DB's discovery_status CHECK predates "processing"
+    // (apply-me-2.sql widens it) — and that rejection silently killed the
+    // ENTIRE pipeline for a day: every claim failed and read as "already
+    // claimed". Until the migration lands, fall back to an updated_at-only
+    // CAS touch, which is equally atomic (the loser's stale timestamp
+    // matches nothing).
+    const { data: claimed, error: claimError } = await supabase
       .from("discovered_pages")
       .update({
         discovery_status: "processing",
@@ -211,7 +218,21 @@ export async function processPendingDiscoveredPages({
       .eq("discovery_status", page.discovery_status) // CAS on what we read
       .eq("updated_at", page.updated_at)
       .select("id");
-    if (!claimed || claimed.length === 0) continue;
+
+    let claimedCount = claimed?.length || 0;
+    if (
+      claimedCount === 0 &&
+      claimError?.message?.includes("discovery_status_check")
+    ) {
+      const { data: touchClaimed } = await supabase
+        .from("discovered_pages")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", page.id)
+        .eq("updated_at", page.updated_at)
+        .select("id");
+      claimedCount = touchClaimed?.length || 0;
+    }
+    if (claimedCount === 0) continue;
 
     summary.processed += 1;
     try {

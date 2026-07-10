@@ -61,10 +61,26 @@ export function tier1Eligibility({
   // rows published before structured criteria still carry their levels
   // there. Recognized-vocabulary mismatch is a hard exclusion; unrecognized
   // vocabulary fails open.
-  const levelVerdict = educationLevelVerdict(
+  let levelVerdict = educationLevelVerdict(
     profile,
     opportunity.eligible_education_levels
   );
+
+  // When a row states no levels at all, its TITLE is often explicit
+  // ("Guaranteed Funding Package for PhD Students") — titles are
+  // high-precision for level mentions, and the check still fails open
+  // when the title names no level.
+  if (
+    levelVerdict === "open" &&
+    (!Array.isArray(opportunity.eligible_education_levels) ||
+      (opportunity.eligible_education_levels as unknown[]).length === 0)
+  ) {
+    const titleVerdict = educationLevelVerdict(profile, [
+      String(opportunity.title || ""),
+    ]);
+    if (titleVerdict === "mismatch") levelVerdict = "mismatch";
+  }
+
   if (levelVerdict === "mismatch") {
     reasons.push("This opportunity is for a different education level.");
   }
@@ -83,10 +99,10 @@ export function tier1Eligibility({
     (check) => check.criterion.strict && check.verdict === "unknown"
   );
 
-  if (
-    (evaluation.status === "eligible" || evaluation.status === "no_criteria") &&
-    uncertainChecks.length === 0
-  ) {
+  // no_criteria is NOT eligibility: a row with zero captured requirements
+  // is the unknown case (extraction may simply have missed them). It stays
+  // visible and scoreable, but never claims "eligible".
+  if (evaluation.status === "eligible" && uncertainChecks.length === 0) {
     return {
       decision: "eligible",
       blockers: [],
