@@ -10,7 +10,7 @@ import { ReportIssueButton } from "@/components/opportunities/report-issue-butto
 import { SimilarOpportunities } from "@/components/opportunities/similar-opportunities";
 import { OpportunityTypeBadge } from "@/components/ui/opportunity-type-badge";
 import { ApplicationStatusBadge } from "@/components/ui/application-status-badge";
-import { formatDateOnly } from "@/lib/utils/format";
+import { formatDateOnly, humanizeLabel } from "@/lib/utils/format";
 import { SourceTrustBadge } from "@/components/ui/source-trust-badge";
 import { DestinationConfidenceBadge } from "@/components/ui/destination-confidence-badge";
 import { FreshnessLabel } from "@/components/ui/freshness-label";
@@ -239,6 +239,19 @@ export default function OpportunityDetailPage() {
   }
 
   const applyUrl = opportunity ? resolveApplyUrl(opportunity) : null;
+  const detailAttributes = (opportunity as unknown as {
+    attributes?: {
+      nomination_required?: boolean;
+      deadline_time?: string;
+      deadline_timezone?: string;
+    };
+  } | null)?.attributes;
+  const nominationRequired = detailAttributes?.nomination_required === true;
+  const deadlineTimeText = detailAttributes?.deadline_time
+    ? [detailAttributes.deadline_time, detailAttributes.deadline_timezone]
+        .filter(Boolean)
+        .join(" ")
+    : null;
   const sourceDomain = opportunity ? domainFromUrl(opportunity.source_url) : null;
   const deadlineText = opportunity ? formatDate(opportunity.deadline) : null;
   const lastChecked = opportunity ? formatDate(opportunity.updated_at) : null;
@@ -314,11 +327,18 @@ export default function OpportunityDetailPage() {
                     rel="noopener noreferrer"
                     className="rounded-lg bg-primary px-6 py-2.5 text-[15px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   >
-                    Apply now
+                    {nominationRequired ? "Nomination details" : "Apply now"}
                   </a>
                 )}
                 <SaveOpportunityButton opportunityId={opportunity.id} />
               </div>
+              {nominationRequired && (
+                <p className="mt-2 text-sm text-neutral-500">
+                  You can&apos;t apply directly. candidates must be nominated
+                  (usually by their school). The link explains how nomination
+                  works.
+                </p>
+              )}
 
               {opportunity.deadline && (
                 <div className="mt-3">
@@ -336,8 +356,13 @@ export default function OpportunityDetailPage() {
               <FactItem
                 label="Deadline"
                 value={
-                  deadlineText ||
-                  (opportunity.application_status === "rolling" ? "Rolling" : null)
+                  deadlineText
+                    ? // Provider-stated time and zone ride along verbatim —
+                      // the date itself is never converted between zones.
+                      [deadlineText, deadlineTimeText].filter(Boolean).join(" · ")
+                    : opportunity.application_status === "rolling"
+                      ? "Rolling"
+                      : null
                 }
               />
               <FactItem label="Funding" value={opportunity.funding_amount} />
@@ -346,8 +371,7 @@ export default function OpportunityDetailPage() {
                 label="Effort"
                 value={
                   opportunity.effort_level
-                    ? opportunity.effort_level.charAt(0).toUpperCase() +
-                      opportunity.effort_level.slice(1)
+                    ? humanizeLabel(opportunity.effort_level)
                     : null
                 }
               />

@@ -308,7 +308,32 @@ export async function recheckOpportunity({
     };
   }
 
-  const pageResult = await fetchAndHashOpportunityPage(url);
+  let pageResult = await fetchAndHashOpportunityPage(url);
+
+  // Source pages die independently of the opportunity (Boren's source was
+  // an aggregator page that started returning 403 while borenawards.org
+  // stayed up). Before declaring a fetch failure, try the other URLs we
+  // hold — the applicant destination is usually the most durable.
+  if (!pageResult.ok || !pageResult.cleanHash) {
+    const alternates = Array.from(
+      new Set(
+        [
+          opportunity.application_destination_url,
+          opportunity.application_url,
+          opportunity.official_source_url,
+        ]
+          .map((value) => String(value || "").trim())
+          .filter((value) => value && value !== url)
+      )
+    );
+    for (const alternate of alternates) {
+      const alternateResult = await fetchAndHashOpportunityPage(alternate);
+      if (alternateResult.ok && alternateResult.cleanHash) {
+        pageResult = alternateResult;
+        break;
+      }
+    }
+  }
 
   if (!pageResult.ok || !pageResult.cleanHash) {
     const { error: updateError } = await supabase

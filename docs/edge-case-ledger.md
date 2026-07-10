@@ -1,4 +1,4 @@
-# Edge-case ledger — backend-perfection run
+# Edge-case ledger (cumulative)
 
 Format: #N — area — case — disposition (IMPLEMENTED/VERIFIED-EXISTING/DOCUMENTED-ACCEPTED)
 
@@ -59,3 +59,45 @@ Format: #N — area — case — disposition (IMPLEMENTED/VERIFIED-EXISTING/DOCU
 55. abuse — trial farming (new email per week) — DOCUMENTED-ACCEPTED for now: one-trial-per-account enforced; cross-account abuse needs payment-method fingerprinting, which arrives with Stripe
 56. ops — Gemini prepaid credits exhausting mid-night halts all AI crons (happened 2026-07-05) — DOCUMENTED: halt is fail-safe (no spend, no bad data); .env.example warns; billing alerting is a launch-ops task
 57. data — provider name in title matching can false-positive twins across genuinely different awards with identical yearless titles on the same domain — MITIGATED: domain+title must BOTH match, destination gate is the final arbiter, and drafts (not deletes) are the failure mode
+
+## Eligibility-and-extraction run (2026-07-10)
+
+58. extraction — the model doesn't know today's date: "applications open July 6" pages read as not-yet-open AFTER July 6 (caught live on Pearson: nominations had opened 4 days earlier, Pro said not_yet_open) — IMPLEMENTED: today's date injected into the extraction prompt with explicit judgment rules
+59. extraction — status vs deadline conflict: a page posts next cycle's deadline while saying "the 2026-2027 cycle is closed" (the Boren live failure) — IMPLEMENTED: status-language-wins rules in the prompt; recheck unpublishes any row whose page says closed/not_yet_open regardless of the posted deadline
+60. extraction — "final year of senior secondary school" read as undergraduate (the Pearson live failure) — IMPLEMENTED: canonical education-level tokens in the prompt + Gemini Pro for all extraction
+61. extraction — an award FOR undergraduate study applied to WHILE IN high school extracted as undergraduate — IMPLEMENTED: prompt rule that levels describe what the applicant IS when applying
+62. extraction — residency criteria omitted entirely (Excelsior's "New York State residents" missed by Flash) — IMPLEMENTED: Pro + "residency/location are never optional to capture" + verbatim eligibility_text so Tier 2 can recover anything still missed
+63. matching — substring crosstalk in level aliases: "post secondary" contains "secondary" so high-schoolers matched undergrad-only rows; "senior secondary" contains "senior" — IMPLEMENTED: ordered consume-as-you-match rules in the canonical education-levels module (26-check harness)
+64. matching — "graduating senior" is genuinely ambiguous (high-school or college senior) — IMPLEMENTED: maps to BOTH levels so neither audience is wrongly excluded
+65. matching — unknown education vocabulary must fail open, not exclude — IMPLEMENTED: unrecognized text → visible + uncertain, never a mismatch
+66. display — date-only strings rendered through the local timezone show the previous day west of UTC (Pearson's Nov 6 deadline displayed "Nov 5" to every Ontario viewer) — IMPLEMENTED: formatDateOnly renders calendar dates at UTC noon; card and detail page converted
+67. schema — the application_status CHECK constraint predates not_yet_open; writing it crashes pipelines until the migration lands — IMPLEMENTED: writeWithStatusFallback downgrades to 'closed' and retries once; apply-me-2.sql widens the constraint
+68. visibility — auto-publish could go live with a non-open status if any upstream branch was wrong — IMPLEMENTED: structural gate in ingest (only open/rolling publishes, ever)
+69. visibility — renewal detection treated a posted future deadline as a reopened cycle while the page still said closed — IMPLEMENTED: shouldCreateRenewedCycle refuses closed/not_yet_open statuses
+70. visibility — dark rows (closed/not-yet-open) with unchanged pages adopted live-row check schedules and could sleep past their own reopening — IMPLEMENTED: 5-day recheck leash while dark; announced open dates checked ON the day; past open dates retry in 2 days
+71. tier2 — Flash eligibility on every browse would scale cost linearly with traffic — IMPLEMENTED: durable cache keyed (opportunity, relevant-profile-fingerprint) shared across users, material-hash invalidation, batch-of-8 calls, per-request AI budget; repeat browsing costs zero
+72. tier2 — profile edits to experiences/goals must not invalidate cached eligibility decisions — IMPLEMENTED: the fingerprint hashes ONLY eligibility-relevant facts
+73. tier2 — a missing cache table (migration lag) must not silently become uncached Flash spend — IMPLEMENTED: degrades to uncertain with zero AI calls
+74. tier2 — the model returning opportunity ids it wasn't asked about — IMPLEMENTED: only requested ids accepted; unanswered ids default to uncertain
+75. eligibility — Tier 1 must never exclude on missing profile data even for strict criteria — VERIFIED: 26-case harness; ineligible only ever from positive contradictions
+76. scoring — uncertain-but-actually-ineligible rows spending Pro scoring tokens — IMPLEMENTED: Tier-2 gate runs before the scoring call (Flash at ~1/50th the price of the call it prevents)
+77. search — AI search returned rows the searcher can't use (law fellowships for a CS undergrad, NY-resident awards for Ontario) — IMPLEMENTED: allowlisted profile facts in the search prompt; an honest zero-results answer with the interpretation line explaining what was searched
+78. search — AI search could surface closed/not-yet-open rows — IMPLEMENTED: the browse visibility filter now applies to the search catalog query
+79. reports — the Gemini fallback returned empty text every time: Pro's thinking consumed the whole 2048-token budget — IMPLEMENTED: 8192; caught by the live founder-profile test
+80. billing — database-only (Basic) users with historical score rows — VERIFIED: browse and detail key off hasCompetitivenessRanking; old rows stay in the DB (data preserved on downgrade) but don't render
+81. profile — the category selector accepted unlimited picks (a Premium user could select 5+ and silently not get the 5th scored) — IMPLEMENTED: hard cap at the plan limit in the profile editor, cap of 4 at onboarding, server-side slice at scoring time
+82. profile — age boundary days: a birthday today counts the new age, tomorrow doesn't — VERIFIED: 9-case harness including both boundaries against the founder's live DOB
+83. profile — optional DOB meant age-restricted awards could never be confirmed for anyone who skipped it — IMPLEMENTED: DOB required at onboarding and profile edit, with plausibility bounds (10-100 years old)
+84. display — nomination-required rows showed an "Apply now" button (you cannot apply; your school nominates) — IMPLEMENTED: button reads "Nomination details" with an explainer line
+85. display — machine tokens (highly_selective, all_fields, not_yet_open) reaching the UI raw — IMPLEMENTED: humanize()/humanizeLabel() formatting layer + status label map; a rendering-layer rule, not a one-time cleanup
+86. display — provider-stated deadline time and timezone shown verbatim, never converted (conversion recreates the off-by-one class) — IMPLEMENTED on the detail page
+87. refresh — catalog remediation must not bypass production ingest (manual patches drift from the pipeline) — IMPLEMENTED: refresh-catalog.ts is recheckOpportunity + the destination ranker, nothing bespoke
+88. destination — verified-but-generic Apply links (program page instead of the application page — the Pearson complaint) — IMPLEMENTED: refresh re-ranks non-application-endpoint destinations and adopts only AI-verified upgrades
+89. concurrency — two browse tabs resolving Tier 2 for the same rows could double-call Flash — MITIGATED: upserts on (opportunity, profile_key) are idempotent and the per-request budget caps waste at one batch
+90. search — prompt injection via the student's own query or the catalog text — IMPLEMENTED: untrusted-DATA rule in the search prompt covering both
+91. extraction — vague reopening language ("opens fall 2026") has no ISO date to schedule against — IMPLEMENTED: season parsing (fall→Sep 1, spring→Mar 1...) in the recheck scheduler + application_opens_note attribute
+92. eligibility — the evaluator's education_level criterion could never return not_met, so a corrected Pearson still wouldn't block — IMPLEMENTED: recognized-vocabulary mismatch now returns not_met inside the evaluator (fail-open preserved for unknown vocab)
+93. matching — field families must be one-directional (inclusive): they widen matches, never exclude — VERIFIED by design; Dalhousie's "Non-medical" stays uncertain and goes to Tier 2
+94. data — re-extraction merge dropped application_status/cycle_notes/deadline_confidence, so a page saying "closed" left the row open — IMPLEMENTED: merge carries the status fields; current-page language wins
+95. cost — Pro extraction is ~13x Flash; failed pages must not retry unbounded — VERIFIED-EXISTING: withRetry caps at 2, recheck attempts are counted, sweep budgets bound nightly spend
+96. recheck — a dead/blocking SOURCE page (Boren's aggregator source went 403) must not strand a live row unchecked while the official site is up — IMPLEMENTED: recheck falls back through application_destination_url / application_url / official_source_url before declaring fetch failure
