@@ -21,7 +21,7 @@ type AiResult = {
 };
 
 /**
- * Premium natural-language search. Users describe what they want
+ * Pro/Premium natural-language search. Users describe what they want
  * ("research on cancer this summer in California with a stipend") and get
  * ranked picks from the verified catalog, each with a reason. Non-premium
  * users see the input and an upgrade note on submit.
@@ -129,14 +129,14 @@ export function AiSearch({ hasAiSearch }: { hasAiSearch: boolean }) {
       {upgradeNeeded && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3">
           <p className="text-sm text-neutral-800 dark:text-neutral-200">
-            AI search is a Premium feature: describe anything, get verified
+            AI search comes with Pro and Premium: describe anything, get verified
             matches back.
           </p>
           <Link
             href="/pricing"
             className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
-            See Premium
+            See plans
           </Link>
         </div>
       )}

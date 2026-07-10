@@ -740,6 +740,21 @@ export function ProfileForm() {
       return;
     }
 
+    // Date of birth is required: age-restricted opportunities can't be
+    // matched without it. Accept only a plausible student birth date.
+    const dobOk =
+      /^\d{4}-\d{2}-\d{2}$/.test(form.date_of_birth) &&
+      !Number.isNaN(new Date(form.date_of_birth).getTime());
+    const dobYear = dobOk ? Number(form.date_of_birth.slice(0, 4)) : 0;
+    const thisYear = new Date().getUTCFullYear();
+    if (!dobOk || dobYear < thisYear - 100 || dobYear > thisYear - 10) {
+      setMessage(
+        "Please enter your date of birth. It's used to match you with age-eligible opportunities."
+      );
+      setLoading(false);
+      return;
+    }
+
     const basePayload = {
       id: user.id,
       nationality: form.nationality,
@@ -824,8 +839,19 @@ export function ProfileForm() {
     : "Pick your preferred categories now. Upgrade any time to unlock automatic matching.";
 
   function updateOpportunityPreferences(values: string[]) {
-    // Everyone may record preferences; the plan only gates how many get
-    // automatic scoring (enforced server-side at scoring time).
+    // Hard cap at the plan's category limit — here, at onboarding, and
+    // server-side at scoring time. A Premium user picking a 5th category
+    // used to silently succeed and then silently not be scored for it;
+    // refusing the selection is the honest behavior.
+    if (values.length > maxRankedCategories) {
+      setMessage(
+        `Your plan includes ${maxRankedCategories} categor${
+          maxRankedCategories === 1 ? "y" : "ies"
+        }. Remove one before adding another.`
+      );
+      return;
+    }
+    setMessage("");
     updateField("target_opportunity_types", values);
   }
 
@@ -1110,15 +1136,15 @@ export function ProfileForm() {
               </div>
 
               <div className="space-y-2">
-                <Label>Date of birth (optional)</Label>
+                <Label>Date of birth</Label>
                 <Input
                   type="date"
+                  required
                   value={form.date_of_birth}
                   onChange={(event) => updateField("date_of_birth", event.target.value)}
                 />
                 <p className="text-xs text-neutral-500">
-                  Used only to match age-eligible opportunities. Skip it and
-                  age-restricted ones simply show a flag instead.
+                  Used to match you with age-eligible opportunities.
                 </p>
               </div>
 

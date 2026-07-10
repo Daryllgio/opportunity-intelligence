@@ -123,13 +123,20 @@ function parseDate(value: unknown) {
 }
 
 /** When to look again at a row that isn't accepting applications: the
- * announced open date if we have one, otherwise a five-week snooze. */
+ * announced open date if it's ahead; a two-day retry when the announced
+ * open date has already passed (the page is probably about to flip, or its
+ * wording is stale); otherwise a five-week snooze. */
 function computeReopenCheckAt(applicationOpensAt: unknown, cycleNotes: unknown) {
   const now = new Date();
   const opensAt = String(applicationOpensAt || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(opensAt)) {
     const opens = new Date(`${opensAt}T00:00:00Z`);
-    if (!Number.isNaN(opens.getTime()) && opens > now) return opens.toISOString();
+    if (!Number.isNaN(opens.getTime())) {
+      if (opens > now) return opens.toISOString();
+      const retry = new Date(now);
+      retry.setUTCDate(retry.getUTCDate() + 2);
+      return retry.toISOString();
+    }
   }
   void cycleNotes; // month/season parsing lives in the ingest scheduler
   const snooze = new Date(now);

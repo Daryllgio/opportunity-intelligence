@@ -46,6 +46,7 @@ export default function OnboardingPage() {
 
   // Step 1 — basics
   const [nationality, setNationality] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [countryOfStudy, setCountryOfStudy] = useState("");
   const [stateOrProvince, setStateOrProvince] = useState("");
 
@@ -92,6 +93,7 @@ export default function OnboardingPage() {
           setNationality(data.nationality || "");
           setCountryOfStudy(data.country_of_study || "");
           setStateOrProvince(String(record.state_or_province || ""));
+          setDateOfBirth(data.date_of_birth || "");
           setEducationLevel(data.education_level || "");
           setSchool(data.school || "");
           setSchoolOther(data.school_other || "");
@@ -149,10 +151,16 @@ export default function OnboardingPage() {
     let ok = true;
 
     if (step === 0) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+        setError("Please enter your date of birth. It's used to match you with age-eligible opportunities.");
+        return;
+      }
+      setError("");
       ok = await savePartial({
         nationality: nationality || null,
         country_of_study: countryOfStudy || null,
         state_or_province: stateOrProvince || null,
+        date_of_birth: dateOfBirth,
       });
     } else if (step === 1) {
       ok = await savePartial({
@@ -204,12 +212,14 @@ export default function OnboardingPage() {
     router.push("/opportunities");
   }
 
+  const MAX_ONBOARDING_CATEGORIES = 4; // Premium's cap - the largest any plan allows
+
   function toggleCategory(type: string) {
-    setCategories((current) =>
-      current.includes(type)
-        ? current.filter((t) => t !== type)
-        : [...current, type]
-    );
+    setCategories((current) => {
+      if (current.includes(type)) return current.filter((t) => t !== type);
+      if (current.length >= MAX_ONBOARDING_CATEGORIES) return current;
+      return [...current, type];
+    });
   }
 
   const inputClass =
@@ -282,6 +292,23 @@ export default function OnboardingPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label htmlFor="dateOfBirth" className={labelClass}>
+                  Date of birth
+                </label>
+                <input
+                  id="dateOfBirth"
+                  type="date"
+                  value={dateOfBirth}
+                  onChange={(event) => setDateOfBirth(event.target.value)}
+                  className={`${inputClass} mt-2`}
+                  required
+                />
+                <p className="mt-2 text-xs text-neutral-500">
+                  Used to match you with age-eligible opportunities.
+                </p>
               </div>
 
               <div>
