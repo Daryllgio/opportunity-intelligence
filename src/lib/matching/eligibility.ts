@@ -16,11 +16,17 @@
  * demographic criteria in particular can only ever confirm, not exclude.
  */
 
+import { educationLevelVerdict } from "@/lib/matching/education-levels";
+import { fieldSatisfies } from "@/lib/matching/field-families";
+
 export type EligibilityCriterion = {
   kind: string;
   requirement: string;
   values: string[];
   strict: boolean;
+  /** For field_of_study: how wide the door is. "narrow" = named major(s)
+   * only, "family" = a field family ("STEM"), "open" = all fields. */
+  breadth?: "narrow" | "family" | "open";
 };
 
 export type CriterionVerdict = "met" | "not_met" | "unknown";
@@ -87,11 +93,17 @@ export function normalizeEligibilityCriteria(raw: unknown): EligibilityCriterion
     const values = Array.isArray(record.values)
       ? record.values.map(cleanString).filter(Boolean).slice(0, 12)
       : [];
+    const breadthRaw = cleanString(record.breadth).toLowerCase();
+    const breadth =
+      breadthRaw === "narrow" || breadthRaw === "family" || breadthRaw === "open"
+        ? breadthRaw
+        : undefined;
     criteria.push({
       kind,
       requirement,
       values,
       strict: record.strict !== false, // stated requirements default to hard
+      ...(breadth ? { breadth } : {}),
     });
   }
   return criteria.slice(0, 24);
@@ -406,12 +418,35 @@ function evaluateCriterion(
       const met = matchAnyValue(values, candidates, (value, candidate) =>
         value.includes(candidate) || candidate.includes(value)
       );
-      return met ? { verdict: "met", note: null } : { verdict: "unknown", note: null };
+      if (met) return { verdict: "met", note: null };
+
+      // A recognized level mismatch is a real contradiction: "high_school"
+      // (or "final year of senior secondary school") positively excludes an
+      // enrolled undergraduate. The canonical module fails open on any
+      // vocabulary it can't map, so this never excludes on unknown wording.
+      if (criterion.kind === "education_level") {
+        const levelVerdict = educationLevelVerdict(profile, values);
+        if (levelVerdict === "mismatch") {
+          return {
+            verdict: "not_met",
+            note: "This is for a different education level.",
+          };
+        }
+      }
+      return { verdict: "unknown", note: null };
     }
 
     case "field_of_study": {
+      // Inclusive by design: families widen matches (biology counts as STEM
+      // and health sciences), and a miss is only ever "unknown" — majors are
+      // fuzzy and the Tier-2 resolver owns genuine ambiguity. Never exclude
+      // on field alone.
+      if (criterion.breadth === "open" || isOpenValueList(criterion.values)) {
+        return { verdict: "met", note: null };
+      }
       const fields = profileFields(profile);
       if (fields.length === 0) return { verdict: "unknown", note: null };
+      if (fieldSatisfies(fields, values)) return { verdict: "met", note: null };
       const met = matchAnyValue(values, fields, (value, candidate) =>
         value.includes(candidate) || candidate.includes(value)
       );

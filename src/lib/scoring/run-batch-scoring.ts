@@ -33,6 +33,8 @@ import {
   type ExperienceSummaryLike,
 } from "@/lib/scoring/priority";
 import { normalizeOpportunityType } from "@/lib/discovery/taxonomy";
+import { tier1Eligibility } from "@/lib/matching/tier1";
+import { resolveEligibilityTier2 } from "@/lib/matching/tier2-eligibility";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -166,6 +168,8 @@ async function fetchAllActiveOpportunities(supabase: SupabaseClient) {
       .eq("is_active", true)
       .eq("is_approved", true)
       .eq("lifecycle_status", "active")
+      // Visibility parity with browse: never score what users never see.
+      .or("application_status.is.null,application_status.in.(open,rolling,unknown)")
       .range(from, from + pageSize - 1);
 
     if (error) throw new Error(error.message);
@@ -489,7 +493,40 @@ export async function runBatchScoringForUser({
     totalRemaining: REFRESH_BATCH_CAP,
     perCategoryRemaining: {},
   });
-  const unscored = [...newlyChosen, ...refreshChosen];
+  let unscored = [...newlyChosen, ...refreshChosen];
+
+  // Tier-2 eligibility gate on the rows about to spend Pro tokens: the
+  // cached Flash resolver settles what the deterministic rules couldn't.
+  // A confirmed-ineligible row must never be scored — the user would see a
+  // score on an award they cannot win, and the platform pays twice (Flash
+  // here is ~1/50th the cost of the Pro scoring call it prevents).
+  try {
+    const uncertainRows = unscored
+      .map((candidate) => candidate.opportunity as Record<string, unknown>)
+      .filter((opportunity) => {
+        const tier1 = tier1Eligibility({
+          profile: profile as Record<string, unknown>,
+          opportunity,
+        });
+        return tier1.decision === "uncertain" && tier1.uncertainChecks.length > 0;
+      });
+    if (uncertainRows.length > 0) {
+      const tier2 = await resolveEligibilityTier2({
+        supabase,
+        profile: profile as Record<string, unknown>,
+        rows: uncertainRows,
+        maxAiCalls: 6,
+      });
+      unscored = unscored.filter(
+        (candidate) =>
+          tier2.decisions.get(
+            String((candidate.opportunity as Record<string, unknown>).id)
+          )?.decision !== "ineligible"
+      );
+    }
+  } catch {
+    // Resolver trouble never blocks scoring — Tier 1 already passed these.
+  }
 
   if (unscored.length === 0) {
     if (scoresRemaining <= 0 && newCandidates.length > 0) {

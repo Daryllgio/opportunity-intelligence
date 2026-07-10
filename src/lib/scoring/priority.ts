@@ -10,6 +10,8 @@
  */
 import { normalizeOpportunityType } from "@/lib/discovery/taxonomy";
 import { evaluateEligibility } from "@/lib/matching/eligibility";
+import { educationLevelVerdict } from "@/lib/matching/education-levels";
+import { fieldFamiliesOf, fieldSatisfies } from "@/lib/matching/field-families";
 import type { PlanLimits } from "@/lib/billing/plans";
 
 type Row = Record<string, unknown>;
@@ -70,88 +72,32 @@ export function getRankedCategories(profile: Row, planLimits: PlanLimits): strin
 // Eligibility checks (hard gates — an ineligible opportunity never spends quota)
 // ---------------------------------------------------------------------------
 
-// Aliases reflect the REAL vocabulary extraction produces (it is free text):
-// 'bachelors', 'post-secondary', 'university_students', 'college',
-// 'undergraduate (second year or higher)', 'graduating_senior'... Exact
-// matching against this vocabulary is how valid rows silently disappear.
-const EDUCATION_ALIASES: Record<string, string[]> = {
-  high_school: ["high school", "high_school", "secondary"],
-  undergraduate: [
-    "undergraduate", "undergrad", "college", "university student",
-    "university students", "bachelor", "bachelors", "associate",
-    "post secondary", "post-secondary", "postsecondary",
-    "graduating senior", "graduating_senior", "freshman", "sophomore",
-    "junior", "senior",
-  ],
-  transfer_student: ["transfer"],
-  masters: ["masters", "master's", "master", "graduate"],
-  phd: ["phd", "doctoral", "doctorate", "graduate"],
-  medical_student: ["medical", "md", "medical student"],
-  law_student: ["law", "jd", "law student", "juris doctor", "llb", "llm", "master of laws"],
-  mba: ["mba", "business school"],
-  professional_student: ["professional"],
-  recent_graduate: ["recent graduate", "alumni", "early career"],
-  early_career: ["early career", "young professional"],
-};
-
-// Every alias across all levels — used to tell "recognized level that
-// excludes this user" apart from "vocabulary we've never seen".
-const ALL_KNOWN_LEVEL_ALIASES = Object.values(EDUCATION_ALIASES).flat();
-
-function normalizeEducationLevel(value: unknown) {
-  return normalizeText(value).replace(/[\s-]+/g, "_").replace(/[^a-z_]/g, "");
-}
-
+// Education-level matching lives in the canonical shared module — ordered,
+// phrase-aware rules that survive free-text vocabulary ("senior secondary
+// school" = high school, "post-secondary" = undergraduate) without the
+// substring crosstalk the old alias lists had ("post secondary" contained
+// "secondary", so a high-school profile matched undergrad-only rows).
 export function educationMatches(profile: Row, opportunity: Row) {
-  const eligible = normalizeList(opportunity.eligible_education_levels);
-  if (eligible.length === 0 || isOpenList(eligible)) return true;
-
-  const level = normalizeEducationLevel(
-    profile.education_level || profile.student_status
-  );
-  if (!level) return true;
-
-  const aliases = EDUCATION_ALIASES[level] || [level.replace(/_/g, " ")];
-  return eligible.some((item) =>
-    aliases.some((alias) => item.includes(alias) || alias.includes(item))
-  );
+  const verdict = educationLevelVerdict(profile, opportunity.eligible_education_levels);
+  return verdict === "match" || verdict === "open";
 }
 
 /**
- * Should the BROWSE page hide this row for this user's level?
+ * Should this row be hidden for this user's level?
  *
- * Hide only when the row's stated levels are RECOGNIZED vocabulary and none
- * of them include the user (a PhD-only fellowship for an undergraduate).
- * Unrecognized vocabulary fails OPEN — visible — because free-text level
- * values the aliases don't know yet must never silently vanish rows. This
- * replaced an exact-containment SQL filter (`cs.{undergraduate}`) that hid
- * 'bachelors', 'post-secondary', 'college', and 'undergraduate (second year
- * or higher)' rows from undergraduates.
+ * Hide only on a confident "mismatch": every stated level is RECOGNIZED
+ * vocabulary and none covers the user (a PhD-only fellowship for an
+ * undergraduate). Unrecognized vocabulary fails OPEN — visible — because
+ * free-text level values we've never seen must never silently vanish rows.
  */
 export function educationExcludes(profile: Row, opportunity: Row): boolean {
-  const eligible = normalizeList(opportunity.eligible_education_levels);
-  if (eligible.length === 0 || isOpenList(eligible)) return false;
-  if (educationMatches(profile, opportunity)) return false;
-
-  const level = normalizeEducationLevel(
-    profile.education_level || profile.student_status
-  );
-  if (!level) return false;
-
-  // Only exclude when every stated level maps to vocabulary we know —
-  // meaning the mismatch is real, not a dialect we haven't learned.
-  const allRecognized = eligible.every((item) =>
-    ALL_KNOWN_LEVEL_ALIASES.some(
-      (alias) => item.includes(alias) || alias.includes(item)
-    )
-  );
-  return allRecognized;
+  return educationLevelVerdict(profile, opportunity.eligible_education_levels) === "mismatch";
 }
 
 export function educationMatchStrength(profile: Row, opportunity: Row): number {
-  const eligible = normalizeList(opportunity.eligible_education_levels);
-  if (eligible.length === 0 || isOpenList(eligible)) return 6; // open to everyone
-  return educationMatches(profile, opportunity) ? 14 : 0; // direct listing
+  const verdict = educationLevelVerdict(profile, opportunity.eligible_education_levels);
+  if (verdict === "open") return 6; // open to everyone
+  return verdict === "match" ? 14 : 0; // direct listing
 }
 
 export function regionMatches(profile: Row, opportunity: Row) {
@@ -199,47 +145,23 @@ export function regionMatchStrength(profile: Row, opportunity: Row): number {
   return 0;
 }
 
-const FIELD_FAMILIES: Record<string, string[]> = {
-  stem: [
-    "computer science", "software engineering", "computer engineering", "data science",
-    "cybersecurity", "information systems", "engineering", "electrical engineering",
-    "mechanical engineering", "civil engineering", "chemical engineering",
-    "biomedical engineering", "mathematics", "statistics", "physics", "chemistry",
-    "biology", "biochemistry", "biomedical sciences", "neuroscience", "health sciences",
-    "medicine", "nursing", "public health", "kinesiology", "environmental science",
-    "stem",
-  ],
-  "social sciences": [
-    "economics", "political science", "psychology", "sociology", "anthropology",
-    "international relations", "international development", "public policy",
-    "public administration", "criminology", "social work",
-  ],
-  "health sciences": [
-    "biology", "biochemistry", "biomedical sciences", "health sciences", "medicine",
-    "nursing", "public health", "pharmacy", "dentistry", "neuroscience", "kinesiology",
-  ],
-};
-
-function getFieldFamilies(field: unknown): string[] {
-  const normalized = normalizeText(field);
-  if (!normalized) return [];
-  const families = [normalized];
-  for (const [family, members] of Object.entries(FIELD_FAMILIES)) {
-    if (members.includes(normalized)) families.push(family);
-  }
-  return families;
+// Field families live in the shared matching module — one vocabulary for
+// scoring, eligibility, and Tier-2 prompts alike.
+function candidateProfileFields(profile: Row): string[] {
+  return [
+    normalizeText(profile.field_of_study),
+    normalizeText(profile.field_of_study_other),
+    normalizeText(profile.field_of_study_secondary),
+    normalizeText(profile.undergraduate_field_of_study),
+  ].filter((field) => field && field !== "other" && field !== "undeclared");
 }
 
 export function fieldMatches(profile: Row, opportunity: Row) {
   if (isOpenList(opportunity.eligible_fields)) return true;
   const eligibleFields = normalizeList(opportunity.eligible_fields);
-  const profileFields = getFieldFamilies(
-    profile.field_of_study || profile.field_of_study_other
-  );
+  const profileFields = candidateProfileFields(profile);
   if (profileFields.length === 0 || eligibleFields.length === 0) return true;
-  return profileFields.some((pf) =>
-    eligibleFields.some((ef) => pf === ef || pf.includes(ef) || ef.includes(pf))
-  );
+  return fieldSatisfies(profileFields, eligibleFields);
 }
 
 export function fieldMatchStrength(profile: Row, opportunity: Row): number {
@@ -254,7 +176,7 @@ export function fieldMatchStrength(profile: Row, opportunity: Row): number {
   ) {
     return 24; // exact field alignment is the strongest match signal we have
   }
-  const families = getFieldFamilies(direct).slice(1); // family names only
+  const families = fieldFamiliesOf(direct).slice(1); // family names only
   if (families.some((family) => eligibleFields.some((ef) => ef.includes(family)))) {
     return 14;
   }

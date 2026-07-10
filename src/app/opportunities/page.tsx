@@ -11,12 +11,9 @@ import {
 } from "@/components/opportunities/filter-sidebar";
 import { AiSearch } from "@/components/opportunities/ai-search";
 import { ScoreRefreshTrigger } from "@/components/opportunities/score-refresh-trigger";
-import {
-  evaluateEligibility,
-  shortBlockerLabel,
-} from "@/lib/matching/eligibility";
+import { shortBlockerLabel } from "@/lib/matching/eligibility";
+import { tier1Eligibility } from "@/lib/matching/tier1";
 import { profileScoringGate } from "@/lib/scoring/profile-gate";
-import { educationExcludes } from "@/lib/scoring/priority";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 
@@ -164,11 +161,17 @@ function OpportunitiesBrowse() {
       const type = searchParams.get("type");
       if (type) query = query.in("type", type.split(",").filter(Boolean));
 
-      // Education-level filtering happens CLIENT-SIDE with the alias-aware
-      // matcher shared with scoring (educationExcludes below). The old SQL
+      // Eligibility filtering happens CLIENT-SIDE with the two-tier system
+      // (tier1Eligibility below + the cached AI resolver). The old SQL
       // exact-containment filter (cs.{undergraduate}) silently hid rows
       // whose free-text levels said 'bachelors', 'post-secondary',
       // 'college', or 'undergraduate (second year or higher)'.
+
+      // Never show rows whose applications aren't open: closed cycles and
+      // not-yet-open opportunities are tracked internally, not browsable.
+      query = query.or(
+        "application_status.is.null,application_status.in.(open,rolling,unknown)"
+      );
 
       const country = searchParams.get("country");
       if (country) {
@@ -198,15 +201,7 @@ function OpportunitiesBrowse() {
         return;
       }
 
-      // Hide only recognized-level mismatches (PhD-only rows for an
-      // undergraduate); unknown level vocabulary stays visible.
-      const opportunities = ((data || []) as unknown as Opportunity[]).filter(
-        (row) =>
-          !educationExcludes(
-            profileData as Record<string, unknown>,
-            row as unknown as Record<string, unknown>
-          )
-      );
+      const opportunities = (data || []) as unknown as Opportunity[];
       if (!active) return;
       setRows(opportunities);
 
@@ -240,29 +235,112 @@ function OpportunitiesBrowse() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsKey, reloadNonce]);
 
-  // ─── Structured eligibility, evaluated against the viewer's profile ───
+  // ─── Two-tier eligibility against the viewer's profile ───
+  // Tier 1 (deterministic rules) runs instantly in the browser. Rows it
+  // positively rules out are NEVER shown — that's the product promise.
+  // Genuinely uncertain rows are resolved by the cached Tier-2 endpoint in
+  // the background; anything it confirms ineligible disappears too.
+  const tier1Results = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof tier1Eligibility>>();
+    if (!profileRow) return map;
+    for (const row of rows) {
+      map.set(
+        row.id,
+        tier1Eligibility({
+          profile: profileRow,
+          opportunity: row as unknown as Record<string, unknown>,
+        })
+      );
+    }
+    return map;
+  }, [rows, profileRow]);
+
+  const [aiDecisions, setAiDecisions] = useState<
+    Record<string, { decision: string; reason: string | null }>
+  >({});
+
+  useEffect(() => {
+    let active = true;
+    async function resolveUncertain() {
+      if (!profileRow) return;
+      const uncertainIds = rows
+        .filter((row) => {
+          const tier1 = tier1Results.get(row.id);
+          return (
+            tier1 &&
+            tier1.decision === "uncertain" &&
+            tier1.uncertainChecks.length > 0 &&
+            aiDecisions[row.id] === undefined
+          );
+        })
+        .map((row) => row.id)
+        .slice(0, 100);
+      if (uncertainIds.length === 0) return;
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return;
+
+      try {
+        const response = await fetch("/api/eligibility/resolve", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ opportunityIds: uncertainIds }),
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active && payload.decisions) {
+          setAiDecisions((current) => ({ ...current, ...payload.decisions }));
+        }
+      } catch {
+        // Network failure: rows simply stay visible (fail open).
+      }
+    }
+    resolveUncertain();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, tier1Results, profileRow]);
+
   const eligibilityFlags = useMemo(() => {
     const flags = new Map<string, string>();
-    if (!profileRow) return flags;
     for (const row of rows) {
-      const criteria = row.eligibility_criteria;
-      if (!Array.isArray(criteria) || criteria.length === 0) continue;
-      const result = evaluateEligibility({ profile: profileRow, criteria });
-      if (result.status === "ineligible" && result.blockers[0]) {
-        flags.set(row.id, shortBlockerLabel(result.blockers[0]));
+      const tier1 = tier1Results.get(row.id);
+      if (tier1?.decision === "ineligible" && tier1.blockers[0]) {
+        flags.set(row.id, shortBlockerLabel(tier1.blockers[0]));
       }
     }
     return flags;
-  }, [rows, profileRow]);
+  }, [rows, tier1Results]);
 
   const sortMode = searchParams.get("sort") || "match";
-  const hideIneligible = searchParams.get("eligible") === "only";
+  const hideUnverified = searchParams.get("eligible") === "only";
 
   // ─── Sort: best match (scored first), newest added, or deadline soonest ───
   const { scored, unscored } = useMemo(() => {
-    const visible = hideIneligible
-      ? rows.filter((row) => !eligibilityFlags.has(row.id))
-      : rows;
+    // Confirmed ineligible (rules or AI) is always hidden.
+    let visible = rows.filter((row) => {
+      const tier1 = tier1Results.get(row.id);
+      if (tier1?.decision === "ineligible") return false;
+      if (aiDecisions[row.id]?.decision === "ineligible") return false;
+      return true;
+    });
+    // The toggle additionally hides rows with unresolved strict requirements.
+    if (hideUnverified) {
+      visible = visible.filter((row) => {
+        const tier1 = tier1Results.get(row.id);
+        if (!tier1) return true;
+        if (tier1.decision === "eligible") return true;
+        return (
+          tier1.uncertainChecks.length === 0 ||
+          aiDecisions[row.id]?.decision === "eligible"
+        );
+      });
+    }
 
     if (sortMode === "newest") {
       const sorted = [...visible].sort((a, b) =>
@@ -284,7 +362,7 @@ function OpportunitiesBrowse() {
     scoredRows.sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0));
     // Unscored stay deadline-ascending (the fetch order).
     return { scored: scoredRows, unscored: unscoredRows };
-  }, [rows, scores, sortMode, hideIneligible, eligibilityFlags]);
+  }, [rows, scores, sortMode, hideUnverified, tier1Results, aiDecisions]);
 
   const combined = useMemo(() => [...scored, ...unscored], [scored, unscored]);
   const totalPages = Math.max(1, Math.ceil(combined.length / PAGE_SIZE));
@@ -563,7 +641,7 @@ function OpportunitiesBrowse() {
                       <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
                         <input
                           type="checkbox"
-                          checked={hideIneligible}
+                          checked={hideUnverified}
                           onChange={(event) =>
                             updateParams((params) => {
                               if (event.target.checked) params.set("eligible", "only");
@@ -573,7 +651,7 @@ function OpportunitiesBrowse() {
                           }
                           className="h-3.5 w-3.5 rounded border-neutral-300 accent-[var(--primary)]"
                         />
-                        Hide ones I can&apos;t apply to
+                        Only ones I can definitely apply to
                       </label>
                       <select
                         value={sortMode}

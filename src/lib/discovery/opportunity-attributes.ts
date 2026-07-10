@@ -23,6 +23,15 @@ export type OpportunityAttributes = {
   deadline_time?: string; // "23:59" local to the provider when stated
   deadline_timezone?: string; // IANA zone or stated abbreviation
   exclusivity_note?: string;
+  /** ISO date applications open — drives scheduled publishing. */
+  application_opens_at?: string;
+  /** When the page announces reopening without a date ("opens fall 2026"). */
+  application_opens_note?: string;
+  /** What the provider says selection is based on, verbatim-faithful. */
+  selection_criteria?: string[];
+  /** Verbatim excerpt of the page's eligibility section — the raw material
+   * Tier-2 AI eligibility reads, so nuance survives structured extraction. */
+  eligibility_text?: string;
   [key: string]: unknown; // room for kinds we didn't anticipate
 };
 
@@ -110,6 +119,25 @@ export function normalizeOpportunityAttributes(raw: unknown): OpportunityAttribu
 
   const exclusivity = cleanString(input.exclusivity_note);
   if (exclusivity) out.exclusivity_note = exclusivity;
+
+  const opensAt = cleanIsoDate(input.application_opens_at);
+  if (opensAt) out.application_opens_at = opensAt;
+  const opensNote = cleanString(input.application_opens_note);
+  if (opensNote) out.application_opens_note = opensNote;
+
+  if (Array.isArray(input.selection_criteria)) {
+    const selection = input.selection_criteria
+      .map(cleanString)
+      .filter((s): s is string => Boolean(s))
+      .slice(0, 10);
+    if (selection.length) out.selection_criteria = selection;
+  }
+
+  const eligibilityText = String(input.eligibility_text ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 2000);
+  if (eligibilityText) out.eligibility_text = eligibilityText;
 
   return out;
 }
