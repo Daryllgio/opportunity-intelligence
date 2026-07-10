@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 const REPORT_LINES = [
   { kind: "strength", text: "Your research experience matches what this fellowship weighs most." },
   { kind: "strength", text: "3.8 GPA clears the academic bar comfortably." },
-  { kind: "gap", text: "No leadership evidence yet — selection committees look for it here." },
+  { kind: "gap", text: "No leadership evidence yet. selection committees look for it here." },
   { kind: "gap", text: "Your essay needs a concrete community-impact example." },
   { kind: "action", text: "Lead one campus initiative this term, then reapply strength: 87." },
 ] as const;

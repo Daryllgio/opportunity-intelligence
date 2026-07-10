@@ -59,7 +59,7 @@ export function ReportIssueButton({ opportunityId }: { opportunityId: string }) 
   if (done) {
     return (
       <p className="text-sm text-neutral-500">
-        Thanks — we&apos;ll re-verify this opportunity.
+        Thanks. we&apos;ll re-verify this opportunity.
       </p>
     );
   }

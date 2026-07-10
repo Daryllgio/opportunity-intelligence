@@ -127,7 +127,7 @@ export default async function HomePage() {
           </div>
         </div>
 
-        {/* Product preview — cards slide in, scores count up */}
+        {/* Product preview. cards slide in, scores count up */}
         <div className="animate-fade-up-slow stagger-4 relative mx-auto mt-16 max-w-4xl px-6 pb-20">
           <MatchCardsDemo />
         </div>
@@ -177,7 +177,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Competitiveness reports — the coaching layer */}
+      {/* Competitiveness reports. the coaching layer */}
       <section className="border-y border-neutral-100 bg-neutral-50/60 dark:border-neutral-900 dark:bg-neutral-900/40">
         <div className="mx-auto grid max-w-5xl grid-cols-1 items-center gap-10 px-6 py-20 md:grid-cols-[340px_1fr] lg:grid-cols-[420px_1fr]">
           <Reveal>

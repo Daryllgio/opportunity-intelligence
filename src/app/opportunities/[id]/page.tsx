@@ -10,12 +10,17 @@ import { ReportIssueButton } from "@/components/opportunities/report-issue-butto
 import { SimilarOpportunities } from "@/components/opportunities/similar-opportunities";
 import { OpportunityTypeBadge } from "@/components/ui/opportunity-type-badge";
 import { ApplicationStatusBadge } from "@/components/ui/application-status-badge";
+import { formatDateOnly } from "@/lib/utils/format";
 import { SourceTrustBadge } from "@/components/ui/source-trust-badge";
 import { DestinationConfidenceBadge } from "@/components/ui/destination-confidence-badge";
 import { FreshnessLabel } from "@/components/ui/freshness-label";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
-import { evaluateEligibility } from "@/lib/matching/eligibility";
+import {
+  criterionKindLabel,
+  shortBlockerLabel,
+} from "@/lib/matching/eligibility";
+import { tier1Eligibility } from "@/lib/matching/tier1";
 
 type Opportunity = {
   id: string;
@@ -76,15 +81,12 @@ const DESTINATION_TYPE_LABELS: Record<string, string> = {
   not_found: "Not verified",
 };
 
+// Calendar dates must never pass through local-timezone Date rendering:
+// new Date("2026-11-06") is UTC midnight, which is Nov 5 in Ontario — the
+// exact off-by-one the founder caught on Pearson.
 function formatDate(value: string | null): string | null {
   if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDateOnly(value);
 }
 
 function domainFromUrl(url: string | null): string | null {
@@ -372,15 +374,26 @@ export default function OpportunityDetailPage() {
                   </section>
                 )}
 
-                {/* ── Requirements checklist ── */}
-                {opportunity.competitiveness_factors &&
-                  opportunity.competitiveness_factors.length > 0 && (
+                {/* ── What selection is based on ──
+                    Prefers the provider's own stated selection criteria
+                    (captured at extraction); falls back to the extracted
+                    competitiveness factors. */}
+                {(() => {
+                  const attributes = (opportunity as unknown as {
+                    attributes?: { selection_criteria?: string[] };
+                  }).attributes;
+                  const selectionBasis =
+                    attributes?.selection_criteria?.length
+                      ? attributes.selection_criteria
+                      : opportunity.competitiveness_factors || [];
+                  if (selectionBasis.length === 0) return null;
+                  return (
                     <section className="mt-10">
                       <h2 className="text-lg font-semibold">
                         What selection is based on
                       </h2>
                       <ul className="mt-3 space-y-2">
-                        {opportunity.competitiveness_factors.map((factor) => (
+                        {selectionBasis.map((factor) => (
                           <li
                             key={factor}
                             className="flex items-start gap-2.5 text-[15px] leading-6 text-neutral-600 dark:text-neutral-300"
@@ -394,66 +407,58 @@ export default function OpportunityDetailPage() {
                         ))}
                       </ul>
                     </section>
-                  )}
+                  );
+                })()}
 
-                {/* ── Eligibility ── */}
+                {/* ── Eligibility (minimal by design) ──
+                    Passing every check renders NOTHING. a clean page is the
+                    signal. One short heads-up appears only for requirements
+                    the system genuinely can't verify (financial need, a
+                    prerequisite course), or when the profile positively
+                    fails a requirement (reachable via saved/direct links -
+                    browse already hides these). Never the full checklist. */}
                 <section className="mt-10">
                   <h2 className="text-lg font-semibold">Eligibility</h2>
 
                   {(() => {
                     if (!profileRow) return null;
-                    const criteria = opportunity.eligibility_criteria;
-                    if (!Array.isArray(criteria) || criteria.length === 0) {
-                      return null;
-                    }
-                    const result = evaluateEligibility({
+                    const tier1 = tier1Eligibility({
                       profile: profileRow,
-                      criteria,
+                      opportunity: opportunity as unknown as Record<string, unknown>,
                     });
-                    if (result.checks.length === 0) return null;
-                    const iconFor = (verdict: string) =>
-                      verdict === "met" ? (
-                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 6.5L4.5 9L10 3.5" /></svg>
-                        </span>
-                      ) : verdict === "not_met" ? (
-                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400">
-                          <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3l6 6M9 3l-6 6" /></svg>
-                        </span>
-                      ) : (
-                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                          <span className="h-1 w-1 rounded-full bg-current" />
-                        </span>
-                      );
-                    return (
-                      <div className="mt-4 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-                        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                          Stated requirements, checked against your profile
+
+                    if (tier1.decision === "ineligible") {
+                      const label = tier1.blockers[0]
+                        ? shortBlockerLabel(tier1.blockers[0])
+                        : tier1.reasons[0] || "a stated requirement";
+                      return (
+                        <p className="mt-3 text-sm text-red-700 dark:text-red-400">
+                          Based on your profile, this doesn&apos;t appear to be
+                          open to you ({label.toLowerCase()}). Double-check with
+                          the provider before ruling it out.
                         </p>
-                        <ul className="mt-3 space-y-2.5">
-                          {result.checks.map((check, index) => (
-                            <li key={index} className="flex gap-2.5 text-sm">
-                              {iconFor(check.verdict)}
-                              <span className="text-neutral-800 dark:text-neutral-200">
-                                {check.criterion.requirement}
-                                {check.note && (
-                                  <span className="block text-xs text-neutral-500">
-                                    {check.note}
-                                  </span>
-                                )}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                        {result.status === "ineligible" && (
-                          <p className="mt-3 border-t border-neutral-100 pt-3 text-sm text-red-700 dark:border-neutral-800 dark:text-red-400">
-                            Based on your profile, you do not appear to meet every
-                            requirement. Double-check with the provider before
-                            ruling it out.
-                          </p>
-                        )}
-                      </div>
-                    );
+                      );
+                    }
+
+                    if (
+                      tier1.decision === "uncertain" &&
+                      tier1.uncertainChecks.length > 0
+                    ) {
+                      const named = tier1.uncertainChecks
+                        .slice(0, 2)
+                        .map((check) =>
+                          criterionKindLabel(check.criterion.kind).toLowerCase()
+                        );
+                      return (
+                        <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-400">
+                          May require {named.join(" and ")}
+                          {tier1.uncertainChecks.length > 2 ? ", among others" : ""}
+                          {" "}- verify with the provider before applying.
+                        </p>
+                      );
+                    }
+
+                    return null;
                   })()}
 
                   <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">

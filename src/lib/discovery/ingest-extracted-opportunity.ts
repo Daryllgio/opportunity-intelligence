@@ -9,6 +9,7 @@ import { assessDuplicateRisk } from "@/lib/discovery/duplicate-risk";
 import { shouldRejectExtractedOpportunity } from "@/lib/discovery/opportunity-scope";
 import { rankApplicationDestination } from "@/lib/discovery/application-destination-ranker";
 import { normalizeOpportunityType } from "@/lib/discovery/extract-discovered-opportunity";
+import { writeWithStatusFallback } from "@/lib/opportunities/status-write";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -41,13 +42,47 @@ const MONTH_NAMES = [
   "july", "august", "september", "october", "november", "december",
 ];
 
+// Season -> first month of the season (UTC month index). "Fall 2026" means
+// check on Sep 1, 2026 — early enough to catch the opening, late enough to
+// skip months of pointless rechecks.
+const SEASON_MONTHS: Record<string, number> = {
+  spring: 2, // March
+  summer: 5, // June
+  fall: 8, // September
+  autumn: 8,
+  winter: 11, // December
+};
+
 /**
- * When the next cycle should be re-checked. Pages often say when they reopen
- * ("applications open in August") — checking on the 1st of that month beats
- * a flat three-month snooze that can overshoot the whole window.
+ * When the next cycle should be re-checked.
+ *
+ * Priority order:
+ *  1. An explicit application open date from extraction — check THAT day, so
+ *     the opportunity republishes the day applications open.
+ *  2. A month named in the cycle notes ("applications open in August").
+ *  3. A season in the cycle notes ("the 2027-28 cycle will open fall 2026").
+ *  4. A flat three-month snooze.
  */
-function computeExpectedNextCheckAt(cycleNotes?: unknown) {
+function computeExpectedNextCheckAt(
+  cycleNotes?: unknown,
+  applicationOpensAt?: unknown
+) {
   const now = new Date();
+
+  const opensAt = String(applicationOpensAt || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(opensAt)) {
+    const opens = new Date(`${opensAt}T00:00:00Z`);
+    if (!Number.isNaN(opens.getTime()) && opens > now) {
+      return opens.toISOString();
+    }
+    // Open date already passed: the page may simply be stale — check soon.
+    if (!Number.isNaN(opens.getTime())) {
+      const soon = new Date(now);
+      soon.setUTCDate(soon.getUTCDate() + 2);
+      return soon.toISOString();
+    }
+  }
+
   const notes = String(cycleNotes || "").toLowerCase();
 
   const reopeningPhrase = notes.match(
@@ -62,10 +97,27 @@ function computeExpectedNextCheckAt(cycleNotes?: unknown) {
     }
   }
 
+  const seasonPhrase = notes.match(
+    /(spring|summer|fall|autumn|winter)\s*(?:of\s*)?((?:20)\d{2})?/
+  );
+  if (seasonPhrase && seasonPhrase[1]) {
+    const monthIndex = SEASON_MONTHS[seasonPhrase[1]];
+    const year = seasonPhrase[2]
+      ? Number(seasonPhrase[2])
+      : now.getUTCFullYear();
+    const target = new Date(Date.UTC(year, monthIndex, 1));
+    if (target > now) return target.toISOString();
+    if (!seasonPhrase[2]) {
+      target.setUTCFullYear(target.getUTCFullYear() + 1);
+      return target.toISOString();
+    }
+  }
+
   const next = new Date(now);
   next.setMonth(next.getMonth() + 3);
   return next.toISOString();
 }
+
 
 function normalizeOpportunityStatusByDeadline<T extends Record<string, any>>(payload: T): T {
   const deadline = stringOrNull(payload.deadline);
@@ -439,7 +491,8 @@ export async function ingestExtractedOpportunity({
 
   if (validation.decision === "track_for_next_cycle") {
     const expectedNextCheckAt = computeExpectedNextCheckAt(
-      opportunityPayload.cycle_notes
+      opportunityPayload.cycle_notes,
+      opportunityAttributes.application_opens_at
     );
 
     const draftPayload = {
@@ -498,12 +551,17 @@ export async function ingestExtractedOpportunity({
       const existingDraft = existingDraftByUrl || existingDraftByFamily;
 
       if (existingDraft?.id) {
-        const { data: updatedDraft, error: updateDraftError } = await supabase
-          .from("opportunity_drafts")
-          .update(draftPayload)
-          .eq("id", existingDraft.id)
-          .select("id")
-          .single();
+        const { data: updatedDraft, error: updateDraftError } =
+          await writeWithStatusFallback<{ id: string }>(
+            (payload) =>
+              supabase
+                .from("opportunity_drafts")
+                .update(payload)
+                .eq("id", existingDraft.id)
+                .select("id")
+                .single(),
+            draftPayload
+          );
 
         if (updateDraftError) throw new Error(updateDraftError.message);
         draft = updatedDraft;
@@ -511,11 +569,16 @@ export async function ingestExtractedOpportunity({
     }
 
     if (!draft) {
-      const { data: insertedDraft, error: draftError } = await supabase
-        .from("opportunity_drafts")
-        .insert(draftPayload)
-        .select("id")
-        .single();
+      const { data: insertedDraft, error: draftError } =
+        await writeWithStatusFallback<{ id: string }>(
+          (payload) =>
+            supabase
+              .from("opportunity_drafts")
+              .insert(payload)
+              .select("id")
+              .single(),
+          draftPayload
+        );
 
       if (draftError) throw new Error(draftError.message);
       draft = insertedDraft;
@@ -539,6 +602,23 @@ export async function ingestExtractedOpportunity({
       publishedOpportunityId: null,
       draftId: draft.id,
     };
+  }
+
+  // Structural visibility gate: whatever upstream logic decided, a row
+  // whose applications are not open (or rolling) can never go live. This is
+  // the invariant that keeps Bob Horner (opens Sept 9) off the browse page
+  // even if a validation branch is wrong.
+  if (
+    validation.decision === "auto_publish" &&
+    opportunityPayload.application_status !== "open" &&
+    opportunityPayload.application_status !== "rolling"
+  ) {
+    validation.decision = "review";
+    validation.autoPublishEligible = false;
+    validation.reasons = [
+      ...validation.reasons,
+      `Auto-publish blocked: application status is "${opportunityPayload.application_status}", not open/rolling.`,
+    ];
   }
 
   if (validation.decision === "auto_publish") {
@@ -680,12 +760,17 @@ export async function ingestExtractedOpportunity({
       .maybeSingle();
 
     if (existingDraft?.id) {
-      const { data: updatedDraft, error: updateDraftError } = await supabase
-        .from("opportunity_drafts")
-        .update(draftPayload)
-        .eq("id", existingDraft.id)
-        .select("id")
-        .single();
+      const { data: updatedDraft, error: updateDraftError } =
+        await writeWithStatusFallback<{ id: string }>(
+          (payload) =>
+            supabase
+              .from("opportunity_drafts")
+              .update(payload)
+              .eq("id", existingDraft.id)
+              .select("id")
+              .single(),
+          draftPayload
+        );
 
       if (updateDraftError) {
         throw new Error(updateDraftError.message);
@@ -696,11 +781,16 @@ export async function ingestExtractedOpportunity({
   }
 
   if (!draft) {
-    const { data: insertedDraft, error: draftError } = await supabase
-      .from("opportunity_drafts")
-      .insert(draftPayload)
-      .select("id")
-      .single();
+    const { data: insertedDraft, error: draftError } =
+      await writeWithStatusFallback<{ id: string }>(
+        (payload) =>
+          supabase
+            .from("opportunity_drafts")
+            .insert(payload)
+            .select("id")
+            .single(),
+        draftPayload
+      );
 
     if (draftError) {
       throw new Error(draftError.message);

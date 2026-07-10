@@ -253,7 +253,7 @@ export default function OnboardingPage() {
           ))}
         </div>
 
-        {/* Step 1 — Basics */}
+        {/* Step 1. Basics */}
         {step === 0 && (
           <section className="mt-12">
             <h1 className="text-2xl font-semibold tracking-tight">
@@ -261,7 +261,7 @@ export default function OnboardingPage() {
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-500">
               Citizenship and location decide which opportunities you&apos;re
-              eligible for — many are country-specific.
+              eligible for. many are country-specific.
             </p>
 
             <div className="mt-8 space-y-6">
@@ -327,7 +327,7 @@ export default function OnboardingPage() {
                     ))}
                   </select>
                   <p className="mt-2 text-xs text-neutral-500">
-                    Many scholarships are state or province specific — this
+                    Many scholarships are state or province specific. this
                     unlocks them for you.
                   </p>
                 </div>
@@ -336,14 +336,14 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {/* Step 2 — Education */}
+        {/* Step 2. Education */}
         {step === 1 && (
           <section className="mt-12">
             <h1 className="text-2xl font-semibold tracking-tight">
               Your education
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-500">
-              Opportunities are filtered to your level automatically — you&apos;ll
+              Opportunities are filtered to your level automatically. you&apos;ll
               never see programs you can&apos;t apply to.
             </p>
 
@@ -457,14 +457,14 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {/* Step 3 — Experience */}
+        {/* Step 3. Experience */}
         {step === 2 && (
           <section className="mt-12">
             <h1 className="text-2xl font-semibold tracking-tight">
               What experience do you have?
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-500">
-              One line each is enough to start — selection committees care
+              One line each is enough to start. selection committees care
               about these, so your scores do too. You can add detail later.
             </p>
 
@@ -509,14 +509,14 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {/* Step 4 — Categories */}
+        {/* Step 4. Categories */}
         {step === 3 && (
           <section className="mt-12">
             <h1 className="text-2xl font-semibold tracking-tight">
               What are you looking for?
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-500">
-              Pick the categories that matter most — these get scored against
+              Pick the categories that matter most. these get scored against
               your profile first. You can browse everything regardless.
             </p>
 
@@ -545,7 +545,7 @@ export default function OnboardingPage() {
               })}
             </div>
             <p className="mt-3 text-xs text-neutral-400">
-              Your plan decides how many categories get automatic scoring —
+              Your plan decides how many categories get automatic scoring -
               your top picks are used first.
             </p>
           </section>

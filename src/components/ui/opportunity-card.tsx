@@ -2,6 +2,7 @@ import Link from "next/link";
 import { OpportunityTypeBadge } from "./opportunity-type-badge";
 import { MatchScore } from "./match-score";
 import { FreshnessLabel } from "./freshness-label";
+import { formatDateOnly } from "@/lib/utils/format";
 
 interface OpportunityCardProps {
   id: string;
@@ -40,10 +41,10 @@ function effortRewardLine(effort?: string | null, reward?: string | null) {
     .join(" · ");
 }
 
+// formatDateOnly renders the calendar date as printed on the provider's
+// page — never shifted a day by the viewer's timezone.
 function formatDeadline(deadline: string): string {
-  const parsed = new Date(deadline);
-  if (Number.isNaN(parsed.getTime())) return deadline;
-  return parsed.toLocaleDateString("en-US", {
+  return formatDateOnly(deadline, {
     month: "short",
     day: "numeric",
     year: "numeric",

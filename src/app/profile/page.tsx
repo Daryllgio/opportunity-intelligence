@@ -74,7 +74,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
       <dt className="text-xs font-medium uppercase tracking-wide text-neutral-400">
         {label}
       </dt>
-      <dd className="mt-1 text-sm font-medium">{value || "—"}</dd>
+      <dd className="mt-1 text-sm font-medium">{value || "-"}</dd>
     </div>
   );
 }

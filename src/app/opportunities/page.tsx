@@ -521,7 +521,7 @@ function OpportunitiesBrowse() {
 
       {(isLoggedIn && hasProfile) || loading ? (
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-[15rem_1fr]">
-          {/* Desktop sidebar — no box, just a rail */}
+          {/* Desktop sidebar. no box, just a rail */}
           <aside className="hidden lg:block">
             <div className="sticky top-20">
               <FilterSidebar />

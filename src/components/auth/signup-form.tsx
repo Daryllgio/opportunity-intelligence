@@ -77,7 +77,7 @@ export function SignupForm() {
         Create your account
       </h1>
       <p className="mt-2 text-sm text-neutral-500">
-        Free to start — set up your profile and see your matches.
+        Free to start. set up your profile and see your matches.
       </p>
 
       <Button

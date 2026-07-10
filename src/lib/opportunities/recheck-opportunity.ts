@@ -16,6 +16,7 @@ import { reuseScoresForRenewedOpportunity } from "@/lib/opportunities/reuse-rene
 import { buildOpportunityCriteriaHash as buildScoringCriteriaHash } from "@/lib/scoring/hashes";
 import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job";
 import { tableHasColumn } from "@/lib/utils/schema-features";
+import { writeWithStatusFallback } from "@/lib/opportunities/status-write";
 
 type SupabaseClientLike = {
   from: (table: string) => any;
@@ -121,6 +122,21 @@ function parseDate(value: unknown) {
   return date;
 }
 
+/** When to look again at a row that isn't accepting applications: the
+ * announced open date if we have one, otherwise a five-week snooze. */
+function computeReopenCheckAt(applicationOpensAt: unknown, cycleNotes: unknown) {
+  const now = new Date();
+  const opensAt = String(applicationOpensAt || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(opensAt)) {
+    const opens = new Date(`${opensAt}T00:00:00Z`);
+    if (!Number.isNaN(opens.getTime()) && opens > now) return opens.toISOString();
+  }
+  void cycleNotes; // month/season parsing lives in the ingest scheduler
+  const snooze = new Date(now);
+  snooze.setUTCDate(snooze.getUTCDate() + 35);
+  return snooze.toISOString();
+}
+
 function hasFutureDeadline(opportunity: Record<string, unknown>) {
   const deadline = parseDate(opportunity.deadline);
 
@@ -144,6 +160,10 @@ function shouldCreateRenewedCycle({
 }) {
   if (!isOpportunityExpired(existing)) return false;
   if (!hasFutureDeadline(merged)) return false;
+  // A posted next-cycle deadline is NOT a renewal while the page still says
+  // closed / not yet open (Boren posts January's deadline all year).
+  const mergedStatus = String(merged.application_status || "");
+  if (mergedStatus === "closed" || mergedStatus === "not_yet_open") return false;
 
   const existingCycleYear = Number(existing.cycle_year || inferCycleYear(existing));
   const newCycleYear = Number(inferCycleYear(merged));
@@ -193,6 +213,16 @@ function mergeExtractedOpportunity({
     funding_amount: extracted.funding_amount || existing.funding_amount,
     funding_type: extracted.funding_type || existing.funding_type,
     deadline: extracted.deadline || existing.deadline,
+    // Status language read from the CURRENT page always wins — a closed or
+    // not-yet-open cycle must unpublish even when a (next-cycle) deadline is
+    // still posted.
+    application_status:
+      extracted.application_status && extracted.application_status !== "unknown"
+        ? extracted.application_status
+        : existing.application_status,
+    deadline_confidence:
+      extracted.deadline_confidence || existing.deadline_confidence,
+    cycle_notes: extracted.cycle_notes || existing.cycle_notes,
     // The verified destination is owned by the AI verification loop; a
     // re-extraction never overwrites it. Renewal inserts get a freshly
     // ranked + verified destination instead.
@@ -306,6 +336,17 @@ export async function recheckOpportunity({
   if (!cleanHashChanged) {
     const lifecycleFields = buildLifecycleFields(opportunity);
 
+    // A dark row (closed / not yet open) whose page hasn't changed is still
+    // waiting to reopen — keep checking every few days around its window
+    // instead of adopting the live-row pre-deadline schedule, so it
+    // republishes within days of the page announcing the opening.
+    const existingStatus = String(opportunity.application_status || "");
+    const isDarkWaiting =
+      opportunity.is_active === false &&
+      (existingStatus === "closed" || existingStatus === "not_yet_open");
+    const shortSnooze = new Date();
+    shortSnooze.setUTCDate(shortSnooze.getUTCDate() + 5);
+
     const { error: updateError } = await supabase
       .from("opportunities")
       .update({
@@ -315,8 +356,12 @@ export async function recheckOpportunity({
         last_recheck_error: null,
         last_rechecked_at: new Date().toISOString(),
         last_checked_at: new Date().toISOString(),
-        next_check_at: lifecycleFields.next_check_at,
-        check_reason: lifecycleFields.check_reason,
+        next_check_at: isDarkWaiting
+          ? shortSnooze.toISOString()
+          : lifecycleFields.next_check_at,
+        check_reason: isDarkWaiting
+          ? "renewal_window"
+          : lifecycleFields.check_reason,
         recheck_attempts: (opportunity.recheck_attempts || 0) + 1,
         updated_at: new Date().toISOString(),
       })
@@ -507,9 +552,39 @@ export async function recheckOpportunity({
   const criteriaChanged =
     Boolean(oldCriteriaHash) && oldCriteriaHash !== newCriteriaHash;
 
-  const { error: updateError } = await supabase
-    .from("opportunities")
-    .update({
+  // Visibility invariant: a page that says its cycle is closed or not yet
+  // open unpublishes the row NOW, whatever the posted deadline says (Boren
+  // showed a Jan 2027 deadline while its page said "the 2026-2027 cycle is
+  // closed"). The row stays in the catalog dark, scheduled for a recheck at
+  // its announced open date, and republishes through the renewal path.
+  const mergedStatus = String(mergedOpportunity.application_status || "");
+  const notAccepting = mergedStatus === "closed" || mergedStatus === "not_yet_open";
+  const wasActive = opportunity.is_active === true;
+
+  if (notAccepting) {
+    const attributes = (mergedOpportunity.attributes || {}) as Record<string, unknown>;
+    const nextCheck = computeReopenCheckAt(
+      attributes.application_opens_at,
+      mergedOpportunity.cycle_notes
+    );
+    (mergedOpportunity as Record<string, unknown>).is_active = false;
+    lifecycleFields.lifecycle_status = "expired";
+    lifecycleFields.is_active = false;
+    lifecycleFields.expired_at =
+      (opportunity.expired_at as string | null) || new Date().toISOString();
+    lifecycleFields.next_check_at = nextCheck;
+    lifecycleFields.check_reason = "renewal_window";
+  }
+
+  const { error: updateError } = await writeWithStatusFallback(
+    (payload) =>
+      supabase
+        .from("opportunities")
+        .update(payload)
+        .eq("id", opportunityId)
+        .select("id")
+        .maybeSingle(),
+    {
       ...mergedOpportunity,
       ...lifecycleFields,
       last_http_status: pageResult.status,
@@ -519,10 +594,32 @@ export async function recheckOpportunity({
       last_rechecked_at: new Date().toISOString(),
       recheck_attempts: (opportunity.recheck_attempts || 0) + 1,
       updated_at: new Date().toISOString(),
-    })
-    .eq("id", opportunityId);
+    }
+  );
 
   if (updateError) throw new Error(updateError.message);
+
+  if (notAccepting && wasActive) {
+    // Scores on a row users can no longer apply to are stale by definition.
+    const { data: staleRows } = await supabase
+      .from("opportunity_competitiveness_scores")
+      .update({
+        score_status: "stale",
+        stale_reason: "opportunity_expired",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("opportunity_id", opportunityId)
+      .eq("score_status", "current")
+      .select("id");
+
+    return {
+      outcome: "unpublished_not_accepting",
+      usedGemini: true,
+      criteriaChanged,
+      contentChanged,
+      scoresMarkedStale: staleRows?.length || 0,
+    };
+  }
 
   let scoresMarkedStale = 0;
 

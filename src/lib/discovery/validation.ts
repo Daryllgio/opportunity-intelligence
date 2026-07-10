@@ -105,11 +105,17 @@ function isClosedOpportunity(opportunity: ExtractedOpportunityForValidation) {
     .toLowerCase();
 
   return (
+    // not_yet_open is "closed" for visibility purposes: not accepting
+    // applications today means not publishable today. The open date (in
+    // attributes.application_opens_at) schedules the recheck that
+    // republishes it through the full gate the day it opens.
     opportunity.application_status === "closed" ||
+    opportunity.application_status === "not_yet_open" ||
     text.includes("applications are closed") ||
     text.includes("applications closed") ||
     text.includes("currently closed") ||
-    text.includes("closed for applications")
+    text.includes("closed for applications") ||
+    text.includes("applications are not yet open")
   );
 }
 

@@ -85,7 +85,7 @@ export default function PricingPage() {
             Every plan starts with {TRIAL_DAYS} days free
           </h1>
           <p className="mt-3 text-[15px] leading-7 text-neutral-600 dark:text-neutral-400">
-            Pick a tier and try everything in it free for {TRIAL_DAYS} days —
+            Pick a tier and try everything in it free for {TRIAL_DAYS} days -
             matching, competitiveness reports, saved deadlines, the works. No
             charge until you decide it earns its keep. Your data is always
             preserved, even if you step away.
@@ -158,7 +158,7 @@ export default function PricingPage() {
           <div>
             <h2 className="text-base font-semibold">Fair billing, honestly</h2>
             <p className="mt-3 text-sm leading-7 text-neutral-600 dark:text-neutral-400">
-              Profile edits never re-charge your quota — keeping your scores
+              Profile edits never re-charge your quota. keeping your scores
               fresh is our cost. If a payment fails you keep full access for a
               week while you fix it, and if you cancel or lapse, everything you
               built here waits for you. Downgrades keep your current tier's
