@@ -73,7 +73,9 @@ async function generateWithClaude(prompt: string): Promise<string> {
 
   const response = await anthropic.messages.create({
     model: CLAUDE_GAP_REPORT_MODEL,
-    max_tokens: 2048,
+    // Sonnet 5 writes fuller reports than 4.x — 2048 truncated real JSON
+    // mid-array (caught by the model-comparison harness).
+    max_tokens: 4096,
     messages: [{ role: "user", content: prompt }],
   });
 
