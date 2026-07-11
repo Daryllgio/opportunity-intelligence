@@ -790,7 +790,6 @@ export function ProfileForm() {
       permanent_resident_of: form.permanent_resident_of
         ? [form.permanent_resident_of]
         : [],
-      intended_school: form.planning_transfer ? form.intended_school : null,
       class_standing: form.class_standing || null,
       field_of_study_secondary: form.field_of_study_secondary || null,
       undergraduate_field_of_study: GRADUATE_LEVELS.has(form.education_level)
@@ -837,29 +836,6 @@ export function ProfileForm() {
     planLimits.rankedCategoryLimit === "all"
       ? opportunityTypeOptions.length
       : planLimits.rankedCategoryLimit;
-
-  const opportunityPreferenceHelp = planLimits.hasCompetitivenessRanking
-    ? `Your plan includes automatic matching in ${maxRankedCategories} categor${
-        maxRankedCategories === 1 ? "y" : "ies"
-      }. Your top picks are matched first.`
-    : "Pick your preferred categories now. Upgrade any time to unlock automatic matching.";
-
-  function updateOpportunityPreferences(values: string[]) {
-    // Hard cap at the plan's category limit — here, at onboarding, and
-    // server-side at scoring time. A Premium user picking a 5th category
-    // used to silently succeed and then silently not be scored for it;
-    // refusing the selection is the honest behavior.
-    if (values.length > maxRankedCategories) {
-      setMessage(
-        `Your plan includes ${maxRankedCategories} categor${
-          maxRankedCategories === 1 ? "y" : "ies"
-        }. Remove one before adding another.`
-      );
-      return;
-    }
-    setMessage("");
-    updateField("target_opportunity_types", values);
-  }
 
   function renderExperienceSection() {
     return (
@@ -1167,33 +1143,6 @@ export function ProfileForm() {
                 </p>
               </div>
 
-              <div className="space-y-2 md:col-span-2">
-                <label className="flex cursor-pointer items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={form.planning_transfer}
-                    onChange={(event) =>
-                      updateField("planning_transfer", event.target.checked)
-                    }
-                    className="mt-0.5 h-4 w-4 rounded border-neutral-300 accent-[var(--primary)]"
-                  />
-                  <span className="text-sm text-neutral-800 dark:text-neutral-200">
-                    I&apos;m planning to transfer to another school
-                    <span className="block text-neutral-500">
-                      We&apos;ll match you against your intended school&apos;s
-                      opportunities too.
-                    </span>
-                  </span>
-                </label>
-                {form.planning_transfer && (
-                  <UniversityCombobox
-                    label="Intended school"
-                    country={form.country_of_study}
-                    value={form.intended_school}
-                    onChange={(value) => updateField("intended_school", value)}
-                  />
-                )}
-              </div>
             </div>
           </section>
 
@@ -1212,16 +1161,13 @@ export function ProfileForm() {
                 placeholder="Search language..."
               />
 
-              <SearchableMultiSelect
-                label="Opportunity preferences"
-                selected={form.target_opportunity_types}
-                onChange={updateOpportunityPreferences}
-                options={opportunityTypeOptions}
-                placeholder="Search opportunity type..."
-              />
-
               <p className="text-sm text-muted-foreground">
-                {opportunityPreferenceHelp}
+                Opportunity categories, sub-types, next-level interests, and
+                transfer plans live on the{" "}
+                <a href="/preferences" className="underline underline-offset-2">
+                  Preferences page
+                </a>
+                . Your profile stays about who you are.
               </p>
             </div>
           </section>

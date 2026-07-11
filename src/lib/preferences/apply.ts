@@ -145,11 +145,64 @@ function rowLevels(row: Row): CanonicalEducationLevel[] {
   return Array.from(found);
 }
 
+// What the award FUNDS is a different question from who may apply: McCall
+// MacBain is applied to by final-year undergrads but funds a master's at
+// McGill; Knight-Hennessy funds Stanford graduate degrees. A junior who
+// never asked for graduate-study funding shouldn't see either. These
+// signals detect graduate/professional STUDY as the thing being funded.
+const GRAD_STUDY_SIGNALS = [
+  "graduate degree", "graduate program", "graduate studies", "graduate study",
+  "graduate school", "postgraduate", "master's program", "master's degree",
+  "masters program", "masters degree", "master of", "doctoral program",
+  "doctoral degree", "phd program", "ph.d. program", "mba", "law school",
+  "juris doctor", "medical school", "md program", "begin graduate",
+  "enrolling in a graduate", "pursue a graduate", "pursue a master",
+  "pursue a doctora",
+];
+
+/** Which degree types the award's own words say it funds. */
+function fundedStudyTypes(row: Row): Set<NextLevelType> {
+  const attributes = (row.attributes || {}) as Row;
+  const criteria = Array.isArray(row.eligibility_criteria)
+    ? (row.eligibility_criteria as Row[]).map((c) => String(c.requirement || "")).join(" ")
+    : "";
+  const haystack = normalizeText(
+    `${row.title || ""} ${row.ai_summary || ""} ${criteria} ${attributes.eligibility_text || ""}`
+  ).replace(/under\s?graduate\w*/g, " ");
+  const found = new Set<NextLevelType>();
+  if (/master'?s|master of|masters/.test(haystack)) found.add("masters");
+  if (/doctoral|ph\.?d/.test(haystack)) found.add("phd");
+  if (/\bmba\b|business school/.test(haystack)) found.add("mba");
+  if (/law school|juris doctor|\bjd\b/.test(haystack)) found.add("jd");
+  if (/medical school|\bmd program\b/.test(haystack)) found.add("md");
+  if (/graduate degree|graduate program|graduate studies|graduate school|postgraduate/.test(haystack)) {
+    found.add("masters");
+    found.add("phd");
+  }
+  return found;
+}
+
+function fundsGraduateStudy(row: Row): boolean {
+  const attributes = (row.attributes || {}) as Row;
+  const criteria = Array.isArray(row.eligibility_criteria)
+    ? (row.eligibility_criteria as Row[]).map((c) => String(c.requirement || "")).join(" ")
+    : "";
+  // "undergraduate studies" contains "graduate studies" — strip the word
+  // before matching so a high-school-to-undergrad scholarship (Pearson)
+  // never reads as graduate funding. Same crosstalk class as
+  // post-secondary/secondary.
+  const haystack = normalizeText(
+    `${row.title || ""} ${row.ai_summary || ""} ${criteria} ${attributes.eligibility_text || ""}`
+  ).replace(/under\s?graduate\w*/g, " ");
+  return GRAD_STUDY_SIGNALS.some((signal) => haystack.includes(signal));
+}
+
 /**
- * True when every stated level of the row sits strictly ABOVE the student's
- * current level — a graduate-only fellowship for an undergraduate. Rows with
- * no recognizable level, or any level at/below the student's, return false
- * (fail open — eligibility rules handle the rest).
+ * True when this row belongs to a level ABOVE the student's current one —
+ * either its stated applicant levels all sit higher (a PhD-only fellowship
+ * for an undergrad), or the thing it FUNDS is graduate/professional study
+ * and the student isn't a graduate student. Rows with no recognizable level
+ * story return false (fail open — eligibility rules handle the rest).
  */
 export function isNextLevelOpportunity(profile: Row, row: Row): boolean {
   const userLevels = profileCanonicalLevels(profile);
@@ -157,9 +210,16 @@ export function isNextLevelOpportunity(profile: Row, row: Row): boolean {
   const userRank = Math.max(...userLevels.map((level) => LEVEL_ORDER[level] || 0));
 
   const levels = rowLevels(row).filter((level) => level !== "any_level");
-  if (levels.length === 0) return false;
+  if (levels.length > 0 && levels.every((level) => (LEVEL_ORDER[level] || 0) > userRank)) {
+    return true;
+  }
 
-  return levels.every((level) => (LEVEL_ORDER[level] || 0) > userRank);
+  // Funded-study check: below graduate rank and the award funds grad study.
+  if (userRank < 3 && userRank > 0 && fundsGraduateStudy(row)) {
+    return true;
+  }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,16 +266,28 @@ export function preferenceExcludes(
         reason: "A level above yours. Turn on next-level opportunities in preferences to see it.",
       };
     }
-    // Opted in with specific degree types: the row must plausibly serve one.
+    // Opted in with specific degree types: the row must plausibly serve one
+    // — through its stated levels OR through what it funds ("master's at
+    // McGill" serves a masters-wanter even though applicants are undergrads).
     if (preferences.next_level.types.length > 0) {
       const allowed = new Set(
         preferences.next_level.types.flatMap((type) => NEXT_LEVEL_MAP[type])
       );
       const levels = rowLevels(row);
-      const serves = levels.some(
+      const levelServes = levels.some(
         (level) => allowed.has(level) || level === "graduate" || level === "any_level"
       );
-      if (!serves) {
+      const funded = fundedStudyTypes(row);
+      const fundedServes =
+        preferences.next_level.types.some((type) => funded.has(type)) ||
+        (funded.has("masters") && allowed.has("graduate" as never));
+      if (!levelServes && !fundedServes && funded.size > 0) {
+        return {
+          excluded: true,
+          reason: "Not among the next-level degree types you picked.",
+        };
+      }
+      if (!levelServes && funded.size === 0) {
         return {
           excluded: true,
           reason: "Not among the next-level degree types you picked.",

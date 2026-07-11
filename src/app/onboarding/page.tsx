@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import countriesData from "world-countries";
 import { supabase } from "@/lib/supabase";
+import { PreferencesFlow } from "@/components/preferences/preferences-flow";
 import {
   OPPORTUNITY_TYPES,
   OPPORTUNITY_TYPE_LABELS,
@@ -62,8 +63,6 @@ export default function OnboardingPage() {
   // Step 3 — experience (simplified single entry per section)
   const [experience, setExperience] = useState<ExperienceDraft>({});
 
-  // Step 4 — categories
-  const [categories, setCategories] = useState<string[]>([]);
 
   const countries = useMemo(
     () =>
@@ -99,13 +98,6 @@ export default function OnboardingPage() {
           setSchoolOther(data.school_other || "");
           setFieldOfStudy(data.field_of_study || "");
           setGpa(data.gpa ? String(data.gpa) : "");
-          setCategories(
-            Array.isArray(data.target_opportunity_types)
-              ? data.target_opportunity_types.filter((t: string) =>
-                  (OPPORTUNITY_TYPES as readonly string[]).includes(t)
-                )
-              : []
-          );
         });
     });
   }, []);
@@ -192,35 +184,7 @@ export default function OnboardingPage() {
     if (ok) setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
 
-  async function finish() {
-    const ok = await savePartial({
-      target_opportunity_types: categories,
-    });
-    if (!ok) return;
 
-    // Kick off scoring so matches are ready when they land on their list.
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      fetch("/api/scoring-jobs/schedule", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      }).catch(() => {});
-    }
-
-    router.push("/opportunities");
-  }
-
-  const MAX_ONBOARDING_CATEGORIES = 4; // Premium's cap - the largest any plan allows
-
-  function toggleCategory(type: string) {
-    setCategories((current) => {
-      if (current.includes(type)) return current.filter((t) => t !== type);
-      if (current.length >= MAX_ONBOARDING_CATEGORIES) return current;
-      return [...current, type];
-    });
-  }
 
   const inputClass =
     "h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none dark:border-neutral-800 dark:bg-neutral-900";
@@ -536,45 +500,23 @@ export default function OnboardingPage() {
           </section>
         )}
 
-        {/* Step 4. Categories */}
+        {/* Step 4. Preferences (compact conditional flow) */}
         {step === 3 && (
           <section className="mt-12">
             <h1 className="text-2xl font-semibold tracking-tight">
               What are you looking for?
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-500">
-              Pick the categories that matter most. these get scored against
-              your profile first. You can browse everything regardless.
+              Pick what gets scored and what you want in your database.
+              Sub-questions appear only for what you select. you can go
+              deeper any time in Preferences.
             </p>
-
-            <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {OPPORTUNITY_TYPES.map((type) => {
-                const selected = categories.includes(type);
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => toggleCategory(type)}
-                    className={`rounded-lg border px-4 py-3 text-left transition-colors ${
-                      selected
-                        ? "border-primary bg-primary/5"
-                        : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800 dark:hover:border-neutral-700"
-                    }`}
-                  >
-                    <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      {OPPORTUNITY_TYPE_LABELS[type]}
-                    </span>
-                    <span className="mt-0.5 block text-xs leading-5 text-neutral-600 dark:text-neutral-400">
-                      {OPPORTUNITY_TYPE_DESCRIPTIONS[type]}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="mt-8">
+              <PreferencesFlow
+                compact
+                onSaved={() => router.push("/opportunities")}
+              />
             </div>
-            <p className="mt-3 text-xs text-neutral-400">
-              Your plan decides how many categories get automatic scoring -
-              your top picks are used first.
-            </p>
           </section>
         )}
 
@@ -599,16 +541,7 @@ export default function OnboardingPage() {
             >
               {saving ? "Saving…" : "Continue"}
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={finish}
-              disabled={saving || categories.length === 0}
-              className="rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "See my matches"}
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
     </main>

@@ -12,6 +12,11 @@ import { normalizeOpportunityType } from "@/lib/discovery/taxonomy";
 import { evaluateEligibility } from "@/lib/matching/eligibility";
 import { educationLevelVerdict } from "@/lib/matching/education-levels";
 import { fieldFamiliesOf, fieldSatisfies } from "@/lib/matching/field-families";
+import { preferencesFromProfile } from "@/lib/preferences/types";
+import {
+  preferenceExcludes,
+  preferencePriorityBoost,
+} from "@/lib/preferences/apply";
 import type { PlanLimits } from "@/lib/billing/plans";
 
 type Row = Record<string, unknown>;
@@ -55,7 +60,14 @@ function isOpenList(items: unknown) {
 // ---------------------------------------------------------------------------
 
 export function getRankedCategories(profile: Row, planLimits: PlanLimits): string[] {
-  const selected = normalizeList(profile.target_opportunity_types)
+  // The preferences document owns scored categories now; profiles that
+  // predate it fall back to target_opportunity_types transparently.
+  const preferences = preferencesFromProfile(profile);
+  const source = preferences.scored_categories.length
+    ? preferences.scored_categories
+    : normalizeList(profile.target_opportunity_types);
+
+  const selected = source
     .map((value) => normalizeOpportunityType(value))
     .filter((value): value is NonNullable<typeof value> => Boolean(value));
 
@@ -348,6 +360,13 @@ export function shouldScoreOpportunity(
   });
   if (eligibility.status === "ineligible") return false;
 
+  // Preferences gate: sub-types the student excluded and next-level rows
+  // they didn't opt into never spend a scoring slot.
+  const preferences = preferencesFromProfile(profile);
+  if (preferenceExcludes(profile, preferences, opportunity).excluded) {
+    return false;
+  }
+
   return (
     deadlineIsActive(opportunity) &&
     regionMatches(profile, opportunity) &&
@@ -387,6 +406,10 @@ export function criteriaPriorityScore({
   if (typeIndex === 0) priority += 6;
   else if (typeIndex === 1) priority += 4;
   else if (typeIndex >= 2) priority += 2;
+
+  // Preference boosts: target/transfer schools float to the top, preferred
+  // sub-types and locations rank higher.
+  priority += preferencePriorityBoost(preferencesFromProfile(profile), opportunity);
 
   // Evidence the opportunity asks for vs. evidence the profile has.
   const criteriaText = getOpportunityCriteriaText(opportunity);

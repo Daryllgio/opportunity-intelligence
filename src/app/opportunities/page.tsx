@@ -17,6 +17,8 @@ import { profileScoringGate } from "@/lib/scoring/profile-gate";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 import { FUNDING_PRESETS, passesFundingFilter } from "@/lib/utils/funding";
+import { preferencesFromProfile } from "@/lib/preferences/types";
+import { preferenceExcludes } from "@/lib/preferences/apply";
 
 const PAGE_SIZE = 24;
 const FETCH_CAP = 600;
@@ -343,11 +345,20 @@ function OpportunitiesBrowse() {
   // ─── Sort: best match (scored first), newest added, or deadline soonest ───
   const { scored, unscored } = useMemo(() => {
     // Confirmed ineligible (rules or AI) is always hidden — the system's
-    // call, no toggle needed.
+    // call, no toggle needed. Preferences hide what the student didn't ask
+    // for: excluded sub-types and non-opted-in next-level rows.
+    const preferences = preferencesFromProfile(profileRow);
     let visible = rows.filter((row) => {
       const tier1 = tier1Results.get(row.id);
       if (tier1?.decision === "ineligible") return false;
       if (aiDecisions[row.id]?.decision === "ineligible") return false;
+      if (
+        profileRow &&
+        preferenceExcludes(profileRow, preferences, row as unknown as Record<string, unknown>)
+          .excluded
+      ) {
+        return false;
+      }
       return true;
     });
 
@@ -383,7 +394,7 @@ function OpportunitiesBrowse() {
     scoredRows.sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0));
     // Unscored stay deadline-ascending (the fetch order).
     return { scored: scoredRows, unscored: unscoredRows };
-  }, [rows, scores, sortMode, tier1Results, aiDecisions, scholarshipFilterActive, fundingMin, fundingFull]);
+  }, [rows, scores, sortMode, tier1Results, aiDecisions, scholarshipFilterActive, fundingMin, fundingFull, profileRow]);
 
   const combined = useMemo(() => [...scored, ...unscored], [scored, unscored]);
   const totalPages = Math.max(1, Math.ceil(combined.length / PAGE_SIZE));
