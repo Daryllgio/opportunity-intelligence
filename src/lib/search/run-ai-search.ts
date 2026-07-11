@@ -16,6 +16,9 @@ import {
   type PlanLimits,
 } from "@/lib/billing/plans";
 import { consumeCredit } from "@/lib/billing/credits";
+import { preferencesFromProfile } from "@/lib/preferences/types";
+import { preferenceExcludes } from "@/lib/preferences/apply";
+import { tier1Eligibility } from "@/lib/matching/tier1";
 import { tableHasColumn } from "@/lib/utils/schema-features";
 import { safeParseJson } from "@/lib/utils/safe-json";
 import { withTimeout } from "@/lib/utils/timeout";
@@ -159,12 +162,21 @@ export async function runAiSearch({
   // only — demographics, disability, and birth date never go to AI.
   const { data: profileRow } = await supabase
     .from("profiles")
-    .select(
-      "education_level, class_standing, field_of_study, field_of_study_secondary, country_of_study, state_or_province, nationality"
-    )
+    .select("*")
     .eq("id", userId)
     .maybeSingle();
-  const searcherFacts = Object.entries(profileRow || {})
+  // Prompt context stays allowlisted (the privacy boundary); the FULL row
+  // powers the deterministic eligibility/preference gates on results.
+  const promptFacts = {
+    education_level: (profileRow as Record<string, unknown> | null)?.education_level,
+    class_standing: (profileRow as Record<string, unknown> | null)?.class_standing,
+    field_of_study: (profileRow as Record<string, unknown> | null)?.field_of_study,
+    field_of_study_secondary: (profileRow as Record<string, unknown> | null)?.field_of_study_secondary,
+    country_of_study: (profileRow as Record<string, unknown> | null)?.country_of_study,
+    state_or_province: (profileRow as Record<string, unknown> | null)?.state_or_province,
+    nationality: (profileRow as Record<string, unknown> | null)?.nationality,
+  };
+  const searcherFacts = Object.entries(promptFacts)
     .filter(([, value]) => value)
     .map(([key, value]) => `- ${key.replace(/_/g, " ")}: ${String(value)}`)
     .join("\n");
@@ -261,8 +273,23 @@ ${JSON.stringify(catalog)}
   const rowById = new Map<string, Record<string, unknown>>(
     ((rows || []) as Record<string, unknown>[]).map((row) => [String(row.id), row])
   );
+  // Deterministic consistency net over the model's picks: results the
+  // browse page would hide (confirmed ineligible, excluded sub-types,
+  // non-opted-in next-level) never surface through search either.
+  const fullProfileForGates = profileRow
+    ? { ...(profileRow as Record<string, unknown>) }
+    : null;
+  const preferences = preferencesFromProfile(fullProfileForGates);
   const results = (parsed.data.matches || [])
     .filter((match) => match.id && rowById.has(String(match.id)))
+    .filter((match) => {
+      if (!fullProfileForGates) return true;
+      const row = rowById.get(String(match.id))!;
+      if (tier1Eligibility({ profile: fullProfileForGates, opportunity: row }).decision === "ineligible") {
+        return false;
+      }
+      return !preferenceExcludes(fullProfileForGates, preferences, row).excluded;
+    })
     .slice(0, MAX_RESULTS)
     .map((match) => {
       const row = rowById.get(String(match.id))!;
