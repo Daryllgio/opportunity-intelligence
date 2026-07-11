@@ -27,11 +27,13 @@ function createServiceClient() {
   );
 }
 
-// Reports run on Claude Sonnet: the most nuanced, actionable positioning
-// advice per dollar (Sonnet 5 outperforms the older 4.6 at the same list
-// price). Gemini Pro remains the automatic fallback wherever the Anthropic
-// key is absent.
-const CLAUDE_GAP_REPORT_MODEL = "claude-sonnet-5";
+// Reports run on Claude Sonnet. THE single config switch for the report
+// model: set REPORT_CLAUDE_MODEL to change it platform-wide (the Sonnet 5
+// vs 4.6 head-to-head on real founder reports chose the default below).
+// Gemini Pro remains the automatic fallback wherever the Anthropic key is
+// absent.
+export const CLAUDE_GAP_REPORT_MODEL =
+  process.env.REPORT_CLAUDE_MODEL || "claude-sonnet-5";
 const GEMINI_FALLBACK_MODEL = "gemini-2.5-pro";
 
 const gemini = new GoogleGenAI({
@@ -126,6 +128,71 @@ export async function generateGapReport(prompt: string) {
   return { text, modelUsed };
 }
 
+
+export function buildGapReportPrompt(
+  profileContext: Record<string, unknown>,
+  opportunity: Record<string, unknown>
+): string {
+  return `
+You are OppScore's admissions, scholarship, and fellowship competitiveness evaluator.
+
+Compare ONE student profile to ONE opportunity and produce a student-facing competitiveness and gap report.
+
+Return JSON only. No markdown. No commentary.
+
+Scoring rules:
+- overall_score must be 0-100.
+- Score realistic competitiveness and fit, not just basic eligibility.
+- If the student is clearly ineligible, score should usually be below 35.
+- If eligible but weak fit, score 35-55.
+- If eligible and reasonable fit, score 56-75.
+- If strong alignment with selection criteria, score 76-90.
+- Scores above 90 should be rare and require exceptional alignment.
+- Be honest and specific. Do not flatter.
+- If profile information is missing, mention it as a gap.
+- Do not invent experiences the student did not provide.
+
+fit_label must be one of:
+"Strong fit", "Competitive", "Developing fit", "Improve first", "Likely ineligible"
+
+eligibility_status must be one of:
+"Eligible", "Likely eligible", "Unclear", "Likely ineligible", "Ineligible"
+
+Return this exact JSON shape:
+{
+  "overall_score": number,
+  "fit_label": string,
+  "eligibility_status": string,
+  "strengths": string[],
+  "gaps": string[],
+  "recommended_actions": string[],
+  "ai_explanation": string
+}
+
+For recommended_actions, write them as "How to position your profile" guidance, not generic tasks.
+Focus on how the student should present existing experiences, coursework, projects, background, goals, or achievements in the application.
+
+Do NOT give unrealistic advice like "get research experience," "win awards," "start a nonprofit," or "become a leader" unless the opportunity deadline is far away.
+Do NOT focus mainly on completing the OppScore profile unless profile incompleteness is the dominant reason for the low score.
+Do NOT write generic advice that could apply to any opportunity.
+
+Good positioning guidance examples:
+- Lead with the strongest existing experience that matches this opportunity's selection criteria.
+- Quantify impact where possible using numbers, scope, people served, outcomes, or responsibilities.
+- Connect the student's existing work to the opportunity's mission.
+- Explain weaker areas directly instead of ignoring them.
+- Avoid leading with unrelated achievements.
+- Use coursework, class projects, independent projects, or lived experience only when they genuinely support the opportunity fit.
+
+Student profile context:
+This includes basic profile fields, saved individual experience summaries, fuller raw experience details, and the existing competitiveness score if available. Use the experience summaries and raw experiences to keep the gap report consistent with the competitiveness ranking.
+
+${JSON.stringify(profileContext, null, 2)}
+
+Opportunity:
+${JSON.stringify(opportunity, null, 2)}
+`;
+}
 
 export async function runScoreReport({
   supabase,
@@ -286,65 +353,8 @@ export async function runScoreReport({
     existing_competitiveness_score: competitivenessScore || null,
   };
 
-  const prompt = `
-You are OppScore's admissions, scholarship, and fellowship competitiveness evaluator.
+  const prompt = buildGapReportPrompt(profileContext, opportunity);
 
-Compare ONE student profile to ONE opportunity and produce a student-facing competitiveness and gap report.
-
-Return JSON only. No markdown. No commentary.
-
-Scoring rules:
-- overall_score must be 0-100.
-- Score realistic competitiveness and fit, not just basic eligibility.
-- If the student is clearly ineligible, score should usually be below 35.
-- If eligible but weak fit, score 35-55.
-- If eligible and reasonable fit, score 56-75.
-- If strong alignment with selection criteria, score 76-90.
-- Scores above 90 should be rare and require exceptional alignment.
-- Be honest and specific. Do not flatter.
-- If profile information is missing, mention it as a gap.
-- Do not invent experiences the student did not provide.
-
-fit_label must be one of:
-"Strong fit", "Competitive", "Developing fit", "Improve first", "Likely ineligible"
-
-eligibility_status must be one of:
-"Eligible", "Likely eligible", "Unclear", "Likely ineligible", "Ineligible"
-
-Return this exact JSON shape:
-{
-  "overall_score": number,
-  "fit_label": string,
-  "eligibility_status": string,
-  "strengths": string[],
-  "gaps": string[],
-  "recommended_actions": string[],
-  "ai_explanation": string
-}
-
-For recommended_actions, write them as "How to position your profile" guidance, not generic tasks.
-Focus on how the student should present existing experiences, coursework, projects, background, goals, or achievements in the application.
-
-Do NOT give unrealistic advice like "get research experience," "win awards," "start a nonprofit," or "become a leader" unless the opportunity deadline is far away.
-Do NOT focus mainly on completing the OppScore profile unless profile incompleteness is the dominant reason for the low score.
-Do NOT write generic advice that could apply to any opportunity.
-
-Good positioning guidance examples:
-- Lead with the strongest existing experience that matches this opportunity's selection criteria.
-- Quantify impact where possible using numbers, scope, people served, outcomes, or responsibilities.
-- Connect the student's existing work to the opportunity's mission.
-- Explain weaker areas directly instead of ignoring them.
-- Avoid leading with unrelated achievements.
-- Use coursework, class projects, independent projects, or lived experience only when they genuinely support the opportunity fit.
-
-Student profile context:
-This includes basic profile fields, saved individual experience summaries, fuller raw experience details, and the existing competitiveness score if available. Use the experience summaries and raw experiences to keep the gap report consistent with the competitiveness ranking.
-
-${JSON.stringify(profileContext, null, 2)}
-
-Opportunity:
-${JSON.stringify(opportunity, null, 2)}
-`;
 
   const { text: responseText, modelUsed } = await generateGapReport(prompt);
 

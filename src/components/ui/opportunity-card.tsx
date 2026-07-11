@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { OpportunityTypeBadge } from "./opportunity-type-badge";
 import { MatchScore } from "./match-score";
-import { FreshnessLabel } from "./freshness-label";
 import { formatDateOnly } from "@/lib/utils/format";
 
 interface OpportunityCardProps {
@@ -143,14 +142,13 @@ export function OpportunityCard({
             "No deadline listed"
           )}
         </span>
-        <span className="flex min-w-0 items-center gap-3">
-          {fundingAmount && (
-            <span className="truncate font-medium text-neutral-700 dark:text-neutral-300">
-              {fundingAmount}
-            </span>
-          )}
-          <FreshnessLabel createdAt={createdAt || null} />
-        </span>
+        {/* Scholarship amounts render long and ragged on cards — the
+            funding filter and detail page own that information. */}
+        {fundingAmount && type !== "scholarship" && (
+          <span className="truncate font-medium text-neutral-700 dark:text-neutral-300">
+            {fundingAmount}
+          </span>
+        )}
       </div>
     </Link>
   );

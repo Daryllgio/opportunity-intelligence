@@ -16,6 +16,7 @@ import { tier1Eligibility } from "@/lib/matching/tier1";
 import { profileScoringGate } from "@/lib/scoring/profile-gate";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
+import { FUNDING_PRESETS, passesFundingFilter } from "@/lib/utils/funding";
 
 const PAGE_SIZE = 24;
 const FETCH_CAP = 600;
@@ -206,17 +207,32 @@ function OpportunitiesBrowse() {
       setRows(opportunities);
 
       if (planLimits.hasCompetitivenessRanking && opportunities.length) {
-        const { data: scoreData } = await supabase
-          .from("opportunity_competitiveness_scores")
-          .select("opportunity_id, score, score_status")
-          .eq("user_id", user.id)
-          .eq("score_status", "current");
+        const [{ data: scoreData }, { data: reportData }] = await Promise.all([
+          supabase
+            .from("opportunity_competitiveness_scores")
+            .select("opportunity_id, score, score_status")
+            .eq("user_id", user.id)
+            .eq("score_status", "current"),
+          supabase
+            .from("opportunity_score_reports")
+            .select("opportunity_id, overall_score")
+            .eq("user_id", user.id),
+        ]);
 
         if (active) {
           const map: Record<string, number> = {};
           for (const row of scoreData || []) {
             if (typeof row.score === "number") {
               map[row.opportunity_id] = row.score;
+            }
+          }
+          // ONE SCORE RULE: when a competitiveness report exists, its score
+          // IS the score — everywhere. The report is the deeper, per-
+          // opportunity analysis; showing a different batch number next to
+          // it (92 on the card, 88 in the report) reads as a broken product.
+          for (const row of reportData || []) {
+            if (typeof row.overall_score === "number") {
+              map[row.opportunity_id] = row.overall_score;
             }
           }
           setScores(map);
@@ -318,28 +334,33 @@ function OpportunitiesBrowse() {
   }, [rows, tier1Results]);
 
   const sortMode = searchParams.get("sort") || "match";
-  const hideUnverified = searchParams.get("eligible") === "only";
+  const fundingMin = Number(searchParams.get("funding_min")) || null;
+  const fundingFull = searchParams.get("funding") === "full";
+  const scholarshipFilterActive = (searchParams.get("type") || "")
+    .split(",")
+    .includes("scholarship");
 
   // ─── Sort: best match (scored first), newest added, or deadline soonest ───
   const { scored, unscored } = useMemo(() => {
-    // Confirmed ineligible (rules or AI) is always hidden.
+    // Confirmed ineligible (rules or AI) is always hidden — the system's
+    // call, no toggle needed.
     let visible = rows.filter((row) => {
       const tier1 = tier1Results.get(row.id);
       if (tier1?.decision === "ineligible") return false;
       if (aiDecisions[row.id]?.decision === "ineligible") return false;
       return true;
     });
-    // The toggle additionally hides rows with unresolved strict requirements.
-    if (hideUnverified) {
-      visible = visible.filter((row) => {
-        const tier1 = tier1Results.get(row.id);
-        if (!tier1) return true;
-        if (tier1.decision === "eligible") return true;
-        return (
-          tier1.uncertainChecks.length === 0 ||
-          aiDecisions[row.id]?.decision === "eligible"
-        );
-      });
+
+    // Scholarship funding filter (active only while filtering scholarships).
+    if (scholarshipFilterActive && (fundingMin !== null || fundingFull)) {
+      visible = visible.filter(
+        (row) =>
+          row.type !== "scholarship" ||
+          passesFundingFilter(row.funding_amount, {
+            min: fundingMin,
+            fullTuitionOnly: fundingFull,
+          })
+      );
     }
 
     if (sortMode === "newest") {
@@ -362,7 +383,7 @@ function OpportunitiesBrowse() {
     scoredRows.sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0));
     // Unscored stay deadline-ascending (the fetch order).
     return { scored: scoredRows, unscored: unscoredRows };
-  }, [rows, scores, sortMode, hideUnverified, tier1Results, aiDecisions]);
+  }, [rows, scores, sortMode, tier1Results, aiDecisions, scholarshipFilterActive, fundingMin, fundingFull]);
 
   const combined = useMemo(() => [...scored, ...unscored], [scored, unscored]);
   const totalPages = Math.max(1, Math.ceil(combined.length / PAGE_SIZE));
@@ -638,21 +659,6 @@ function OpportunitiesBrowse() {
                         ` · ${scored.length} scored for you`}
                     </p>
                     <div className="flex items-center gap-4">
-                      <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-                        <input
-                          type="checkbox"
-                          checked={hideUnverified}
-                          onChange={(event) =>
-                            updateParams((params) => {
-                              if (event.target.checked) params.set("eligible", "only");
-                              else params.delete("eligible");
-                              params.delete("page");
-                            })
-                          }
-                          className="h-3.5 w-3.5 rounded border-neutral-300 accent-[var(--primary)]"
-                        />
-                        Only ones I can definitely apply to
-                      </label>
                       <select
                         value={sortMode}
                         onChange={(event) =>
@@ -670,6 +676,45 @@ function OpportunitiesBrowse() {
                         <option value="deadline">Deadline soonest</option>
                       </select>
                     </div>
+                  </div>
+                )}
+
+                {/* Scholarship funding filter — appears only while
+                    filtering by scholarship. Totals compared as printed,
+                    no currency conversion. */}
+                {!loading && scholarshipFilterActive && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                      Funding
+                    </span>
+                    {FUNDING_PRESETS.map((preset) => {
+                      const selected = preset.full
+                        ? fundingFull
+                        : !fundingFull && (fundingMin ?? null) === preset.min;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() =>
+                            updateParams((params) => {
+                              params.delete("funding");
+                              params.delete("funding_min");
+                              if (preset.full) params.set("funding", "full");
+                              else if (preset.min !== null)
+                                params.set("funding_min", String(preset.min));
+                              params.delete("page");
+                            })
+                          }
+                          className={`rounded-md border px-2.5 py-1 text-sm ${
+                            selected
+                              ? "border-primary bg-primary/10 text-neutral-900 dark:text-neutral-100"
+                              : "border-neutral-200 text-neutral-600 hover:border-neutral-300 dark:border-neutral-700 dark:text-neutral-400"
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 

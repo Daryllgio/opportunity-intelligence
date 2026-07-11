@@ -28,8 +28,8 @@ const TIERS = [
     tagline: "For an active application season.",
     features: [
       "Everything in Basic",
-      "AI match scores in 2 categories (200 / month)",
-      "30 competitiveness reports / month",
+      "AI match scores in 2 categories, up to 200 new each month",
+      "Up to 30 competitiveness reports / month",
       "AI search: describe what you want in plain language",
       "Pay-as-you-go top-ups when you need more",
     ],
@@ -41,8 +41,8 @@ const TIERS = [
     tagline: "For a search across everything.",
     features: [
       "Everything in Basic",
-      "AI match scores in 4 categories (400 / month)",
-      "60 competitiveness reports / month",
+      "AI match scores in 4 categories, up to 400 new each month",
+      "Up to 60 competitiveness reports / month",
       "AI search with double the monthly budget",
       "Priority score refreshes",
       "Pay-as-you-go top-ups when you need more",
@@ -148,7 +148,9 @@ export default function PricingPage() {
               Pick the opportunity categories you care about and OppScore
               automatically scores every eligible opportunity in them against
               your profile, so your browse page always leads with your
-              strongest matches. Competitiveness reports go deeper on a single
+              strongest matches. Scores accumulate: the monthly limit only
+              counts NEW first-time scores, and everything already scored
+              stays visible. Competitiveness reports go deeper on a single
               opportunity: your specific strengths, gaps, and how to position
               your application.
             </p>

@@ -13,7 +13,6 @@ import { ApplicationStatusBadge } from "@/components/ui/application-status-badge
 import { formatDateOnly, humanizeLabel } from "@/lib/utils/format";
 import { SourceTrustBadge } from "@/components/ui/source-trust-badge";
 import { DestinationConfidenceBadge } from "@/components/ui/destination-confidence-badge";
-import { FreshnessLabel } from "@/components/ui/freshness-label";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
 import {
@@ -296,7 +295,6 @@ export default function OpportunityDetailPage() {
                 {opportunity.application_status && (
                   <ApplicationStatusBadge status={opportunity.application_status} />
                 )}
-                <FreshnessLabel createdAt={opportunity.created_at} />
               </div>
 
               <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight">
@@ -309,11 +307,14 @@ export default function OpportunityDetailPage() {
                 </p>
               )}
 
-              {matchScore !== null && (
+              {/* ONE SCORE RULE: the competitiveness report's score, when a
+                  report exists, IS the score — the batch number never shows
+                  beside it. Two AIs, one answer. */}
+              {(scoreReport?.overall_score ?? matchScore) !== null && (
                 <p className="mt-3 text-sm text-neutral-500">
                   Your match score:{" "}
                   <span className="font-semibold text-neutral-900 dark:text-neutral-100">
-                    {matchScore}
+                    {scoreReport?.overall_score ?? matchScore}
                   </span>
                   <span className="text-neutral-400"> / 100</span>
                 </p>
