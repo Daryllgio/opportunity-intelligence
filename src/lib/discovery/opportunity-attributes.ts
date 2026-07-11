@@ -32,6 +32,9 @@ export type OpportunityAttributes = {
   /** Verbatim excerpt of the page's eligibility section — the raw material
    * Tier-2 AI eligibility reads, so nuance survives structured extraction. */
   eligibility_text?: string;
+  /** Canonical sub-type token for branching categories (competition,
+   * career development, leadership, fellowship) — preferences filter on it. */
+  subtype?: string;
   [key: string]: unknown; // room for kinds we didn't anticipate
 };
 
@@ -124,6 +127,9 @@ export function normalizeOpportunityAttributes(raw: unknown): OpportunityAttribu
   if (opensAt) out.application_opens_at = opensAt;
   const opensNote = cleanString(input.application_opens_note);
   if (opensNote) out.application_opens_note = opensNote;
+
+  const subtype = cleanString(input.subtype)?.toLowerCase().replace(/[\s-]+/g, "_");
+  if (subtype && /^[a-z_]{3,40}$/.test(subtype)) out.subtype = subtype;
 
   if (Array.isArray(input.selection_criteria)) {
     const selection = input.selection_criteria

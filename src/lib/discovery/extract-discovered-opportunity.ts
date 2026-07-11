@@ -291,6 +291,18 @@ at the moment they apply, using ONLY these canonical tokens:
     - "deadline_time" (e.g. "23:59") and "deadline_timezone" (e.g.
       "America/New_York" or "ET") when the page states them.
     - "exclusivity_note": when the award can't be combined with others.
+    - "subtype": for competition / career_development_program /
+      leadership_program / fellowship types only, the best-fitting token:
+      competitions: hackathon, case_competition, essay_writing, pitch_startup,
+        science_fair, math_olympiad, coding_contest, data_science_ai,
+        robotics_engineering, debate_moot, design_arts, policy_social, quiz_bowl;
+      career development: mentorship, insight_program, pre_professional,
+        bootcamp_upskilling, networking_conference, certification_training;
+      leadership: civic_community, global_international, governance_policy,
+        youth_leadership, entrepreneurship_leadership, campus_leadership;
+      fellowships: research_fellowship, teaching_fellowship, policy_government,
+        social_impact, industry_fellowship, creative_media.
+      Omit when none clearly fits.
   Recommendation letters and nominations mean weeks of real work — factor
   them into effort_level (at least "medium", usually "high").
 

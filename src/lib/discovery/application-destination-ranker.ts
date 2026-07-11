@@ -794,7 +794,20 @@ async function evaluateCandidate({
   // page contains the apply path — not a better place to send the student.
   // (Following the action link is exactly how users got dumped on bare
   // federalregister sign-in forms and unrelated financial-aid apply pages.)
-  const destinationUrl = finalUrl;
+  // Search results carry tracking params; students get the clean URL.
+  let destinationUrl = finalUrl;
+  try {
+    const cleaned = new URL(finalUrl);
+    for (const param of Array.from(cleaned.searchParams.keys())) {
+      const lower = param.toLowerCase();
+      if (lower.startsWith("utm_") || lower === "fbclid" || lower === "gclid" || lower === "mc_cid") {
+        cleaned.searchParams.delete(param);
+      }
+    }
+    destinationUrl = cleaned.toString().replace(/\?$/, "");
+  } catch {
+    // Keep the raw URL when parsing fails.
+  }
   let purpose: CandidatePurpose = "unknown";
   let documentUrl: string | null = null;
   let documentType: string | null = null;
@@ -1141,7 +1154,8 @@ function harvestHopCandidates({
   const seen = new Set<string>();
 
   for (const link of links.slice(0, 400)) {
-    if (!link.href || isBlockedDestinationUrl(link.href)) continue;
+    if (!link.href || !/^https?:\/\//i.test(link.href)) continue; // no mailto:/javascript:
+    if (isBlockedDestinationUrl(link.href)) continue;
     if (isPressOrNewsUrl(link.href)) continue;
     if (isDocumentUrl(link.href)) continue;
     if (hasLoginPathSignal(link.href)) continue;

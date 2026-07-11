@@ -127,3 +127,8 @@ Format: #N — area — case — disposition (IMPLEMENTED/VERIFIED-EXISTING/DOCU
 117. billing copy — "200 / month" read as a cap on total visible scores — IMPLEMENTED: "up to N new each month" phrasing + accumulation explainer
 118. testing — hardcoded boundary dates in the age harness went stale when the calendar advanced (a passing suite started failing overnight with no code change) — IMPLEMENTED: harness computes birthday-boundary DOBs relative to today
 119. funding filter — funding_amount is free text ("CA$5,000/year renewable", "Full tuition") — IMPLEMENTED: parser takes the largest stated figure, totalizes per-year×N-years phrasing, flags full-tuition; unparseable amounts fail open except under the explicit full-tuition preset
+120. destination — on-page hop links can be mailto:/javascript: pseudo-URLs — IMPLEMENTED: http(s)-only scheme guard in the hop harvest
+121. destination — search-result URLs carry tracking params (utm_*, fbclid, gclid) that students shouldn't inherit — IMPLEMENTED: destination URLs are cleaned before adoption
+122. destination — AI selection can return an out-of-range or null id — IMPLEMENTED: bounds-checked; null falls back to heuristic order; single-candidate pools skip the model call entirely (cost)
+123. scoring — a report generated before a profile change can disagree with a fresher batch score; the founder's rule (report wins) still applies — DOCUMENTED-ACCEPTED: reports are deliberately durable analyses; regenerating them on profile change is a paid action the user controls
+124. subtype — extraction now captures attributes.subtype from a canonical token list; the deterministic keyword classifier remains the backstop for pre-capture rows and both fail open — IMPLEMENTED
