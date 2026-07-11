@@ -188,6 +188,88 @@ export function looksLikeDegreeProgramRecord({
   return { isDegree: false, reason: null };
 }
 
+/**
+ * Institution-facing funding detector. Federal/foundation grants whose
+ * APPLICANT is a school, university, state agency, or organization are not
+ * student opportunities — the student never applies to them (NPD and SDS
+ * both slipped through: the money eventually reaches students, but only
+ * institutions can apply). Recognized by who the page says may apply and by
+ * the application infrastructure (the grants.gov ecosystem).
+ */
+const INSTITUTION_APPLICANT_SIGNALS = [
+  "eligible applicants are institutions",
+  "institutions of higher education may apply",
+  "applications from institutions of higher education",
+  "eligible applicants include institutions",
+  "eligible applicants are ihes",
+  "eligible entities",
+  "eligible entity",
+  "state educational agencies",
+  "local educational agencies",
+  "state education agencies",
+  "local education agencies",
+  "awarded to institutions",
+  "grants to institutions",
+  "grants are made to institutions",
+  "funds are awarded to schools",
+  "assistance listing number",
+  "cfda number",
+  "notice inviting applications",
+  "absolute priority",
+  "competitive preference priority",
+];
+
+const INSTITUTION_GRANT_DOMAINS = [
+  "grants.gov",
+  "simpler.grants.gov",
+  "federalregister.gov",
+  "grantsolutions.gov",
+  "sam.gov",
+  // The Department of Education's grant-programs subtree is discretionary
+  // funding to institutions/agencies; student aid lives at studentaid.gov.
+  "ed.gov/grants-and-programs",
+];
+
+export function looksLikeInstitutionFacingGrant({
+  title,
+  url,
+  text,
+}: {
+  title?: unknown;
+  url?: unknown;
+  text?: unknown;
+}): { isInstitutionGrant: boolean; reason: string | null } {
+  const combined = normalize(`${title || ""} ${text || ""}`);
+  const urlText = String(url || "").toLowerCase();
+
+  const domainHit = INSTITUTION_GRANT_DOMAINS.find((domain) =>
+    urlText.includes(domain)
+  );
+
+  // The grants.gov ecosystem is exclusively organization-facing — a student
+  // never applies there. One domain hit is decisive.
+  if (domainHit) {
+    return {
+      isInstitutionGrant: true,
+      reason: `Application lives in the institution-facing grants ecosystem (${domainHit}) — the applicant is an organization, not a student.`,
+    };
+  }
+
+  // Text-only detection needs two independent signals so a student program
+  // that merely mentions "eligible entities" once is never nuked.
+  const signalHits = INSTITUTION_APPLICANT_SIGNALS.filter((signal) =>
+    combined.includes(normalize(signal))
+  );
+  if (signalHits.length >= 2) {
+    return {
+      isInstitutionGrant: true,
+      reason: `Page describes institution-facing funding ("${signalHits[0]}" + "${signalHits[1]}") — the applicant is an organization, not a student.`,
+    };
+  }
+
+  return { isInstitutionGrant: false, reason: null };
+}
+
 export function shouldRejectExtractedOpportunity({
   type,
   title,
@@ -212,6 +294,18 @@ export function shouldRejectExtractedOpportunity({
     return {
       reject: true,
       reason: `Outside target scope: ${degreeCheck.reason}`,
+    };
+  }
+
+  const institutionCheck = looksLikeInstitutionFacingGrant({
+    title,
+    url,
+    text: `${description || ""} ${ai_summary || ""}`,
+  });
+  if (institutionCheck.isInstitutionGrant) {
+    return {
+      reject: true,
+      reason: `Outside target scope: ${institutionCheck.reason}`,
     };
   }
 

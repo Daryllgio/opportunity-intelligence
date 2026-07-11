@@ -89,6 +89,7 @@ const EXPERIENCE_KIND_TO_COLUMN: Record<
 type ProfileFormState = {
   nationality: string;
   citizenships: string[];
+  permanent_resident_of: string;
   country_of_study: string;
   state_or_province: string;
   student_status: string;
@@ -306,6 +307,7 @@ const emptyAward: AwardEntry = {
 const initialState: ProfileFormState = {
   nationality: "",
   citizenships: [],
+  permanent_resident_of: "",
   country_of_study: "",
   state_or_province: "",
   student_status: "",
@@ -585,6 +587,7 @@ export function ProfileForm() {
         setForm({
           nationality: data.nationality || "",
           citizenships: listField("citizenships"),
+          permanent_resident_of: listField("permanent_resident_of")[0] || "",
           country_of_study: data.country_of_study || "",
           state_or_province: stringField("state_or_province"),
           student_status: data.student_status || "",
@@ -784,6 +787,9 @@ export function ProfileForm() {
       first_generation: form.first_generation,
       demographic_tags: form.demographic_tags,
       citizenships: form.citizenships,
+      permanent_resident_of: form.permanent_resident_of
+        ? [form.permanent_resident_of]
+        : [],
       intended_school: form.planning_transfer ? form.intended_school : null,
       class_standing: form.class_standing || null,
       field_of_study_secondary: form.field_of_study_secondary || null,
@@ -989,6 +995,19 @@ export function ProfileForm() {
                 onChange={(values) => updateField("citizenships", values)}
                 options={countries.filter((c) => c !== "Other")}
                 placeholder="Search country..."
+              />
+
+              <SearchableSelect
+                label="Permanent resident of (green card / PR status)"
+                value={form.permanent_resident_of === "none" ? "I have no permanent residency" : form.permanent_resident_of}
+                onChange={(value) =>
+                  updateField(
+                    "permanent_resident_of",
+                    value === "I have no permanent residency" ? "none" : value
+                  )
+                }
+                options={["I have no permanent residency", ...countries.filter((c) => c !== "Other")]}
+                searchPlaceholder="Search country..."
               />
 
               <SearchableSelect

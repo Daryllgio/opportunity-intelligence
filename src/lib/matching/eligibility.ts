@@ -310,15 +310,42 @@ function evaluateCriterion(
         return { verdict: "unknown", note: "Add your nationality to your profile to check this." };
       }
       const met = matchAnyValue(values, citizenships, sameCountry);
-      // Permanent-resident clauses widen the door: a "citizens or permanent
-      // residents" requirement can be satisfied by residency we may not know
-      // about, so a citizenship miss downgrades to unknown instead of
-      // exclusion when PR is an accepted route.
       if (met) return { verdict: "met", note: null };
+
       const acceptsPermanentResidents = /permanent resident|green card|landed immigrant/i.test(
         criterion.requirement
       );
       if (acceptsPermanentResidents) {
+        // Permanent residency is explicit profile data now. Holding PR of a
+        // required country satisfies the clause; positively NOT holding it
+        // (the student answered the question) plus no matching citizenship
+        // is a real exclusion — an international student who is neither a
+        // citizen nor a PR of Canada cannot win a "Canadian citizens or
+        // permanent residents" award (the GeniusCash bug). Only a student
+        // who never answered stays unknown.
+        // permanent_resident_of holds country names, or the sentinel "none"
+        // when the student explicitly answered that they hold no PR status.
+        // An empty/missing array means the question was never answered.
+        const prRaw = Array.isArray(profile.permanent_resident_of)
+          ? (profile.permanent_resident_of as unknown[]).map(normalizeLoose).filter(Boolean)
+          : [];
+        const answeredNone = prRaw.includes("none");
+        const prCountries = prRaw.filter((entry) => entry !== "none");
+
+        if (prCountries.length > 0) {
+          const prMet = matchAnyValue(values, prCountries, sameCountry);
+          if (prMet) return { verdict: "met", note: "You hold permanent residency there." };
+          return {
+            verdict: "not_met",
+            note: "Requires citizenship or permanent residency you don't hold.",
+          };
+        }
+        if (answeredNone) {
+          return {
+            verdict: "not_met",
+            note: "Requires citizenship or permanent residency you don't hold.",
+          };
+        }
         return {
           verdict: "unknown",
           note: "Open to permanent residents too. Met if you hold PR status.",
@@ -526,6 +553,35 @@ function evaluateCriterion(
         value.includes(candidate) || candidate.includes(value)
       );
       return met ? { verdict: "met", note: null } : { verdict: "unknown", note: null };
+    }
+
+    case "applicant_type":
+    case "eligible_applicants": {
+      // Institution-facing funding: when every stated applicant type is an
+      // organization (institutions, entities, agencies) and none is a
+      // student/individual, no student can ever apply. These rows should be
+      // purged upstream; this rule is the belt to that suspender.
+      const orgSignals = [
+        "institution", "entity", "entities", "agency", "agencies",
+        "organization", "organisation", "nonprofit", "school district",
+        "ihe", "sea", "lea", "consortium", "state", "tribal",
+      ];
+      const personSignals = ["student", "individual", "applicant may be a person", "youth"];
+      const allValues = values.map((value) => normalizeLoose(value));
+      if (allValues.length === 0) return { verdict: "unknown", note: null };
+      const everyOrg = allValues.every((value) =>
+        orgSignals.some((signal) => value.includes(signal))
+      );
+      const anyPerson = allValues.some((value) =>
+        personSignals.some((signal) => value.includes(signal))
+      );
+      if (everyOrg && !anyPerson) {
+        return {
+          verdict: "not_met",
+          note: "Only organizations can apply to this program, not individual students.",
+        };
+      }
+      return { verdict: "unknown", note: null };
     }
 
     default:

@@ -37,6 +37,8 @@ const MAX_PAGE_TEXT = 9000;
 export type DestinationVerdictKind =
   | "apply_page"
   | "program_page"
+  | "bare_application_form"
+  | "generic_institution_page"
   | "wrong_opportunity"
   | "login_wall"
   | "listing_or_blog"
@@ -59,6 +61,8 @@ const OK_VERDICTS: DestinationVerdictKind[] = ["apply_page", "program_page"];
 const VALID_VERDICTS: DestinationVerdictKind[] = [
   "apply_page",
   "program_page",
+  "bare_application_form",
+  "generic_institution_page",
   "wrong_opportunity",
   "login_wall",
   "listing_or_blog",
@@ -114,9 +118,14 @@ export async function verifyApplicationDestination(
 
   const prompt = `
 You are the final quality gate for a student-opportunity platform. Our promise:
-when a student clicks "Apply", they land on the page where they can actually
-apply to the SPECIFIC opportunity below — never a blog, a list, someone else's
-program, a bare login, or a generic university page.
+when a student clicks "Apply", they land on the DEFINITIVE OFFICIAL PAGE for
+the specific opportunity below — the page that best DESCRIBES it (details,
+eligibility, funding, deadline) AND contains the path to apply (an "Apply" /
+"Start application" button, link, or clear instructions). It is the page a
+diligent human would reach by googling the opportunity and clicking for 30
+seconds. It is NOT a bare application form, NOT a login screen, NOT a generic
+institution page that merely mentions it, and NOT someone else's description
+of it when the program has its own site.
 
 Opportunity the student wants to apply to:
 - Title: ${input.title || "(unknown)"}
@@ -130,15 +139,26 @@ Candidate destination page:
 - Page text (truncated):
 ${pageText.slice(0, MAX_PAGE_TEXT)}
 
-Question: is this page where a student applies to THIS SPECIFIC opportunity?
+Question: is this the definitive official page for THIS SPECIFIC opportunity —
+describing it AND offering the path to apply?
 
 Classify with exactly one verdict:
-- "apply_page": the application form, portal start page, or official page with
-  concrete "how to apply" instructions for THIS opportunity.
 - "program_page": the provider's own official page for THIS specific
-  opportunity, with application information or a clear apply link on it.
+  opportunity — describes it and has application information or a clear apply
+  link on it. THIS IS THE IDEAL DESTINATION.
+- "apply_page": an official "how to apply" page for THIS opportunity that
+  still carries real descriptive context (eligibility/deadline/what it is),
+  not just form fields. Also a good destination.
+- "bare_application_form": form fields, account creation, or a submission
+  portal with little or no description of the opportunity itself. A student
+  landing here cold would not know what they're applying to. NOT acceptable.
+- "generic_institution_page": a real page of the provider/institution
+  (financial aid office, grants office, department landing page, a DIFFERENT
+  sub-program's page) that mentions or overlaps this opportunity but is not
+  ITS page. If the program plausibly has its own dedicated site or page that
+  this page merely gestures at, use this verdict. NOT acceptable.
 - "wrong_opportunity": the page is about a DIFFERENT scholarship/program than
-  the one above, even if similar.
+  the one above, even if similar or from the same institution.
 - "login_wall": essentially only a sign-in form, with no public information
   about this opportunity. (A portal page that names the opportunity and
   explains applying before login is NOT a login_wall.)
@@ -154,6 +174,9 @@ Classify with exactly one verdict:
 Strictness rules:
 - The page must match the SPECIFIC opportunity — matching only the general
   topic (e.g. "scholarships") is not enough.
+- Prefer the program's own dedicated domain/page over a parent institution's
+  generic page (knight-hennessy.stanford.edu beats any gsb.stanford.edu
+  financial-aid page for the Knight-Hennessy Scholars Program).
 - A university's page describing an external national program counts as
   "program_page" ONLY if the provider runs it there; if the real provider has
   its own site, a third-party university description page is "wrong_opportunity"

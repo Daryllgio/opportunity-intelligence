@@ -48,6 +48,8 @@ export type ProfileRow = {
   first_generation: boolean | null;
   demographic_tags: string[] | null;
   citizenships: string[] | null;
+  permanent_resident_of: string[] | null;
+  preferences: Record<string, unknown> | null;
   date_of_birth: string | null;
   has_disability: boolean | null;
   gpa: number | null;

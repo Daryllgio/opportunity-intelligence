@@ -195,6 +195,28 @@ at the moment they apply, using ONLY these canonical tokens:
   title and type to null. We only list things students apply to ON TOP of
   their education (a scholarship FOR admitted students is fine; the admission
   itself is not).
+- INSTITUTION-FACING GRANTS ARE NOT OPPORTUNITIES. If the APPLICANT is an
+  institution, school, university, state/local education agency, nonprofit,
+  or other organization — even when the money ultimately funds students or
+  scholarships — set title and type to null. Tell-tale signs: "eligible
+  applicants are institutions of higher education", "eligible entities",
+  SEA/LEA language, CFDA/assistance-listing numbers, "notice inviting
+  applications", applying through grants.gov / Federal Register /
+  GrantSolutions. THE TEST: can an individual student fill out this
+  application themselves? If not, it is not a student opportunity.
+- JOB POSTINGS are not opportunities: a posting for a single salaried role
+  with responsibilities and qualifications is employment, not a program.
+- AGE REQUIREMENTS: whenever the page states any age constraint ("for youth
+  aged 12 to 18", "must be under 30", "25 or older"), capture an
+  eligibility_criteria entry with kind "age" and values holding the
+  normalized range ("12-18", "under 30", "25+"). Never leave a stated age
+  requirement uncaptured.
+- CITIZENSHIP PRECISION: citizen, permanent resident, and international/
+  study-permit status are THREE different things. Capture exactly what the
+  page demands: "Canadian citizens or permanent residents" is one
+  citizenship criterion whose requirement sentence preserves the "or
+  permanent residents" clause; "open to international students" is its own
+  criterion. Never blur them.
 - DIRECTORY PAGES: if the page is a listing of MANY distinct opportunities
   from different providers (a scholarship directory, a financial-aid office
   list, a fellowships index), do NOT pick one arbitrarily. Extract only when
