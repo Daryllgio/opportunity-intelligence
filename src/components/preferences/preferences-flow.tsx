@@ -15,6 +15,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getPlanLimitsForProfile } from "@/lib/billing/subscription";
+import { SearchableMultiSelect } from "@/components/ui/searchable-select";
+import { fieldOptionsForNextLevel } from "@/lib/data/fields-of-study";
 import {
   CATEGORY_SUBTYPES,
   DEFAULT_PREFERENCES,
@@ -374,22 +376,16 @@ export function PreferencesFlow({
                   </div>
                 </div>
 
-                <div>
-                  <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                    In which field? <span className="font-normal text-neutral-400">(may differ from your major)</span>
-                  </p>
-                  <input
-                    value={prefs.next_level.fields.join(", ")}
-                    onChange={(event) =>
-                      update((d) => {
-                        d.next_level.fields = event.target.value
-                          .split(",")
-                          .map((f) => f.trim())
-                          .filter(Boolean);
-                      })
+                <div className="max-w-md">
+                  <SearchableMultiSelect
+                    label="In which field? (up to 2 — may differ from your major)"
+                    selected={prefs.next_level.fields}
+                    onChange={(values) =>
+                      update((d) => void (d.next_level.fields = values.slice(0, 2)))
                     }
-                    placeholder="e.g. Business, Public Policy"
-                    className="mt-2 h-10 w-full max-w-md rounded-lg border border-neutral-200 bg-white px-3 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+                    options={fieldOptionsForNextLevel(prefs.next_level.types)}
+                    placeholder="Search field..."
+                    maxSelected={2}
                   />
                 </div>
 

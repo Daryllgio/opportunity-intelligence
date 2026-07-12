@@ -35,6 +35,11 @@ import {
   regionsForCountry,
 } from "@/lib/data/regions";
 import { UniversityCombobox } from "@/components/ui/university-combobox";
+import {
+  SearchableSelect,
+  SearchableMultiSelect,
+} from "@/components/ui/searchable-select";
+import { fieldOptionsForLevel, UNDERGRADUATE_MAJORS } from "@/lib/data/fields-of-study";
 
 type ExperienceEntry = {
   title: string;
@@ -168,71 +173,8 @@ const educationLevels = [
   "Other",
 ];
 
-const fieldsOfStudy = [
-  "Undeclared / Undecided",
-  "Accounting",
-  "Actuarial Science",
-  "Agriculture",
-  "Anthropology",
-  "Architecture",
-  "Art History",
-  "Biochemistry",
-  "Biology",
-  "Biomedical Engineering",
-  "Biomedical Sciences",
-  "Business Administration",
-  "Chemical Engineering",
-  "Chemistry",
-  "Civil Engineering",
-  "Communications",
-  "Computer Engineering",
-  "Computer Science",
-  "Criminology",
-  "Cybersecurity",
-  "Data Science",
-  "Dentistry",
-  "Design",
-  "Economics",
-  "Education",
-  "Electrical Engineering",
-  "Engineering",
-  "English",
-  "Environmental Science",
-  "Finance",
-  "Global Health",
-  "Health Sciences",
-  "History",
-  "Human Resources",
-  "Information Systems",
-  "International Development",
-  "International Relations",
-  "Journalism",
-  "Kinesiology",
-  "Law",
-  "Linguistics",
-  "Management",
-  "Marketing",
-  "Mathematics",
-  "Mechanical Engineering",
-  "Medicine",
-  "Neuroscience",
-  "Nursing",
-  "Pharmacy",
-  "Philosophy",
-  "Physics",
-  "Political Science",
-  "Psychology",
-  "Public Administration",
-  "Public Health",
-  "Public Policy",
-  "Social Work",
-  "Sociology",
-  "Software Engineering",
-  "Statistics",
-  "Urban Planning",
-  "Veterinary Medicine",
-  "Other",
-];
+// Field lists are exhaustive and level-appropriate (lib/data/fields-of-study);
+// the list adapts to the selected education level below.
 
 const languageOptions = [
   "English",
@@ -367,166 +309,6 @@ function bucketExperiences(experiences: TaggedExperience[]): {
     );
   }
   return buckets;
-}
-
-function SearchableSelect({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder = "Select an option",
-  searchPlaceholder = "Search...",
-  compact = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-  placeholder?: string;
-  searchPlaceholder?: string;
-  compact?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className={compact ? "flex items-center gap-3" : "space-y-2"}>
-      <Label>{label}</Label>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            role="combobox"
-            className={cn(
-              "justify-between font-normal",
-              compact ? "h-9 w-44" : "h-10 w-full"
-            )}
-          >
-            <span className="truncate">{value || placeholder}</span>
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-
-        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-          <Command>
-            <CommandInput placeholder={searchPlaceholder} />
-            <CommandList>
-              <CommandEmpty>No results found.</CommandEmpty>
-              <CommandGroup>
-                {options.map((option) => (
-                  <CommandItem
-                    key={option}
-                    value={option}
-                    onSelect={() => {
-                      onChange(option);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value === option ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    {option}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}
-
-function SearchableMultiSelect({
-  label,
-  selected,
-  onChange,
-  options,
-  placeholder = "Search...",
-}: {
-  label: string;
-  selected: string[];
-  onChange: (values: string[]) => void;
-  options: string[];
-  placeholder?: string;
-}) {
-  const [open, setOpen] = useState(false);
-
-  function toggle(value: string) {
-    if (selected.includes(value)) {
-      onChange(selected.filter((item) => item !== value));
-    } else {
-      onChange([...selected, value]);
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full justify-between font-normal"
-          >
-            <span>
-              {selected.length > 0
-                ? `${selected.length} selected`
-                : "Select one or more"}
-            </span>
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-
-        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-          <Command>
-            <CommandInput placeholder={placeholder} />
-            <CommandList>
-              <CommandEmpty>No results found.</CommandEmpty>
-              <CommandGroup>
-                {options.map((option) => (
-                  <CommandItem
-                    key={option}
-                    value={option}
-                    onSelect={() => toggle(option)}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        selected.includes(option) ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    {option}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-2 pt-2">
-          {selected.map((item) => (
-            <span
-              key={item}
-              className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm"
-            >
-              {item}
-              <button type="button" onClick={() => toggle(item)}>
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function SectionTitle({
@@ -1062,7 +844,7 @@ export function ProfileForm() {
                   onChange={(value) =>
                     updateField("undergraduate_field_of_study", value)
                   }
-                  options={fieldsOfStudy}
+                  options={[...UNDERGRADUATE_MAJORS]}
                   searchPlaceholder="Search field..."
                 />
               )}
@@ -1071,7 +853,7 @@ export function ProfileForm() {
                 label="Field of study / major"
                 value={form.field_of_study}
                 onChange={(value) => updateField("field_of_study", value)}
-                options={fieldsOfStudy}
+                options={fieldOptionsForLevel(form.education_level)}
                 searchPlaceholder="Search major..."
               />
 
@@ -1084,23 +866,13 @@ export function ProfileForm() {
                     value === form.field_of_study_secondary ? "" : value
                   )
                 }
-                options={fieldsOfStudy.filter((f) => f !== "Other")}
+                options={fieldOptionsForLevel(form.education_level).filter(
+                  (f) => f !== "Undeclared / Undecided"
+                )}
                 placeholder="None"
                 searchPlaceholder="Search field..."
               />
 
-              {form.field_of_study === "Other" && (
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Enter field of study / major</Label>
-                  <Input
-                    value={form.field_of_study_other}
-                    onChange={(event) =>
-                      updateField("field_of_study_other", event.target.value)
-                    }
-                    placeholder="Type your field of study"
-                  />
-                </div>
-              )}
 
               <div className="space-y-2">
                 <Label>GPA</Label>

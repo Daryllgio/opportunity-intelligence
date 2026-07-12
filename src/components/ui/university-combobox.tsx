@@ -132,11 +132,6 @@ export function UniversityCombobox({
                       )}
                     />
                     <span className="truncate">{u.n}</span>
-                    {u.s && (
-                      <span className="ml-auto pl-2 text-xs text-neutral-500">
-                        {u.s}
-                      </span>
-                    )}
                   </CommandItem>
                 ))}
                 <CommandItem
