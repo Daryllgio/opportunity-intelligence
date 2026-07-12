@@ -32,7 +32,8 @@ import {
   shouldScoreOpportunity,
   type ExperienceSummaryLike,
 } from "@/lib/scoring/priority";
-import { normalizeOpportunityType } from "@/lib/discovery/taxonomy";
+import { normalizeOpportunityType, OPPORTUNITY_TYPES } from "@/lib/discovery/taxonomy";
+import { preferencesFromProfile } from "@/lib/preferences/types";
 import { tier1Eligibility } from "@/lib/matching/tier1";
 import { resolveEligibilityTier2 } from "@/lib/matching/tier2-eligibility";
 
@@ -488,12 +489,64 @@ export async function runBatchScoringForUser({
     totalRemaining: batchLimit,
     perCategoryRemaining,
   });
+
+  // SPILLOVER: when the chosen scored categories can't fill the user's paid
+  // capacity (strict eligibility + sub-type exclusion can leave a thin set),
+  // the unused slots spill into the user's database-ACCESS categories —
+  // still eligibility-gated, still preference-gated, still relevance-ranked.
+  // Paid capacity never sits idle just because a niche category ran dry.
+  let spilledChosen: typeof newlyChosen = [];
+  const spillBudget = Math.min(batchLimit - newlyChosen.length, scoresRemaining - newlyChosen.length);
+  if (spillBudget > 0) {
+    const preferences = preferencesFromProfile(profile as Record<string, unknown>);
+    const spillCategories = (
+      preferences.access_categories.length > 0
+        ? preferences.access_categories
+        : OPPORTUNITY_TYPES.map(String)
+    ).filter((category: string) => !rankedCategories.includes(category));
+
+    if (spillCategories.length > 0) {
+      const chosenIds = new Set(
+        newlyChosen.map((c) => String((c.opportunity as Record<string, unknown>).id))
+      );
+      const spillCandidates = opportunities
+        .filter((opportunity) => !chosenIds.has(String(opportunity.id)))
+        .filter((opportunity) => !existingScoreMap.has(String(opportunity.id)))
+        .filter((opportunity) =>
+          shouldScoreOpportunity(
+            profile as Record<string, unknown>,
+            opportunity,
+            spillCategories
+          )
+        )
+        .map((opportunity) => ({
+          opportunity,
+          priority: criteriaPriorityScore({
+            profile: profile as Record<string, unknown>,
+            opportunity,
+            rankedCategories: spillCategories,
+            experienceTokens,
+          }),
+        }));
+
+      const spillPerCategory: Record<string, number> = {};
+      for (const category of spillCategories) {
+        spillPerCategory[category] = planLimits.competitivenessScoresPerCategory;
+      }
+      spilledChosen = allocateScoringSlots({
+        candidates: spillCandidates,
+        totalRemaining: spillBudget,
+        perCategoryRemaining: spillPerCategory,
+      });
+    }
+  }
+
   const refreshChosen = allocateScoringSlots({
     candidates: refreshCandidates,
     totalRemaining: REFRESH_BATCH_CAP,
     perCategoryRemaining: {},
   });
-  let unscored = [...newlyChosen, ...refreshChosen];
+  let unscored = [...newlyChosen, ...spilledChosen, ...refreshChosen];
 
   // Tier-2 eligibility gate on the rows about to spend Pro tokens: the
   // cached Flash resolver settles what the deterministic rules couldn't.

@@ -397,6 +397,29 @@ function OpportunitiesBrowse() {
   }, [rows, scores, sortMode, tier1Results, aiDecisions, scholarshipFilterActive, fundingMin, fundingFull, profileRow]);
 
   const combined = useMemo(() => [...scored, ...unscored], [scored, unscored]);
+
+  // Thin scored inventory: the user's chosen scored categories currently
+  // hold few scorable rows. Spillover already uses the idle capacity;
+  // this notice just tells them why and offers the fix. Dismissable per
+  // month — helpful once, never naggy.
+  const thinKey = `oppscore-thin-notice-${new Date().toISOString().slice(0, 7)}`;
+  const [thinDismissed, setThinDismissed] = useState(false);
+  useEffect(() => {
+    try {
+      setThinDismissed(Boolean(window.localStorage.getItem(thinKey)));
+    } catch {
+      // Private mode: show it; dismissal just won't stick.
+    }
+  }, [thinKey]);
+  const thinScoredInventory = useMemo(() => {
+    if (!hasRanking || !profileRow) return false;
+    const prefs = preferencesFromProfile(profileRow);
+    if (prefs.scored_categories.length === 0) return false;
+    const inScored = combined.filter((row) =>
+      prefs.scored_categories.includes(String(row.type))
+    ).length;
+    return inScored > 0 ? inScored < 10 : false;
+  }, [combined, hasRanking, profileRow]);
   const totalPages = Math.max(1, Math.ceil(combined.length / PAGE_SIZE));
   const pageRows = combined.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   // The scored/unscored section split only exists in match order; other sorts
@@ -477,6 +500,30 @@ function OpportunitiesBrowse() {
         <AiSearch
           hasAiSearch={getPlanLimitsForProfile(profileRow).hasAiSearch}
         />
+      )}
+
+      {isLoggedIn && hasProfile && hasRanking && thinScoredInventory && !thinDismissed && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
+          <p className="text-sm text-neutral-700 dark:text-neutral-300">
+            Not many scorable opportunities in your selected categories right
+            now. your unused capacity is scoring your other categories, or you
+            can{" "}
+            <Link href="/preferences" className="underline underline-offset-2">
+              add another category
+            </Link>
+            .
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setThinDismissed(true);
+              try { window.localStorage.setItem(thinKey, "1"); } catch {}
+            }}
+            className="text-sm text-neutral-400 hover:text-neutral-600"
+          >
+            Dismiss
+          </button>
+        </div>
       )}
 
       {isLoggedIn && hasProfile && profileRow && (() => {

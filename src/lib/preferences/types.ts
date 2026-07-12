@@ -114,6 +114,12 @@ export const CATEGORY_SUBTYPES: Record<string, SubtypeOption[]> = {
     { value: "entrepreneurship_leadership", label: "Entrepreneurial leadership" },
     { value: "campus_leadership", label: "Campus & student-government" },
   ],
+  research_program: [
+    { value: "summer_research", label: "Summer research programs", hint: "REUs, summer studentships" },
+    { value: "academic_year_research", label: "Academic-year research", hint: "term-time lab & project placements" },
+    { value: "research_abroad", label: "Research abroad", hint: "international research placements" },
+    { value: "thesis_project_funding", label: "Thesis & project funding", hint: "support for your own research" },
+  ],
   fellowship: [
     { value: "research_fellowship", label: "Research fellowships" },
     { value: "teaching_fellowship", label: "Teaching fellowships" },

@@ -297,7 +297,7 @@ export function PreferencesFlow({
           <Section
             key={category}
             title={`Which kinds of ${label.toLowerCase()}?`}
-            description="Pick any that interest you — leave all unselected for every kind."
+            description="Only the kinds you pick will show; others won't. Leave all unselected to keep every kind."
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {options.map((option) => (

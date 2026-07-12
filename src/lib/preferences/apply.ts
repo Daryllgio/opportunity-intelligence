@@ -46,6 +46,12 @@ const SUBTYPE_SIGNALS: Record<string, Record<string, string[]>> = {
     policy_social: ["policy challenge", "social impact challenge", "civic tech", "sustainability challenge"],
     quiz_bowl: ["quiz bowl", "academic bowl", "brain bowl", "trivia championship"],
   },
+  research_program: {
+    summer_research: ["summer research", "summer student", "reu", "summer studentship", "summer fellowship", "summer program"],
+    academic_year_research: ["academic year", "term-time", "during the semester", "part-time research", "research assistant position"],
+    research_abroad: ["abroad", "international research", "overseas", "global research"],
+    thesis_project_funding: ["thesis", "dissertation", "capstone", "your own research", "student-led research", "independent research"],
+  },
   career_development_program: {
     mentorship: ["mentorship", "mentoring", "mentor program"],
     insight_program: ["insight program", "spring week", "spring insight", "discovery day", "early insight"],
@@ -77,28 +83,36 @@ function normalizeText(value: unknown): string {
 }
 
 /**
- * Best-effort sub-type for a row. Checks the extracted attribute first
- * (attributes.subtype, captured going forward), then keyword signals.
- * Returns null when unknown — callers must fail open.
+ * ALL sub-types a row plausibly belongs to — a data-science case competition
+ * is BOTH case_competition and data_science_ai, and must reach a student who
+ * picked either. Multi-tagging is what makes sub-type EXCLUSION safe: an
+ * imperfect partition produces extra inclusion, never a lost opportunity.
+ * Empty result = unclassifiable — callers must fail open.
  */
-export function classifyOpportunitySubtype(row: Row): string | null {
+export function classifyOpportunitySubtypes(row: Row): string[] {
   const category = String(row.type || "");
+  const known = new Set((CATEGORY_SUBTYPES[category] || []).map((o) => o.value));
+  const found = new Set<string>();
+
   const attributes = (row.attributes || {}) as Row;
   const captured = String(attributes.subtype || "").trim();
-  if (captured && (CATEGORY_SUBTYPES[category] || []).some((o) => o.value === captured)) {
-    return captured;
-  }
+  if (captured && known.has(captured)) found.add(captured);
 
   const signals = SUBTYPE_SIGNALS[category];
-  if (!signals) return null;
-
-  const haystack = normalizeText(
-    `${row.title || ""} ${row.ai_summary || ""} ${String(row.description || "").slice(0, 600)}`
-  );
-  for (const [subtype, keywords] of Object.entries(signals)) {
-    if (keywords.some((keyword) => haystack.includes(keyword))) return subtype;
+  if (signals) {
+    const haystack = normalizeText(
+      `${row.title || ""} ${row.ai_summary || ""} ${String(row.description || "").slice(0, 600)}`
+    );
+    for (const [subtype, keywords] of Object.entries(signals)) {
+      if (keywords.some((keyword) => haystack.includes(keyword))) found.add(subtype);
+    }
   }
-  return null;
+  return Array.from(found);
+}
+
+/** First classified sub-type (display convenience). */
+export function classifyOpportunitySubtype(row: Row): string | null {
+  return classifyOpportunitySubtypes(row)[0] || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,12 +264,14 @@ export function preferenceExcludes(
     return { excluded: true, reason: "Outside your selected categories." };
   }
 
-  // Sub-type narrowing, only when the student narrowed this category and we
-  // can classify the row. Unknown sub-type fails open.
+  // Sub-type EXCLUSION: unselected sub-types are ones the student is not
+  // interested in — they don't show. Safe because classification is
+  // multi-tag (any overlap keeps the row) and unclassifiable rows always
+  // fail open. Leave-all-unselected still means every kind.
   const wanted = preferences.subtypes[category];
   if (wanted && wanted.length > 0) {
-    const subtype = classifyOpportunitySubtype(row);
-    if (subtype && !wanted.includes(subtype)) {
+    const subtypes = classifyOpportunitySubtypes(row);
+    if (subtypes.length > 0 && !subtypes.some((s) => wanted.includes(s))) {
       return { excluded: true, reason: "Outside the sub-types you picked." };
     }
   }
@@ -328,8 +344,8 @@ export function preferencePriorityBoost(
   const category = String(row.type || "");
   const wanted = preferences.subtypes[category];
   if (wanted && wanted.length > 0) {
-    const subtype = classifyOpportunitySubtype(row);
-    if (subtype && wanted.includes(subtype)) boost += 10;
+    const subtypes = classifyOpportunitySubtypes(row);
+    if (subtypes.some((s) => wanted.includes(s))) boost += 10;
   }
 
   return boost;
