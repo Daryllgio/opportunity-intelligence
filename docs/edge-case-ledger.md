@@ -133,3 +133,41 @@ Format: #N — area — case — disposition (IMPLEMENTED/VERIFIED-EXISTING/DOCU
 123. scoring — a report generated before a profile change can disagree with a fresher batch score; the founder's rule (report wins) still applies — DOCUMENTED-ACCEPTED: reports are deliberately durable analyses; regenerating them on profile change is a paid action the user controls
 124. subtype — extraction now captures attributes.subtype from a canonical token list; the deterministic keyword classifier remains the backstop for pre-capture rows and both fail open — IMPLEMENTED
 125. search — AI search could surface rows browse hides (next-level, excluded sub-types, confirmed ineligible) because the model only sees prompt facts — IMPLEMENTED: deterministic tier1+preference post-filter on search results; the prompt keeps the privacy allowlist while the gates use the full profile row
+
+## Discovery-and-preferences run (2026-07-12)
+
+126. demand — the same demand from many users must cost once — IMPLEMENTED: demand_key unique on normalized (school|level|field); registration is an idempotent upsert; the reconciliation sweep owns user_count so racing registrations can never double-count
+127. demand — demand registration can miss (network, table pending, beacon skipped) — IMPLEMENTED: every daytime run re-derives demand from ALL profiles authoritative (pure DB work); registration is just the low-latency path
+128. demand — a user broadening categories after a school slice was exhausted — IMPLEMENTED: category merge re-opens exhausted rows (new ground to search) and resets the empty-pass counter
+129. demand — users who leave (or change schools) must stop costing passes — IMPLEMENTED: the sweep freezes slices no profile implies (user_count 0, exhausted); found opportunities stay in the catalog
+130. demand — a big school needs many passes; a small one needs one — IMPLEMENTED: pass-rotating query families with a two-consecutive-empty-passes exhaustion rule; passes_done drives which family runs next
+131. demand — overlapping daytime cron slots double-working a slice — IMPLEMENTED: CAS claim on (status, updated_at) before any search spend
+132. demand — a slice crashing mid-pass must not wedge the queue — IMPLEMENTED: failure resets status to pending with last_error and a 6-hour backoff
+133. demand — "S1"-style junk school names from raw prefs — IMPLEMENTED: sub-3-character school names never create slices; the UI only offers real pickers anyway
+134. demand — Undeclared/Other majors must not become search slices — IMPLEMENTED: cleanField folds them into the general slice
+135. demand — case/punctuation variants of the same school ("Carleton University" vs "carleton university") — IMPLEMENTED: demand keys normalize case and punctuation; proven identical in tests
+136. demand — a target school we've never heard of (not in our university list) — WORKS BY DESIGN: demand slices carry free-text school names into quoted search queries; no dataset membership required
+137. demand — daytime school stream vs nightly national stream starving each other — IMPLEMENTED: separate routes, separate schedules (02:00 vs 14/17/20/23 UTC), separate budgets; neither can consume the other's slots by construction
+138. demand — no new demand on a given day — IMPLEMENTED: reconciliation is milliseconds of DB work and the runner exits with zero searches; cost genuinely ~0 (proven at the logic level; live proof queued behind apply-me-4)
+139. demand — Vercel Hobby has one cron/day — DOCUMENTED degrade: the comma-hour schedule fires fewer/zero extra times; school results take up to a day; the status endpoint's expectation copy stays honest since it derives from the configured hours
+140. demand — a signup at 1 PM shouldn't stare at an empty catalog wondering — IMPLEMENTED: /api/school-demand/status derives the user's own pending slices and the next run slot; browse shows "gathering [school] — check back around [time]"
+141. demand — school searches returning aggregators/news — VERIFIED-EXISTING: every candidate passes the same intake gate + full production pipeline as national discovery (no separate weaker path)
+142. demand — per-user demand explosion (12 target schools × 6 fields) — IMPLEMENTED: caps at normalize (5 target schools, 3 transfer schools, 2 fields) bound one user's maximum slice count to ~own(3) + transfer(3×2) + grad(5×2×3) ≈ 39 slices worst case, typical ≤8
+143. subtypes — exclusion loses opportunities that straddle sub-types — IMPLEMENTED: multi-tag classification (a data-science case competition carries both tags; any overlap with the user's picks keeps the row)
+144. subtypes — a category with no recognizable sub-type on a row — VERIFIED: empty classification always fails open (College Fed Challenge proven visible to a hackathon-only persona)
+145. subtypes — extraction captures one primary subtype but keyword tags add the rest — IMPLEMENTED: classifier merges attributes.subtype with all keyword matches
+146. subtypes — research programs had no sub-structure to select — IMPLEMENTED: summer / academic-year / abroad / thesis-funding sub-types with signals
+147. spillover — spilled scoring must not violate the user's own gates — IMPLEMENTED: spill candidates run the same shouldScoreOpportunity (eligibility, preferences, deadline, field/level/region) with the spill categories as the allowed set
+148. spillover — spilling must never exceed the plan's per-category caps or monthly remaining — IMPLEMENTED: allocateScoringSlots with per-category budgets and min(batch, remaining) spill budget
+149. spillover — users with access=[] (everything) — IMPLEMENTED: spill draws from all seven categories minus the scored ones
+150. spillover — refreshes must not consume spill budget — VERIFIED: refresh allocation unchanged and separate (REFRESH_BATCH_CAP)
+151. thin-notice — nagging users every visit — IMPLEMENTED: once-per-month dismissal key in localStorage; private-mode failure shows the notice but never crashes
+152. next-level — a saved rare choice (PhD wanting a master's) must stay visible after the options adapt — IMPLEMENTED: selected types always render even outside the level's prominent/more sets
+153. next-level — high schoolers and undergraduate-only rows — VERIFIED: level-rank comparison already treats undergrad-only rows as next-level for HS users; the new undergraduate opt-in type maps them correctly
+154. fields — free-typed legacy field values (field_of_study_other) — PRESERVED: stored data still read by matching; only the input surface is gone
+155. fields — a level with a genuinely single field (MD at application time) — IMPLEMENTED: "Medicine (General / Undecided)" heads a short areas-of-interest list; pickers render it like any other
+156. pipeline-removal — legacy 'pipeline_program' values arriving from old drafts/campaigns/preferences — IMPLEMENTED: the normalizer folds every pipeline value into career_development_program forever; DB enum value kept harmlessly
+157. pipeline-removal — reclassification through the real pipeline could fail on a dead page — IMPLEMENTED: direct fold as the fallback after recheck; verified zero rows/drafts/campaigns remain
+158. caps — exactly at the cap (5th school added) — VERIFIED: UI disables the add control at the cap; normalize slices server-side; the 6th never persists
+159. transfer — legacy single-school transfer documents — IMPLEMENTED: schools[] hydrates from school, school stays aliased to schools[0]; old readers keep working
+160. location-preference removal — old documents carrying location data — IMPLEMENTED: shape tolerated in normalize, never asked, never applied; boost code removed
