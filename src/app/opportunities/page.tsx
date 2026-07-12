@@ -402,6 +402,42 @@ function OpportunitiesBrowse() {
   // hold few scorable rows. Spillover already uses the idle capacity;
   // this notice just tells them why and offers the fix. Dismissable per
   // month — helpful once, never naggy.
+  // Demand-driven discovery expectation: if this user's school/transfer/
+  // grad-target slices are still being gathered, say when to come back.
+  const [gatheringNotice, setGatheringNotice] = useState<{
+    schools: string[];
+    readyAround: string | null;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    async function checkDemand() {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return;
+      try {
+        const response = await fetch("/api/school-demand/status", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active && payload.pending?.length > 0) {
+          setGatheringNotice({
+            schools: Array.from(
+              new Set(payload.pending.map((p: { school: string }) => p.school))
+            ) as string[],
+            readyAround: payload.readyAround,
+          });
+        }
+      } catch {
+        // Silence: the notice is a nicety, never an error state.
+      }
+    }
+    if (isLoggedIn && hasProfile) checkDemand();
+    return () => {
+      active = false;
+    };
+  }, [isLoggedIn, hasProfile]);
+
   const thinKey = `oppscore-thin-notice-${new Date().toISOString().slice(0, 7)}`;
   const [thinDismissed, setThinDismissed] = useState(false);
   useEffect(() => {
@@ -500,6 +536,18 @@ function OpportunitiesBrowse() {
         <AiSearch
           hasAiSearch={getPlanLimitsForProfile(profileRow).hasAiSearch}
         />
+      )}
+
+      {isLoggedIn && hasProfile && gatheringNotice && (
+        <div className="mb-6 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3">
+          <p className="text-sm text-neutral-800 dark:text-neutral-200">
+            We&apos;re gathering opportunities for{" "}
+            <span className="font-medium">{gatheringNotice.schools.slice(0, 3).join(", ")}</span>
+            {gatheringNotice.readyAround
+              ? ` — check back around ${new Date(gatheringNotice.readyAround).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} for them.`
+              : " — they'll appear over the next day."}
+          </p>
+        </div>
       )}
 
       {isLoggedIn && hasProfile && hasRanking && thinScoredInventory && !thinDismissed && (
