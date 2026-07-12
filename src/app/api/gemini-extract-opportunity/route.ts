@@ -20,8 +20,7 @@ type ExtractedOpportunity = {
     | "grant"
     | "competition"
     | "leadership_program"
-    | "career_development_program"
-    | "pipeline_program";
+    | "career_development_program";
   description: string;
   ai_summary: string;
   country: string;
@@ -121,7 +120,7 @@ Rules:
 - Funding amount should be exact when stated. Preserve important structures like "$10,000/year + $7,500/year living expenses" when available.
 - Deadline must be YYYY-MM-DD or null.
 - Type must be one of:
-  scholarship, fellowship, research_program, grant, competition, leadership_program, career_development_program, pipeline_program.
+  scholarship, fellowship, research_program, grant, competition, leadership_program, career_development_program.
 - Effort level and reward level must be Low, Medium, or High.
 - Competitiveness factors should describe what the selection committee actually values, not generic traits.
 - Hard requirements should include strict eligibility requirements.

@@ -11,7 +11,6 @@ export const OPPORTUNITY_TYPES = [
   { value: "competition", label: "Competitions" },
   { value: "leadership_program", label: "Leadership Programs" },
   { value: "career_development_program", label: "Career Development" },
-  { value: "pipeline_program", label: "Pipeline Programs" },
 ];
 
 export const DEADLINE_PRESETS = [

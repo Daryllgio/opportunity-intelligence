@@ -44,7 +44,6 @@ const opportunityTypes = [
   "competition",
   "leadership_program",
   "career_development_program",
-  "pipeline_program",
 ];
 
 const levels = ["Low", "Medium", "High"];

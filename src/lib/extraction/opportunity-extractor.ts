@@ -64,7 +64,7 @@ function detectType(text: string) {
   if (lower.includes("grant")) return "grant";
   if (lower.includes("competition") || lower.includes("challenge")) return "competition";
   if (lower.includes("leadership")) return "leadership_program";
-  if (lower.includes("pipeline") || lower.includes("pathway")) return "pipeline_program";
+  if (lower.includes("pipeline") || lower.includes("pathway")) return "career_development_program";
   if (lower.includes("career development") || lower.includes("professional development")) {
     return "career_development_program";
   }

@@ -16,7 +16,6 @@ function addDays(date: Date, days: number) {
 }
 
 const preferredTypeOrder = [
-  "pipeline_program",
   "career_development_program",
   "competition",
   "leadership_program",

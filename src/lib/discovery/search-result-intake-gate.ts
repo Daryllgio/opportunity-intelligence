@@ -441,7 +441,7 @@ function hasRequiredStrictTypeSignalV2({
     return hasCompetitionSignalV2(combined);
   }
 
-  if (type === "pipeline program" || type === "pipeline_program") {
+  if (type === "pipeline program" || type === "pipeline_program") { // legacy campaigns
     return hasPipelineSignalV2(combined);
   }
 
@@ -545,7 +545,7 @@ function inferSearchResultOpportunityType({
   ];
 
   if (includesAny(combined, trueCompetitionSignals)) return "competition";
-  if (includesAny(combined, pipelineSignals)) return "pipeline_program";
+  if (includesAny(combined, pipelineSignals)) return "career_development_program";
   if (includesAny(combined, careerSignals)) return "career_development_program";
   if (includesAny(combined, leadershipSignals)) return "leadership_program";
   if (includesAny(combined, ["research program", "summer research", "research opportunity", "student research"])) return "research_program";

@@ -34,7 +34,6 @@ const CATEGORY_OPTIONS: { value: string; label: string; hint: string }[] = [
   { value: "competition", label: "Competitions", hint: "hackathons, cases, contests" },
   { value: "leadership_program", label: "Leadership programs", hint: "summits, civic programs" },
   { value: "career_development_program", label: "Career development", hint: "mentorship, insight weeks" },
-  { value: "pipeline_program", label: "Pipeline programs", hint: "pathways into fields" },
 ];
 
 const REGIONS_BY_COUNTRY: Record<string, string[]> = {

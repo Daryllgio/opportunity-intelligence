@@ -6,7 +6,6 @@ export const OPPORTUNITY_TYPES = [
   "competition",
   "leadership_program",
   "career_development_program",
-  "pipeline_program",
 ] as const;
 
 export type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
@@ -19,7 +18,6 @@ export const OPPORTUNITY_TYPE_LABELS: Record<OpportunityType, string> = {
   competition: "Competition",
   leadership_program: "Leadership Program",
   career_development_program: "Career Development Program",
-  pipeline_program: "Pipeline Program",
 };
 
 /**
@@ -41,9 +39,7 @@ export const OPPORTUNITY_TYPE_DESCRIPTIONS: Record<OpportunityType, string> = {
   leadership_program:
     "Selective programs that develop leaders: youth councils, civic and global leadership institutes, ambassador programs, and more.",
   career_development_program:
-    "Cohort-based professional preparation with its own application: consulting and finance prep programs, diversity career pipelines, and more.",
-  pipeline_program:
-    "Structured pathways into a profession or graduate school: pre-med and pre-law pipelines, PhD preparation programs, and more.",
+    "Cohort-based professional preparation with its own application: consulting and finance prep, pre-med/pre-law and graduate-school pathways, diversity career programs, and more.",
 };
 
 export const EDUCATION_LEVELS = [
@@ -190,7 +186,12 @@ export function normalizeOpportunityType(value: unknown): OpportunityType | null
     return "competition";
   }
   if (raw.includes("leadership")) return "leadership_program";
-  if (raw.includes("pipeline")) return "pipeline_program";
+  // "Pipeline program" was retired as a category (2026-07-12): every pipeline
+  // is really a scholarship/fellowship/research/career-development program
+  // that targets specific students — the targeting lives in eligibility
+  // criteria, not in a category. Legacy values fold into career development;
+  // re-extraction assigns the true category per row.
+  if (raw.includes("pipeline")) return "career_development_program";
   if (raw.includes("career")) return "career_development_program";
 
   return null;

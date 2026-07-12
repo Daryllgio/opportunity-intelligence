@@ -8,7 +8,6 @@ const typeLabels: Record<string, string> = {
   competition: "Competition",
   leadership_program: "Leadership Program",
   career_development_program: "Career Development",
-  pipeline_program: "Pipeline Program",
 };
 
 export function OpportunityTypeBadge({ type }: { type: string }) {

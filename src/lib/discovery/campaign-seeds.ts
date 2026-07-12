@@ -7,8 +7,7 @@ export type DiscoveryCampaignSeed = {
     | "grant"
     | "competition"
     | "leadership_program"
-    | "career_development_program"
-    | "pipeline_program";
+    | "career_development_program";
   education_level:
     | "high_school"
     | "undergraduate"
@@ -142,7 +141,7 @@ const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     ],
   },
   {
-    opportunity_type: "pipeline_program",
+    opportunity_type: "career_development_program",
     field_area: "pipeline",
     education_levels: ["high_school", "undergraduate", "medical_student", "law_student"],
     phrases: [
