@@ -122,7 +122,9 @@ const LEVEL_ORDER: Record<CanonicalEducationLevel, number> = {
 };
 
 const NEXT_LEVEL_MAP: Record<NextLevelType, CanonicalEducationLevel[]> = {
+  undergraduate: ["undergraduate"],
   masters: ["masters", "graduate"],
+  masters_other: ["masters", "graduate"],
   phd: ["phd", "graduate"],
   mba: ["mba"],
   jd: ["law_student"],
@@ -311,7 +313,7 @@ export function preferencePriorityBoost(
 
   const schoolTargets = [
     ...preferences.next_level.target_schools,
-    preferences.transfer.school || "",
+    ...preferences.transfer.schools,
   ]
     .map((school) => normalizeText(school))
     .filter(Boolean);
@@ -328,18 +330,6 @@ export function preferencePriorityBoost(
   if (wanted && wanted.length > 0) {
     const subtype = classifyOpportunitySubtype(row);
     if (subtype && wanted.includes(subtype)) boost += 10;
-  }
-
-  if (preferences.location.countries.length > 0) {
-    const rowCountry = normalizeText(row.country);
-    if (
-      rowCountry &&
-      preferences.location.countries.some((country) =>
-        rowCountry.includes(normalizeText(country))
-      )
-    ) {
-      boost += 6;
-    }
   }
 
   return boost;

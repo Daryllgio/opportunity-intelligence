@@ -17,7 +17,15 @@
  *   Unknown data always fails open within an allowed category.
  */
 
-export type NextLevelType = "masters" | "phd" | "mba" | "jd" | "md" | "professional_other";
+export type NextLevelType =
+  | "undergraduate"
+  | "masters"
+  | "masters_other"
+  | "phd"
+  | "mba"
+  | "jd"
+  | "md"
+  | "professional_other";
 
 export type StudentPreferences = {
   version: 1;
@@ -43,12 +51,16 @@ export type StudentPreferences = {
   transfer: {
     planning: boolean;
     country: "us" | "canada" | null;
+    /** First destination school (compatibility alias for schools[0]). */
     school: string | null;
+    /** Destination schools, max 3. */
+    schools: string[];
   };
-  /** Where an in-person opportunity should be, when the student cares. */
+  /** RETIRED (2026-07-12): the browse page's location filter owns this.
+   * Kept in the shape so old documents parse; never asked, never applied. */
   location: {
-    countries: string[]; // e.g. ["Canada"] — empty = anywhere
-    regions: string[]; // states/provinces — empty = anywhere in country
+    countries: string[];
+    regions: string[];
   };
 };
 
@@ -58,7 +70,7 @@ export const DEFAULT_PREFERENCES: StudentPreferences = {
   access_categories: [],
   subtypes: {},
   next_level: { interested: false, types: [], fields: [], country: "either", target_schools: [] },
-  transfer: { planning: false, country: null, school: null },
+  transfer: { planning: false, country: null, school: null, schools: [] },
   location: { countries: [], regions: [] },
 };
 
@@ -118,13 +130,63 @@ export function categoryHasSubtypes(category: string): boolean {
 }
 
 export const NEXT_LEVEL_TYPE_OPTIONS: { value: NextLevelType; label: string }[] = [
+  { value: "undergraduate", label: "Undergraduate / college" },
   { value: "masters", label: "Master's" },
+  { value: "masters_other", label: "Another master's (different field)" },
   { value: "phd", label: "PhD / doctoral" },
   { value: "mba", label: "MBA" },
   { value: "jd", label: "Law (JD)" },
   { value: "md", label: "Medicine (MD)" },
   { value: "professional_other", label: "Other professional degree" },
 ];
+
+/**
+ * The next-level question adapts to where the student IS. Prominent options
+ * are the likely paths; "more" holds legitimate-but-rare ones so no real
+ * aspiration is blocked, while nobody sees options that make no sense for
+ * them (a high schooler is never asked about MBAs).
+ */
+export function nextLevelChoicesFor(currentLevel: string): {
+  question: string;
+  prominent: NextLevelType[];
+  more: NextLevelType[];
+} {
+  const level = String(currentLevel || "").toLowerCase();
+  if (level.includes("high")) {
+    return {
+      question: "Interested in university and college opportunities too?",
+      prominent: ["undergraduate"],
+      more: [],
+    };
+  }
+  if (level.includes("master")) {
+    return {
+      question: "Thinking about a PhD or professional school after your master's?",
+      prominent: ["phd", "mba", "jd", "md"],
+      more: ["masters_other", "professional_other"],
+    };
+  }
+  if (level.includes("phd") || level.includes("doctor")) {
+    return {
+      question: "Considering professional school or further study after your PhD?",
+      prominent: ["mba", "jd", "md"],
+      more: ["masters_other", "professional_other"],
+    };
+  }
+  if (level.includes("mba") || level.includes("law") || level.includes("medic") || level.includes("professional")) {
+    return {
+      question: "Considering further study after your current program?",
+      prominent: ["phd", "masters_other"],
+      more: ["mba", "jd", "md", "professional_other"],
+    };
+  }
+  // Undergraduate (the default)
+  return {
+    question: "Opportunities beyond your current level?",
+    prominent: ["masters", "phd", "mba", "jd", "md"],
+    more: ["professional_other"],
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Normalization — preferences arrive from the client; trust nothing.
@@ -170,18 +232,29 @@ export function normalizePreferences(raw: unknown): StudentPreferences {
       types: cleanStringArray(nextLevel.types, 6).filter((t): t is NextLevelType =>
         validNextTypes.has(t as NextLevelType)
       ),
-      fields: cleanStringArray(nextLevel.fields, 6),
+      fields: cleanStringArray(nextLevel.fields, 2),
       country: country === "us" || country === "canada" ? (country as "us" | "canada") : "either",
-      target_schools: cleanStringArray(nextLevel.target_schools, 8),
+      // Caps bound how much school-specific discovery one user can trigger:
+      // 5 next-level target schools, 2 fields, 3 transfer destinations.
+      target_schools: cleanStringArray(nextLevel.target_schools, 5),
     },
-    transfer: {
-      planning: transfer.planning === true,
-      country:
-        transferCountry === "us" || transferCountry === "canada"
-          ? (transferCountry as "us" | "canada")
-          : null,
-      school: String(transfer.school || "").trim().slice(0, 120) || null,
-    },
+    transfer: (() => {
+      const schools = cleanStringArray(
+        Array.isArray(transfer.schools) && (transfer.schools as unknown[]).length
+          ? transfer.schools
+          : [transfer.school].filter(Boolean),
+        3
+      );
+      return {
+        planning: transfer.planning === true,
+        country:
+          transferCountry === "us" || transferCountry === "canada"
+            ? (transferCountry as "us" | "canada")
+            : null,
+        school: schools[0] || null,
+        schools,
+      };
+    })(),
     location: {
       countries: cleanStringArray(location.countries, 4),
       regions: cleanStringArray(location.regions, 12),
@@ -216,6 +289,7 @@ export function preferencesFromProfile(
       planning: Boolean(profile?.intended_school),
       country: null,
       school: (profile?.intended_school as string) || null,
+      schools: profile?.intended_school ? [String(profile.intended_school)] : [],
     },
   };
 }

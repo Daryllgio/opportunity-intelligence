@@ -10,8 +10,7 @@
  *   1. SCORED categories (AI competitiveness scoring) — bounded by plan.
  *   2. ACCESS categories (browsable database) — unbounded, empty = all.
  * Then, conditionally: sub-types per branching category, next-level opt-in
- * (with degree type / field / country / target schools), transfer intent,
- * and location preference.
+ * (with degree type / field / country / target schools), and transfer intent.
  */
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -21,8 +20,10 @@ import {
   DEFAULT_PREFERENCES,
   NEXT_LEVEL_TYPE_OPTIONS,
   categoryHasSubtypes,
+  nextLevelChoicesFor,
   normalizePreferences,
   preferencesFromProfile,
+  type NextLevelType,
   type StudentPreferences,
 } from "@/lib/preferences/types";
 
@@ -35,15 +36,6 @@ const CATEGORY_OPTIONS: { value: string; label: string; hint: string }[] = [
   { value: "leadership_program", label: "Leadership programs", hint: "summits, civic programs" },
   { value: "career_development_program", label: "Career development", hint: "mentorship, insight weeks" },
 ];
-
-const REGIONS_BY_COUNTRY: Record<string, string[]> = {
-  "United States": [
-    "Northeast", "Mid-Atlantic", "Southeast", "Midwest", "Southwest", "West Coast", "Mountain West",
-  ],
-  Canada: [
-    "Ontario", "Quebec", "British Columbia", "Alberta", "Atlantic Canada", "Prairies",
-  ],
-};
 
 function Chip({
   selected,
@@ -108,6 +100,8 @@ export function PreferencesFlow({
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [prefs, setPrefs] = useState<StudentPreferences>({ ...DEFAULT_PREFERENCES });
   const [schoolInput, setSchoolInput] = useState("");
+  const [transferSchoolInput, setTransferSchoolInput] = useState("");
+  const [showRareNextLevels, setShowRareNextLevels] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -135,6 +129,14 @@ export function PreferencesFlow({
     planLimits.rankedCategoryLimit === "all"
       ? CATEGORY_OPTIONS.length
       : Math.max(1, Number(planLimits.rankedCategoryLimit) || 1);
+
+  const nextLevelChoices = nextLevelChoicesFor(String(profile?.education_level || ""));
+  const visibleNextLevelOptions = NEXT_LEVEL_TYPE_OPTIONS.filter((option) =>
+    nextLevelChoices.prominent.includes(option.value) ||
+    (showRareNextLevels && nextLevelChoices.more.includes(option.value)) ||
+    // A previously saved rare choice always stays visible and deselectable.
+    prefs.next_level.types.includes(option.value)
+  );
 
   const selectedWithSubtypes = useMemo(
     () =>
@@ -315,10 +317,13 @@ export function PreferencesFlow({
 
       {!compact && (
         <>
-          {/* ── 4. Next level ── */}
+          {/* ── 4. Next level (adapts to the student's current level:
+                 a high schooler is asked about college, an undergrad about
+                 graduate school, a master's student about PhD/professional —
+                 nobody sees options that make no sense for them) ── */}
           <Section
-            title="Opportunities beyond your current level?"
-            description="Graduate and professional-school opportunities (like fully funded master's or MBA scholarships) only appear if you ask for them."
+            title={nextLevelChoices.question}
+            description="Opportunities a level above yours only appear if you ask for them."
           >
             <div className="flex gap-2">
               <Chip
@@ -342,7 +347,7 @@ export function PreferencesFlow({
                     Which kind?
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {NEXT_LEVEL_TYPE_OPTIONS.map((option) => (
+                    {visibleNextLevelOptions.map((option) => (
                       <Chip
                         key={option.value}
                         selected={prefs.next_level.types.includes(option.value)}
@@ -357,6 +362,15 @@ export function PreferencesFlow({
                         {option.label}
                       </Chip>
                     ))}
+                    {nextLevelChoices.more.length > 0 && !showRareNextLevels && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRareNextLevels(true)}
+                        className="rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm text-neutral-500 hover:border-neutral-400 dark:border-neutral-700"
+                      >
+                        More options
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -398,7 +412,7 @@ export function PreferencesFlow({
 
                 <div>
                   <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                    Target schools <span className="font-normal text-neutral-400">(optional — we prioritize their opportunities)</span>
+                    Target schools <span className="font-normal text-neutral-400">(up to 5 — we prioritize their opportunities)</span>
                   </p>
                   <div className="mt-2 flex max-w-md gap-2">
                     <input
@@ -412,7 +426,10 @@ export function PreferencesFlow({
                           const value = schoolInput.trim();
                           if (value) {
                             update((d) => {
-                              if (!d.next_level.target_schools.includes(value)) {
+                              if (
+                                !d.next_level.target_schools.includes(value) &&
+                                d.next_level.target_schools.length < 5
+                              ) {
                                 d.next_level.target_schools.push(value);
                               }
                             });
@@ -427,7 +444,10 @@ export function PreferencesFlow({
                         const value = schoolInput.trim();
                         if (value) {
                           update((d) => {
-                            if (!d.next_level.target_schools.includes(value)) {
+                            if (
+                              !d.next_level.target_schools.includes(value) &&
+                              d.next_level.target_schools.length < 5
+                            ) {
                               d.next_level.target_schools.push(value);
                             }
                           });
@@ -474,7 +494,7 @@ export function PreferencesFlow({
                 selected={!prefs.transfer.planning}
                 onClick={() =>
                   update((d) => {
-                    d.transfer = { planning: false, country: null, school: null };
+                    d.transfer = { planning: false, country: null, school: null, schools: [] };
                   })
                 }
               >
@@ -500,65 +520,80 @@ export function PreferencesFlow({
                     </Chip>
                   ))}
                 </div>
-                <input
-                  value={prefs.transfer.school || ""}
-                  onChange={(event) =>
-                    update((d) => void (d.transfer.school = event.target.value || null))
-                  }
-                  placeholder="Destination university"
-                  className="h-10 w-full max-w-md rounded-lg border border-neutral-200 bg-white px-3 text-sm dark:border-neutral-800 dark:bg-neutral-900"
-                />
+                <div>
+                  <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                    Destination schools{" "}
+                    <span className="font-normal text-neutral-400">
+                      (up to 3 — {prefs.transfer.schools.length}/3)
+                    </span>
+                  </p>
+                  <div className="mt-2 flex max-w-md gap-2">
+                    <input
+                      value={transferSchoolInput}
+                      onChange={(event) => setTransferSchoolInput(event.target.value)}
+                      placeholder="e.g. University of Toronto"
+                      disabled={prefs.transfer.schools.length >= 3}
+                      className="h-10 flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm disabled:opacity-50 dark:border-neutral-800 dark:bg-neutral-900"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          const value = transferSchoolInput.trim();
+                          if (value && prefs.transfer.schools.length < 3) {
+                            update((d) => {
+                              if (!d.transfer.schools.includes(value)) {
+                                d.transfer.schools.push(value);
+                                d.transfer.school = d.transfer.schools[0];
+                              }
+                            });
+                            setTransferSchoolInput("");
+                          }
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={prefs.transfer.schools.length >= 3}
+                      onClick={() => {
+                        const value = transferSchoolInput.trim();
+                        if (value && prefs.transfer.schools.length < 3) {
+                          update((d) => {
+                            if (!d.transfer.schools.includes(value)) {
+                              d.transfer.schools.push(value);
+                              d.transfer.school = d.transfer.schools[0];
+                            }
+                          });
+                          setTransferSchoolInput("");
+                        }
+                      }}
+                      className="rounded-lg border border-neutral-200 px-3 text-sm disabled:opacity-50 dark:border-neutral-800"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {prefs.transfer.schools.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {prefs.transfer.schools.map((school) => (
+                        <button
+                          key={school}
+                          type="button"
+                          onClick={() =>
+                            update((d) => {
+                              d.transfer.schools = d.transfer.schools.filter((s) => s !== school);
+                              d.transfer.school = d.transfer.schools[0] || null;
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md bg-neutral-100 px-2.5 py-1 text-sm text-neutral-700 hover:bg-neutral-200 dark:bg-neutral-900 dark:text-neutral-300"
+                        >
+                          {school} <span aria-hidden>✕</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </Section>
 
-          {/* ── 6. Location ── */}
-          <Section
-            title="Where should in-person opportunities be?"
-            description="We rank opportunities in your preferred places higher. Leave empty for anywhere."
-          >
-            <div className="flex flex-wrap gap-2">
-              {Object.keys(REGIONS_BY_COUNTRY).map((country) => (
-                <Chip
-                  key={country}
-                  selected={prefs.location.countries.includes(country)}
-                  onClick={() =>
-                    update((d) => {
-                      if (d.location.countries.includes(country)) {
-                        d.location.countries = d.location.countries.filter((c) => c !== country);
-                        d.location.regions = [];
-                      } else {
-                        d.location.countries.push(country);
-                      }
-                    })
-                  }
-                >
-                  {country}
-                </Chip>
-              ))}
-            </div>
-            {prefs.location.countries.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {prefs.location.countries.flatMap(
-                  (country) => REGIONS_BY_COUNTRY[country] || []
-                ).map((region) => (
-                  <Chip
-                    key={region}
-                    selected={prefs.location.regions.includes(region)}
-                    onClick={() =>
-                      update((d) => {
-                        d.location.regions = d.location.regions.includes(region)
-                          ? d.location.regions.filter((r) => r !== region)
-                          : [...d.location.regions, region];
-                      })
-                    }
-                  >
-                    {region}
-                  </Chip>
-                ))}
-              </div>
-            )}
-          </Section>
         </>
       )}
 
