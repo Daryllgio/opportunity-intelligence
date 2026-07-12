@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/run-discovery",
-      "schedule": "0 2 * * *"
+      "schedule": "0 2,4,6 * * *"
     },
     {
       "path": "/api/cron/run-lifecycle",
@@ -11,7 +11,7 @@
     },
     {
       "path": "/api/cron/run-scoring-jobs",
-      "schedule": "0 8 * * *"
+      "schedule": "30 8 * * *"
     },
     {
       "path": "/api/cron/run-deadline-reminders",
@@ -19,7 +19,7 @@
     },
     {
       "path": "/api/cron/run-school-demand",
-      "schedule": "0 14,17,20,23 * * *"
+      "schedule": "0 8,11,14,17,20,23 * * *"
     }
   ]
 }

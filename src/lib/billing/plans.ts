@@ -64,8 +64,8 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     // Database-only tier: the verified, profile-matched catalog plus saving
     // and deadline reminders. NO AI scoring, reports, or search — that's the
     // Pro/Premium upsell. Marginal AI cost ≈ $0 (shared extraction only), so
-    // margin is effectively the whole $10 minus infrastructure.
-    price: 10,
+    // margin is effectively the whole $12 minus infrastructure + Stripe fees.
+    price: 12,
     competitivenessScores: 0,
     competitivenessScoresPerCategory: 0,
     competitivenessReports: 0,
@@ -85,8 +85,8 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     // Worst-case monthly AI cost (July 2026 prices):
     //   200 scores ≈ $0.70 (Gemini Pro batch), 30 reports ≈ $0.80 (Sonnet),
     //   4M search tokens ≈ $1.30 (Flash), shared refresh overhead ≈ $1
-    //   → ~$3.80 at absolute max usage → 81% margin at $20; typical >90%.
-    price: 20,
+    //   → ~$3.80 at absolute max usage → ~83% margin at $24 after Stripe fees.
+    price: 24,
     competitivenessScores: 200,
     competitivenessScoresPerCategory: 100,
     competitivenessReports: 30,
@@ -106,8 +106,8 @@ export const PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
     // Worst-case monthly AI cost (July 2026 prices):
     //   400 scores ≈ $1.40 (Gemini Pro batch), 60 reports ≈ $1.55 (Sonnet),
     //   8M search tokens ≈ $2.60 (Flash), shared refresh overhead ≈ $1
-    //   → ~$6.55 at absolute max usage → 84% margin at $40; typical >92%.
-    price: 40,
+    //   → ~$6.55 at absolute max usage → ~85% margin at $48 after Stripe fees.
+    price: 48,
     competitivenessScores: 400,
     competitivenessScoresPerCategory: 100,
     competitivenessReports: 60,

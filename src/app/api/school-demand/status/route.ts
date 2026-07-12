@@ -21,7 +21,7 @@ function createServiceSupabase() {
 // The daytime demand cron's schedule (UTC hours) — keep in sync with
 // vercel.json. Used to tell users honestly when their school's
 // opportunities will be ready.
-const DEMAND_CRON_UTC_HOURS = [14, 17, 20, 23];
+const DEMAND_CRON_UTC_HOURS = [8, 11, 14, 17, 20, 23];
 
 function nextRunTime(): Date {
   const now = new Date();
