@@ -1192,6 +1192,76 @@ function harvestHopCandidates({
   return out.slice(0, MAX_HOP_CANDIDATES);
 }
 
+/**
+ * Site-restricted deep search — the v3 weapon against "right website,
+ * wrong page". Once a provider-owned (or title-token) domain is known,
+ * search INSIDE it for the opportunity's own page. This is exactly what a
+ * diligent human does: "site:university.edu \"Award Name\"".
+ */
+async function collectSiteRestrictedCandidates({
+  input,
+  domain,
+}: {
+  input: ApplicationDestinationInput;
+  domain: string;
+}): Promise<DestinationCandidate[]> {
+  const title = String(input.title || "").trim();
+  if (!title || !domain) return [];
+
+  const queries = [
+    `site:${domain} "${title}"`,
+    `site:${domain} ${title} apply eligibility`,
+  ];
+
+  const out = new Map<string, DestinationCandidate>();
+  for (const query of queries) {
+    let results;
+    try {
+      results = await searchDiscoveryWeb({ query, maxResults: 6 });
+    } catch {
+      continue;
+    }
+    for (const result of results) {
+      const resultDomain = getDomain(result.url);
+      if (!resultDomain) continue;
+      // Trust the site: operator but verify — engines sometimes leak
+      // off-site results.
+      if (resultDomain !== domain && !resultDomain.endsWith(`.${domain}`)) continue;
+      if (isBlockedDestinationUrl(result.url) || isPressOrNewsUrl(result.url)) continue;
+      const key = result.url.replace(/#.*$/, "").replace(/\/$/, "");
+      if (!out.has(key)) {
+        out.set(key, {
+          url: result.url,
+          title: result.title,
+          snippet: result.snippet,
+          domain: resultDomain,
+        });
+      }
+    }
+  }
+  return Array.from(out.values());
+}
+
+/** The provider-owned or title-token domain best worth deep-searching. */
+function pickDeepSearchDomain(
+  input: ApplicationDestinationInput,
+  evaluated: RankedDestinationCandidate[]
+): string | null {
+  const tokens = distinctiveTitleTokens(input.title);
+  let best: { domain: string; score: number } | null = null;
+  for (const candidate of evaluated) {
+    const domain = candidate.domain || getDomain(candidate.url);
+    if (!domain) continue;
+    let score = 0;
+    if (providerMatchesDomain(input.provider, domain).matched) score += 2;
+    const domainText = domain.replace(/[.\-]/g, " ");
+    if (tokens.some((t) => domainText.includes(t))) score += 3;
+    if (candidate.confidence === "high") score += 1;
+    if (score > 0 && (!best || score > best.score)) best = { domain, score };
+  }
+  return best?.domain || null;
+}
+
 /** Cheap pre-ranking so the fetch budget goes to the most promising URLs. */
 function preRankCandidate(
   input: ApplicationDestinationInput,
@@ -1276,7 +1346,7 @@ async function selectBestDestinationWithAI({
     has_apply_action: candidate.reasons.some((r) =>
       r.includes("applicant action")
     ),
-    excerpt: (candidate.capturedText || candidate.snippet || "").slice(0, 700),
+    excerpt: (candidate.capturedText || candidate.snippet || "").slice(0, 1600),
   }));
 
   const prompt = `
@@ -1573,6 +1643,31 @@ export async function rankApplicationDestination(
     evaluated.push(...hopEvaluated);
   }
 
+  // Phase 2c: SITE-RESTRICTED DEEP SEARCH — once we know which domain the
+  // opportunity lives on, search inside it for its own page. This is the
+  // direct attack on "right website, wrong page": a generic financial-aid
+  // page may win the open-web search while the program's real page sits
+  // three levels deep on the same site.
+  const deepDomain = pickDeepSearchDomain(input, evaluated);
+  if (deepDomain) {
+    const siteCandidates = (
+      await collectSiteRestrictedCandidates({ input, domain: deepDomain })
+    ).filter((candidate) => {
+      const key = candidate.url.split("#")[0].replace(/\/$/, "");
+      if (alreadySeen.has(key)) return false;
+      alreadySeen.add(key);
+      return true;
+    });
+    if (siteCandidates.length > 0) {
+      const siteEvaluated = await mapWithConcurrency(
+        siteCandidates.slice(0, 4),
+        CANDIDATE_FETCH_CONCURRENCY,
+        (candidate) => evaluateCandidate({ input, candidate })
+      );
+      evaluated.push(...siteEvaluated);
+    }
+  }
+
   const sorted = evaluated.sort((left, right) => {
     const confidenceDelta =
       confidenceRank(right.confidence) - confidenceRank(left.confidence);
@@ -1584,9 +1679,10 @@ export async function rankApplicationDestination(
   // finalists' dossiers, then the independent verifier must confirm it.
   // Selection and verification are separate models with separate framings on
   // purpose: the selector optimizes "best page", the verifier defends the
-  // promise. Verification failure removes the pick and re-selects once.
+  // promise. Verification failure removes the pick and re-selects (three
+  // rounds — precision is the product).
   const selectionPool = [...sorted];
-  for (let round = 0; round < 2 && selectionPool.some((c) => c.confidence !== "none"); round += 1) {
+  for (let round = 0; round < 3 && selectionPool.some((c) => c.confidence !== "none"); round += 1) {
     const chosen = await selectBestDestinationWithAI({
       input,
       candidates: selectionPool,
