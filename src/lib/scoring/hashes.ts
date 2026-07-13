@@ -86,6 +86,7 @@ export function buildProfileScoringFingerprint({
       ...optionalField("state_or_province"),
       ...optionalField("citizenships"),
       ...optionalField("demographic_tags"),
+      ...optionalField("projects"),
       ...optionalField("first_generation"),
       // gpa_scale only matters when non-default; school was missing from the
       // fingerprint entirely (school changes never triggered rescoring).

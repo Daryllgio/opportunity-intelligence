@@ -130,6 +130,16 @@ function compactProfileForScoring(profile: Record<string, unknown>) {
     target_opportunity_types: profile.target_opportunity_types,
     preferred_regions: profile.preferred_regions,
     financial_need: profile.financial_need,
+    // Projects are first-class evidence: a student without formal research
+    // experience may have written a paper; without hackathon wins, shipped
+    // an app. The scorer weighs what they demonstrate.
+    projects: Array.isArray(profile.projects)
+      ? (profile.projects as Record<string, unknown>[]).slice(0, 8).map((p) => ({
+          name: p.name,
+          description: String(p.description || "").slice(0, 400),
+          skills: p.skills,
+        }))
+      : undefined,
   };
 }
 
@@ -214,6 +224,9 @@ Score against EACH opportunity's OWN selection criteria — never a generic
 "how impressive is this student" measure:
 - Read competitiveness_factors, eligibility_criteria, and the description to
   understand what THIS opportunity actually selects on.
+- PROJECTS count as real evidence alongside formal experiences: a research
+  paper is research capability, a shipped app is engineering capability —
+  judge what the work demonstrates, not which profile box it sits in.
 - A student with little or no experience is HIGHLY competitive for
   opportunities that don't select on experience: need-based aid, essay
   contests, first-generation programs, entrance awards, lottery-style or

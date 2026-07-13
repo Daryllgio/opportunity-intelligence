@@ -177,6 +177,10 @@ Focus on how the student should present existing experiences, coursework, projec
 Do NOT give unrealistic advice like "get research experience," "win awards," "start a nonprofit," or "become a leader" unless the opportunity deadline is far away.
 Do NOT focus mainly on completing the OppScore profile unless profile incompleteness is the dominant reason for the low score.
 Do NOT write generic advice that could apply to any opportunity.
+Treat PROJECTS as real evidence alongside formal experiences: a self-built
+research tool demonstrates research capability, a shipped app demonstrates
+engineering — reference specific projects by name where they strengthen the
+case.
 
 Good positioning guidance examples:
 - Lead with the strongest existing experience that matches this opportunity's selection criteria.
@@ -351,6 +355,7 @@ export async function runScoreReport({
       volunteer_experiences: profile.volunteer_experiences,
       work_project_experiences: profile.work_project_experiences,
       awards: profile.awards,
+      projects: profile.projects,
     },
     existing_competitiveness_score: competitivenessScore || null,
   };

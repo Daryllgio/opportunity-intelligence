@@ -40,6 +40,7 @@ import {
   SearchableMultiSelect,
 } from "@/components/ui/searchable-select";
 import { fieldOptionsForLevel, UNDERGRADUATE_MAJORS } from "@/lib/data/fields-of-study";
+import { SKILLS } from "@/lib/data/skills";
 
 type ExperienceEntry = {
   title: string;
@@ -95,6 +96,12 @@ type ProfileFormState = {
   nationality: string;
   citizenships: string[];
   permanent_resident_of: string;
+  projects: {
+    name: string;
+    description: string;
+    link: string;
+    skills: string[];
+  }[];
   country_of_study: string;
   state_or_province: string;
   student_status: string;
@@ -250,6 +257,7 @@ const initialState: ProfileFormState = {
   nationality: "",
   citizenships: [],
   permanent_resident_of: "",
+  projects: [],
   country_of_study: "",
   state_or_province: "",
   student_status: "",
@@ -370,6 +378,14 @@ export function ProfileForm() {
           nationality: data.nationality || "",
           citizenships: listField("citizenships"),
           permanent_resident_of: listField("permanent_resident_of")[0] || "",
+          projects: Array.isArray(record.projects)
+            ? (record.projects as Record<string, unknown>[]).map((p) => ({
+                name: String(p.name || ""),
+                description: String(p.description || ""),
+                link: String(p.link || ""),
+                skills: Array.isArray(p.skills) ? (p.skills as string[]) : [],
+              }))
+            : [],
           country_of_study: data.country_of_study || "",
           state_or_province: stringField("state_or_province"),
           student_status: data.student_status || "",
@@ -572,6 +588,15 @@ export function ProfileForm() {
       permanent_resident_of: form.permanent_resident_of
         ? [form.permanent_resident_of]
         : [],
+      projects: form.projects
+        .filter((p) => p.name.trim())
+        .slice(0, 12)
+        .map((p) => ({
+          name: p.name.trim().slice(0, 120),
+          description: p.description.trim().slice(0, 1500),
+          link: p.link.trim().slice(0, 300),
+          skills: p.skills.slice(0, 12),
+        })),
       class_standing: form.class_standing || null,
       field_of_study_secondary: form.field_of_study_secondary || null,
       undergraduate_field_of_study: GRADUATE_LEVELS.has(form.education_level)
@@ -618,6 +643,107 @@ export function ProfileForm() {
     planLimits.rankedCategoryLimit === "all"
       ? opportunityTypeOptions.length
       : planLimits.rankedCategoryLimit;
+
+  function addProject() {
+    updateField("projects", [
+      ...form.projects,
+      { name: "", description: "", link: "", skills: [] },
+    ]);
+  }
+
+  function updateProject(index: number, key: "name" | "description" | "link", value: string) {
+    const next = [...form.projects];
+    next[index] = { ...next[index], [key]: value };
+    updateField("projects", next);
+  }
+
+  function updateProjectSkills(index: number, skills: string[]) {
+    const next = [...form.projects];
+    next[index] = { ...next[index], skills: skills.slice(0, 12) };
+    updateField("projects", next);
+  }
+
+  function removeProject(index: number) {
+    updateField("projects", form.projects.filter((_, i) => i !== index));
+  }
+
+  function renderProjectsSection() {
+    return (
+      <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <SectionTitle
+            title="Projects"
+            description="Things you built, wrote, researched, or shipped — with the skills they demonstrate. Projects count as evidence in your match scores and reports, alongside experiences."
+          />
+          <Button type="button" variant="outline" onClick={addProject}>
+            + Add project
+          </Button>
+        </div>
+
+        {form.projects.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            A research paper, an app, a hackathon build, a community
+            initiative — anything with your fingerprints on it.
+          </p>
+        )}
+
+        {form.projects.map((project, index) => (
+          <div
+            key={index}
+            className="space-y-4 rounded-xl border border-neutral-200 p-4 sm:p-5 dark:border-neutral-800"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 space-y-2">
+                <Label>Project name</Label>
+                <Input
+                  value={project.name}
+                  onChange={(event) => updateProject(index, "name", event.target.value)}
+                  placeholder="e.g. Campus Food-Share App"
+                  required
+                />
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-neutral-500 hover:text-red-600"
+                onClick={() => removeProject(index)}
+              >
+                Remove
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <Label>What it is and what you did</Label>
+              <Textarea
+                value={project.description}
+                onChange={(event) => updateProject(index, "description", event.target.value)}
+                placeholder="What you built, your role, and the outcome (users, results, findings)."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Link <span className="font-normal text-neutral-400">(GitHub, site, paper — optional)</span></Label>
+              <Input
+                value={project.link}
+                onChange={(event) => updateProject(index, "link", event.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+
+            <SearchableMultiSelect
+              label="Skills demonstrated (up to 12)"
+              selected={project.skills}
+              onChange={(values) => updateProjectSkills(index, values)}
+              options={[...SKILLS]}
+              placeholder="Search skills..."
+              maxSelected={12}
+            />
+          </div>
+        ))}
+      </section>
+    );
+  }
 
   function renderExperienceSection() {
     return (
@@ -1017,6 +1143,7 @@ export function ProfileForm() {
               collect them; the eligibility profile above is everything
               Basic needs. */}
           {planLimits.hasCompetitivenessRanking && renderExperienceSection()}
+          {planLimits.hasCompetitivenessRanking && renderProjectsSection()}
 
           <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
             <div className="flex items-start justify-between gap-4">
