@@ -1351,7 +1351,10 @@ async function selectBestDestinationWithAI({
 
   const prompt = `
 You are choosing the ONE page a student should land on when they click
-"Apply" for this opportunity. The right page is the DEFINITIVE OFFICIAL
+"Apply" for this opportunity. Specificity wins: the page dedicated to THIS
+opportunity beats a broader hub/category page that merely covers it among
+others (a program's own page beats "Undergraduate Funding"; if two pages
+are both specific, prefer the one with richer application detail). The right page is the DEFINITIVE OFFICIAL
 OPPORTUNITY PAGE: it describes THIS specific opportunity (details,
 eligibility, funding, deadline) AND contains the path to apply (an Apply
 button/link or clear application instructions). Prefer the program's own

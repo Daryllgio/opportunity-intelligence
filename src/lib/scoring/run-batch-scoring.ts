@@ -512,11 +512,20 @@ export async function runBatchScoringForUser({
   const spillBudget = Math.min(batchLimit - newlyChosen.length, scoresRemaining - newlyChosen.length);
   if (spillBudget > 0) {
     const preferences = preferencesFromProfile(profile as Record<string, unknown>);
+
+    // THE USER'S CHOICE: "scored" doubles down inside their scored
+    // categories (the per-category spread relaxes so remaining inventory
+    // there is fully consumed); "access" (default) spills into their
+    // database-access categories — equally, or by their own manual
+    // per-category slot allocations.
     const spillCategories = (
-      preferences.access_categories.length > 0
-        ? preferences.access_categories
-        : OPPORTUNITY_TYPES.map(String)
-    ).filter((category: string) => !rankedCategories.includes(category));
+      preferences.spillover.target === "scored"
+        ? rankedCategories
+        : (preferences.access_categories.length > 0
+            ? preferences.access_categories
+            : OPPORTUNITY_TYPES.map(String)
+          ).filter((category: string) => !rankedCategories.includes(category))
+    ) as string[];
 
     if (spillCategories.length > 0) {
       const chosenIds = new Set(
@@ -543,8 +552,16 @@ export async function runBatchScoringForUser({
         }));
 
       const spillPerCategory: Record<string, number> = {};
+      const manual =
+        preferences.spillover.target === "access"
+          ? preferences.spillover.allocations
+          : null;
       for (const category of spillCategories) {
-        spillPerCategory[category] = planLimits.competitivenessScoresPerCategory;
+        spillPerCategory[category] = manual
+          ? Math.min(manual[category] || 0, spillBudget)
+          : preferences.spillover.target === "scored"
+            ? spillBudget // doubling down: no per-category spread
+            : planLimits.competitivenessScoresPerCategory;
       }
       spilledChosen = allocateScoringSlots({
         candidates: spillCandidates,

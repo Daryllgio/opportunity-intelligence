@@ -136,6 +136,34 @@ export default function AdminOpportunitiesPage() {
     await loadOpportunities();
   }
 
+  async function deleteOpportunity(opportunity: Opportunity) {
+    const confirmed = window.confirm(
+      `PERMANENTLY delete "${opportunity.title}"?\n\nThis removes the row and its scores/reports/cache. Archiving is the normal disposition — delete only test entries, mistakes, and junk.`
+    );
+    if (!confirmed) return;
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+
+    try {
+      const response = await fetch("/api/admin/delete-opportunity", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ opportunityId: opportunity.id }),
+      });
+      const result = await response.json();
+      setMessage(result.message || result.error || "");
+      if (response.ok) await loadOpportunities();
+    } catch {
+      setMessage("Delete failed. Please try again.");
+    }
+  }
+
   const stats = useMemo(() => {
     const total = opportunities.length;
     const active = opportunities.filter((item) => item.is_active).length;
@@ -368,6 +396,15 @@ export default function AdminOpportunitiesPage() {
                           onClick={() => toggleActive(opportunity)}
                         >
                           {opportunity.is_active ? "Pause" : "Verify & activate"}
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
+                          onClick={() => deleteOpportunity(opportunity)}
+                        >
+                          Delete
                         </Button>
                       </div>
                     </div>

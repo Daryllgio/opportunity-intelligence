@@ -9,6 +9,14 @@
  * Undecided" and "Interdisciplinary" absorb the genuinely unlisted.
  */
 
+import {
+  CIP_GRADUATE_FIELDS,
+  CIP_PHD_FIELDS,
+  CIP_UNDERGRADUATE_FIELDS,
+} from "@/lib/data/cip-fields";
+
+// Legacy curated short lists — kept for display of old saved values and as
+// a compact fallback; pickers use the CIP-derived exhaustive lists.
 export const UNDERGRADUATE_MAJORS = [
   "Undeclared / Undecided",
   "Accounting", "Actuarial Science", "Advertising", "Aerospace Engineering",
@@ -156,14 +164,17 @@ export const PROFESSIONAL_OTHER_FIELDS = [
  */
 export function fieldOptionsForLevel(educationLevel: unknown): string[] {
   const level = String(educationLevel || "").toLowerCase();
-  if (level.includes("high")) return [...UNDERGRADUATE_MAJORS];
-  if (level.includes("master")) return [...MASTERS_FIELDS];
-  if (level.includes("phd") || level.includes("doctor")) return [...PHD_FIELDS];
+  // CIP-2020 powers the academic levels (Workday-level exhaustive);
+  // MBA/JD/MD keep curated concentration lists — a JD applicant picks
+  // practice areas, not CIP program codes.
+  if (level.includes("high")) return ["Undeclared / Undecided", ...CIP_UNDERGRADUATE_FIELDS];
+  if (level.includes("master")) return [...CIP_GRADUATE_FIELDS];
+  if (level.includes("phd") || level.includes("doctor")) return [...CIP_PHD_FIELDS];
   if (level.includes("mba")) return [...MBA_CONCENTRATIONS];
   if (level.includes("law")) return [...LAW_FIELDS];
   if (level.includes("medic")) return [...MEDICINE_FIELDS];
   if (level.includes("professional")) return [...PROFESSIONAL_OTHER_FIELDS];
-  return [...UNDERGRADUATE_MAJORS];
+  return ["Undeclared / Undecided", ...CIP_UNDERGRADUATE_FIELDS];
 }
 
 /** The list for a chosen NEXT level (preferences): union over the degree
@@ -174,14 +185,14 @@ export function fieldOptionsForNextLevel(types: string[]): string[] {
     for (const item of list) if (!out.includes(item)) out.push(item);
   };
   for (const type of types) {
-    if (type === "undergraduate") push(UNDERGRADUATE_MAJORS);
-    else if (type === "masters" || type === "masters_other") push(MASTERS_FIELDS);
-    else if (type === "phd") push(PHD_FIELDS);
+    if (type === "undergraduate") push(CIP_UNDERGRADUATE_FIELDS);
+    else if (type === "masters" || type === "masters_other") push(CIP_GRADUATE_FIELDS);
+    else if (type === "phd") push(CIP_PHD_FIELDS);
     else if (type === "mba") push(MBA_CONCENTRATIONS);
     else if (type === "jd") push(LAW_FIELDS);
     else if (type === "md") push(MEDICINE_FIELDS);
     else if (type === "professional_other") push(PROFESSIONAL_OTHER_FIELDS);
   }
-  if (out.length === 0) push(MASTERS_FIELDS);
+  if (out.length === 0) push(CIP_GRADUATE_FIELDS);
   return out;
 }

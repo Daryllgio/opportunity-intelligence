@@ -47,6 +47,15 @@ export type StudentPreferences = {
     /** Specific schools to prioritize (optional). */
     target_schools: string[];
   };
+  /** Where unused scoring capacity goes when scored categories run thin:
+   * "scored" doubles down on the user's scored categories (beyond the
+   * per-category spread), "access" spills into database-access categories
+   * — optionally with manual per-category slot allocations. */
+  spillover: {
+    target: "scored" | "access";
+    /** category -> slots; null = spread equally. Only used for "access". */
+    allocations: Record<string, number> | null;
+  };
   /** Transfer intent — lives in preferences, not the profile. */
   transfer: {
     planning: boolean;
@@ -70,6 +79,7 @@ export const DEFAULT_PREFERENCES: StudentPreferences = {
   access_categories: [],
   subtypes: {},
   next_level: { interested: false, types: [], fields: [], country: "either", target_schools: [] },
+  spillover: { target: "access", allocations: null },
   transfer: { planning: false, country: null, school: null, schools: [] },
   location: { countries: [], regions: [] },
 };
@@ -244,6 +254,20 @@ export function normalizePreferences(raw: unknown): StudentPreferences {
       // 5 next-level target schools, 2 fields, 3 transfer destinations.
       target_schools: cleanStringArray(nextLevel.target_schools, 5),
     },
+    spillover: (() => {
+      const spill = (input.spillover || {}) as Record<string, unknown>;
+      const target = spill.target === "scored" ? "scored" : "access";
+      let allocations: Record<string, number> | null = null;
+      if (spill.allocations && typeof spill.allocations === "object") {
+        allocations = {};
+        for (const [category, slots] of Object.entries(spill.allocations as Record<string, unknown>)) {
+          const n = Math.floor(Number(slots));
+          if (Number.isFinite(n) && n > 0 && n <= 400) allocations[category.slice(0, 40)] = n;
+        }
+        if (Object.keys(allocations).length === 0) allocations = null;
+      }
+      return { target: target as "scored" | "access", allocations };
+    })(),
     transfer: (() => {
       const schools = cleanStringArray(
         Array.isArray(transfer.schools) && (transfer.schools as unknown[]).length
@@ -291,6 +315,7 @@ export function preferencesFromProfile(
     scored_categories: legacy,
     access_categories: [],
     // Legacy users keep their profile-page transfer intent working.
+    spillover: { target: "access", allocations: null },
     transfer: {
       planning: Boolean(profile?.intended_school),
       country: null,
