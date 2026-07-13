@@ -310,7 +310,7 @@ export default function OpportunityDetailPage() {
               {/* ONE SCORE RULE: the competitiveness report's score, when a
                   report exists, IS the score — the batch number never shows
                   beside it. Two AIs, one answer. */}
-              {(scoreReport?.overall_score ?? matchScore) !== null && (
+              {hasCompetitivenessReports && (scoreReport?.overall_score ?? matchScore) !== null && (
                 <p className="mt-3 text-sm text-neutral-500">
                   Your match score:{" "}
                   <span className="font-semibold text-neutral-900 dark:text-neutral-100">
@@ -546,15 +546,6 @@ export default function OpportunityDetailPage() {
 
                   {scoreMessage && (
                     <p className="mt-4 text-sm text-neutral-500">{scoreMessage}</p>
-                  )}
-
-                  {!hasCompetitivenessReports && !scoreReport && (
-                    <p className="mt-4 rounded-lg bg-neutral-50 p-4 text-sm text-neutral-500 dark:bg-neutral-900">
-                      Competitiveness reports are part of paid plans.{" "}
-                      <Link href="/pricing" className="font-medium underline underline-offset-2">
-                        See plans
-                      </Link>
-                    </p>
                   )}
 
                   {scoreReport && (

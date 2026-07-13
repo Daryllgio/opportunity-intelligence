@@ -1013,7 +1013,10 @@ export function ProfileForm() {
             </div>
           </section>
 
-          {renderExperienceSection()}
+          {/* Experiences power AI scoring — Basic (database-only) doesn't
+              collect them; the eligibility profile above is everything
+              Basic needs. */}
+          {planLimits.hasCompetitivenessRanking && renderExperienceSection()}
 
           <section className="space-y-5 border-t border-neutral-100 pt-10 dark:border-neutral-900">
             <div className="flex items-start justify-between gap-4">

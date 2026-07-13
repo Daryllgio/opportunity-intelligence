@@ -335,7 +335,8 @@ function OpportunitiesBrowse() {
     return flags;
   }, [rows, tier1Results]);
 
-  const sortMode = searchParams.get("sort") || "match";
+  const sortMode =
+    searchParams.get("sort") || (hasRanking ? "match" : "deadline");
   const fundingMin = Number(searchParams.get("funding_min")) || null;
   const fundingFull = searchParams.get("funding") === "full";
   const scholarshipFilterActive = (searchParams.get("type") || "")
@@ -532,10 +533,10 @@ function OpportunitiesBrowse() {
         </p>
       </div>
 
-      {isLoggedIn && hasProfile && (
-        <AiSearch
-          hasAiSearch={getPlanLimitsForProfile(profileRow).hasAiSearch}
-        />
+      {/* Basic is database-only: no AI search bar at all — a clean catalog,
+          not a crippled Pro. One quiet nudge lives lower on the page. */}
+      {isLoggedIn && hasProfile && getPlanLimitsForProfile(profileRow).hasAiSearch && (
+        <AiSearch hasAiSearch />
       )}
 
       {isLoggedIn && hasProfile && gatheringNotice && (
@@ -547,6 +548,29 @@ function OpportunitiesBrowse() {
               ? ` — check back around ${new Date(gatheringNotice.readyAround).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} for them.`
               : " — they'll appear over the next day."}
           </p>
+        </div>
+      )}
+
+      {isLoggedIn && hasProfile && !hasRanking && !thinDismissed && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
+          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            Want to see how you match? AI scoring and competitiveness reports
+            come with{" "}
+            <Link href="/pricing" className="font-medium underline underline-offset-2">
+              Pro
+            </Link>
+            .
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setThinDismissed(true);
+              try { window.localStorage.setItem(thinKey, "1"); } catch {}
+            }}
+            className="text-sm text-neutral-400 hover:text-neutral-600"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -580,7 +604,9 @@ function OpportunitiesBrowse() {
           return (
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3">
               <p className="text-sm text-neutral-800 dark:text-neutral-200">
-                Complete your profile to unlock match scores. Still needed:{" "}
+                {hasRanking
+                  ? "Complete your profile to unlock match scores. Still needed: "
+                  : "Complete your profile so eligibility filtering works. Still needed: "}
                 <span className="font-medium">{gate.missing.join(", ")}</span>.
               </p>
               <Link
@@ -592,7 +618,7 @@ function OpportunitiesBrowse() {
             </div>
           );
         }
-        if (gate.experienceNudge) {
+        if (gate.experienceNudge && hasRanking) {
           return (
             <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
               Tip: adding experiences to your{" "}
@@ -777,7 +803,7 @@ function OpportunitiesBrowse() {
                         className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-700 focus:border-neutral-400 focus:outline-none dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
                         aria-label="Sort opportunities"
                       >
-                        <option value="match">Best match</option>
+                        {hasRanking && <option value="match">Best match</option>}
                         <option value="newest">Newest added</option>
                         <option value="deadline">Deadline soonest</option>
                       </select>
