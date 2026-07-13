@@ -50,6 +50,11 @@ export type ProfileRow = {
   citizenships: string[] | null;
   permanent_resident_of: string[] | null;
   preferences: Record<string, unknown> | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  cancel_at_period_end: boolean | null;
+  current_period_end: string | null;
+  projects: Record<string, unknown>[] | null;
   date_of_birth: string | null;
   has_disability: boolean | null;
   gpa: number | null;

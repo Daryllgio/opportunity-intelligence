@@ -5,6 +5,7 @@ import { scheduleScoringJobsForUsers } from "@/lib/scoring/schedule-scoring-job"
 import { reverifyPublishedDestinations } from "@/lib/opportunities/reverify-destinations";
 import { runDueOpportunityChecks } from "@/lib/opportunities/run-due-checks";
 import { recheckTrackedDrafts } from "@/lib/opportunities/recheck-tracked-drafts";
+import { processDuePlanChanges } from "@/lib/billing/stripe";
 
 function createServiceSupabase() {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -98,6 +99,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Scheduled downgrades whose period has rolled: apply the Stripe
+    // price swap and the profile plan change.
+    let planChanges: { applied: number } = { applied: 0 };
+    try {
+      planChanges = await processDuePlanChanges(supabase);
+    } catch (error) {
+      console.error("plan-change processing failed:", error);
+    }
+
     // Missed-cycle retirement: an expired row that has sat through two full
     // renewal windows (~26 months) without ever reopening is presumed
     // discontinued — archive it so the renewal heartbeat stops paying to
@@ -165,6 +175,7 @@ export async function GET(request: NextRequest) {
       unchanged,
       scoresMarkedStale,
       archivedMissedCycles,
+      planChanges,
       dueChecks,
       trackedDrafts,
       reverify,

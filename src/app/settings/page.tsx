@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppNav } from "@/components/layout/app-nav";
 import { supabase } from "@/lib/supabase";
 import { getPlanLabel, getPlanLimits } from "@/lib/billing/plans";
+import { BillingPanel } from "@/components/billing/billing-panel";
 
 // The email_deadline_reminders column ships via a pending migration, so the
 // generated DB types don't know it yet — use an untyped handle for it.
@@ -245,23 +246,8 @@ export default function SettingsPage() {
               )}
             </Section>
 
-            <Section title="Plan" description="What your plan includes.">
-              <p className="text-sm font-medium">{getPlanLabel(plan)}</p>
-              <p className="mt-1 text-sm text-neutral-400">
-                {planLimits.hasCompetitivenessRanking
-                  ? `Matching across ${
-                      planLimits.rankedCategoryLimit === "all"
-                        ? "all"
-                        : planLimits.rankedCategoryLimit
-                    } categor${planLimits.rankedCategoryLimit === 1 ? "y" : "ies"} · ${planLimits.competitivenessReports} reports per month`
-                  : "Browse-only. Upgrade for matching, saving, and reports."}
-              </p>
-              <Link
-                href="/pricing"
-                className="mt-3 inline-block text-sm font-medium underline underline-offset-2"
-              >
-                {plan === "free" ? "See plans" : "Compare plans"}
-              </Link>
+            <Section title="Plan & billing" description="Your subscription, billing status, and plan changes.">
+              <BillingPanel planLabel={getPlanLabel(plan)} planLimits={planLimits} />
             </Section>
 
             <Section
