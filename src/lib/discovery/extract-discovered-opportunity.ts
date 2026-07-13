@@ -256,6 +256,20 @@ at the moment they apply, using ONLY these canonical tokens:
       demands.
     - "strict": true when the page says must/required/only; false when it is
       a preference or "priority given to".
+    - "inferred": true for requirements the page NEVER STATES but the
+      context clearly implies. Capture these — they matter:
+        * government student aid / loan-linked programs imply citizenship,
+          permanent residency, or protected status in that country;
+        * a university's internal award or program implies enrollment (or
+          admission) at that university even when no page says so;
+        * programs administered through national systems (tax residency,
+          student-loan eligibility, professional licensure) imply
+          membership in those systems.
+      Write the requirement starting "Likely requires ..." and set
+      inferred: true. NEVER mark a stated requirement as inferred, and
+      never invent inferences without contextual evidence — inference can
+      be wrong, and the platform treats inferred requirements as
+      uncertainty, not exclusion.
     - For "field_of_study" entries also set "breadth":
         "narrow" = specific major(s) only ("mechanical engineering majors"),
         "family" = a named field family ("STEM fields", "health sciences"),
@@ -336,7 +350,7 @@ Return this exact JSON shape:
   "reward_level": string | null,
   "competitiveness_factors": string[],
   "eligibility_criteria": [
-    { "kind": string, "requirement": string, "values": string[], "strict": boolean }
+    { "kind": string, "requirement": string, "values": string[], "strict": boolean, "inferred": boolean }
   ],
   "attributes": { }
 }

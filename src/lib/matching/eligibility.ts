@@ -27,6 +27,11 @@ export type EligibilityCriterion = {
   /** For field_of_study: how wide the door is. "narrow" = named major(s)
    * only, "family" = a field family ("STEM"), "open" = all fields. */
   breadth?: "narrow" | "family" | "open";
+  /** True when the requirement was INFERRED from context rather than
+   * stated on the page (government aid implying citizenship, a school's
+   * internal award implying enrollment). Inferred criteria can never
+   * produce a deterministic exclusion — only the AI tier may weigh them. */
+  inferred?: boolean;
 };
 
 export type CriterionVerdict = "met" | "not_met" | "unknown";
@@ -104,6 +109,7 @@ export function normalizeEligibilityCriteria(raw: unknown): EligibilityCriterion
       values,
       strict: record.strict !== false, // stated requirements default to hard
       ...(breadth ? { breadth } : {}),
+      ...(record.inferred === true ? { inferred: true } : {}),
     });
   }
   return criteria.slice(0, 24);
@@ -609,6 +615,17 @@ export function evaluateEligibility({
 
   const checks: EligibilityCheck[] = normalized.map((criterion) => {
     const { verdict, note } = evaluateCriterion(criterion, profile);
+    // THE INFERENCE RULE: a requirement the page never stated can inform
+    // but never exclude. An inferred miss downgrades to unknown and flows
+    // to the AI tier, which may judge it with full context. An inferred
+    // pass still counts — confirming inference is harmless.
+    if (criterion.inferred === true && verdict === "not_met") {
+      return {
+        criterion,
+        verdict: "unknown" as const,
+        note: `Likely requirement (inferred, not stated): ${criterion.requirement.slice(0, 120)}`,
+      };
+    }
     return { criterion, verdict, note };
   });
 
