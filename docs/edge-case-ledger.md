@@ -171,3 +171,23 @@ Format: #N — area — case — disposition (IMPLEMENTED/VERIFIED-EXISTING/DOCU
 158. caps — exactly at the cap (5th school added) — VERIFIED: UI disables the add control at the cap; normalize slices server-side; the 6th never persists
 159. transfer — legacy single-school transfer documents — IMPLEMENTED: schools[] hydrates from school, school stays aliased to schools[0]; old readers keep working
 160. location-preference removal — old documents carrying location data — IMPLEMENTED: shape tolerated in normalize, never asked, never applied; boost code removed
+
+## Full-platform-build run (2026-07-13)
+
+161. billing — silent Stripe-customer non-persistence mints an orphan customer per checkout attempt and breaks webhook mapping forever — IMPLEMENTED: fail-closed (customer deleted, checkout refused with the apply-me-5 message); caught live by the smoke test
+162. billing — a user with a live subscription starting a second checkout — IMPLEMENTED: 409 with manage-instead routing to Settings
+163. billing — trial farming through checkout — IMPLEMENTED: trial_period_days only when trial_started_at is null; returning subscribers pay from day one
+164. billing — webhook forgery — IMPLEMENTED: signature verification mandatory; endpoint 503s without STRIPE_WEBHOOK_SECRET (fail closed, documented for founder setup)
+165. billing — cancel-then-regret — IMPLEMENTED: resume (undo cancellation) until the period actually ends
+166. billing — downgrade proration surprises — IMPLEMENTED: downgrades never prorate; the higher tier holds to period end, the lifecycle cron applies the Stripe swap with proration_behavior none
+167. billing — grace-then-recovery — IMPLEMENTED: invoice.paid clears grace and rolls the period regardless of intervening states
+168. basic-tier — downgraded users' historical scores leaking into their stripped UI — IMPLEMENTED: score line requires a scoring plan; rows stay in the DB (data preserved) but never render
+169. inference — an inferred requirement matching the profile — IMPLEMENTED: inferred-met counts as met (confirming inference is harmless); only inferred-miss downgrades to uncertain
+170. destination — hub-page selection regression (REU chose 'Undergraduate Funding' over its own page because the hub also verified) — IMPLEMENTED: specificity rule in the selection prompt; REU restored; caught by URL-diff review of the audit
+171. destination — site: operator leakage (engines return off-site results) — IMPLEMENTED: domain re-verified on every site-restricted hit
+172. fields — CIP 'X, Other' catch-alls pollute pickers — IMPLEMENTED: dropped at generation; Undeclared/Interdisciplinary absorb the rest
+173. fields — CIP residency/graduate-medical families (60/61) are post-degree — IMPLEMENTED: excluded from all pickers
+174. projects — a 20-project 5000-char-each payload — IMPLEMENTED: 12 projects, 1500-char descriptions, 12 skills each at save
+175. spillover — manual allocations exceeding the spill budget — IMPLEMENTED: per-category min(allocation, budget); zero-allocation categories get nothing
+176. admin — deleting an opportunity users saved — IMPLEMENTED: 409 with the saved count; archive is the path for anything users touched
+177. demand — reconcile+run on a queue with in_progress rows from a crashed run — VERIFIED: CAS claim on (status, updated_at) plus next_pass_at scheduling makes re-entry safe (proven live: second run cost 0 searches in 482ms)
